@@ -47,7 +47,7 @@ Last.fm uses an **API key + shared secret** pair. For our use case (read-only li
 3. Fill in:
    - **Application name**: `SyncUp (dev - your_name)`
    - **Application description**: taste-based matching
-   - **Callback URL**: `http://localhost:3000/api/auth/lastfm/callback` (only needed if doing full auth flow later)
+   - **Callback URL**: `http://127.0.0.1:3000/api/auth/lastfm/callback` (only needed if doing full auth flow later)
 4. Submit. You'll see your API key and shared secret on the next page.
 
 ### What you can fetch
@@ -75,6 +75,8 @@ LASTFM_SHARED_SECRET=your_secret_here
 
 Spotify uses **OAuth 2.0** (Authorization Code flow). Users must explicitly grant access.
 
+> **Note on the redirect URI:** Spotify no longer accepts `http://localhost` — use `http://127.0.0.1` instead (or HTTPS). This means during development, open the app at `http://127.0.0.1:3000` rather than `http://localhost:3000`, otherwise session cookies won't persist across the Spotify redirect.
+
 ### Steps
 
 1. Sign in at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard).
@@ -82,8 +84,8 @@ Spotify uses **OAuth 2.0** (Authorization Code flow). Users must explicitly gran
 3. Fill in:
    - **App name**: `SyncUp (dev - your_name)`
    - **App description**: taste-based matching service
-   - **Redirect URIs**: `http://localhost:3000/api/auth/spotify/callback`
-   - **APIs used**: check **Web API**
+   - **Redirect URIs**: `http://127.0.0.1:3000/api/auth/spotify/callback`, then click **Add** (typing alone doesn't save it)
+   - **APIs used**: check **Web API** — note this section stays greyed out until a valid redirect URI has been added
 4. Accept the ToS and save.
 5. Copy **Client ID** and **Client Secret** from the app settings.
 
@@ -98,7 +100,7 @@ Spotify uses **OAuth 2.0** (Authorization Code flow). Users must explicitly gran
 ```
 SPOTIFY_CLIENT_ID=your_client_id
 SPOTIFY_CLIENT_SECRET=your_client_secret
-SPOTIFY_REDIRECT_URI=http://localhost:3000/api/auth/spotify/callback
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/api/auth/spotify/callback
 ```
 
 ### Docs
@@ -123,7 +125,7 @@ LASTFM_SHARED_SECRET=
 # Spotify
 SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
-SPOTIFY_REDIRECT_URI=http://localhost:3000/api/auth/spotify/callback
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/api/auth/spotify/callback
 
 # App
 DATABASE_URL=postgresql://syncup:syncup@localhost:5432/syncup
