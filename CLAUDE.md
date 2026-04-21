@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**VibeMatch** — a people-matching service that connects users based on their actual taste across platforms (Steam, Last.fm, Spotify, etc.), not demographics. Users connect their accounts via OAuth, the system trains user embeddings from their real data, and matches them with others who share their vibe — with control over *which dimensions* matter and *how similar* matches should be.
+**SyncUp** — a people-matching service that connects users based on their actual taste across platforms (Steam, Last.fm, Spotify, etc.), not demographics. Users connect their accounts via OAuth, the system trains user embeddings from their real data, and matches them with others who share their vibe — with control over *which dimensions* matter and *how similar* matches should be.
 
 Not dating. Finding your people.
 
 ## Architecture (to be built)
 
 ```
-vibe-match/
+syncup/
 ├── backend/          # Python FastAPI — ML pipeline + REST API
 │   ├── ingest/       # OAuth flows + service API clients
 │   ├── embeddings/   # Item & user embedding model training

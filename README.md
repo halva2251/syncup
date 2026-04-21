@@ -1,4 +1,4 @@
-# VibeMatch
+# SyncUp
 
 Match people by the vibe of their actual taste — not demographics, not dating.
 

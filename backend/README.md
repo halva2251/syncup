@@ -24,13 +24,13 @@ Copy `.env.example` to `.env` and fill in service credentials (see [../docs/api-
 Not yet wired up. Will be:
 
 ```bash
-uv run uvicorn vibe_match.api.main:app --reload
+uv run uvicorn syncup.api.main:app --reload
 ```
 
 ## Layout
 
-- `vibe_match/ingest/` — OAuth flows + Steam/Last.fm/Spotify API clients
-- `vibe_match/embeddings/` — item2vec training + user vector builders
-- `vibe_match/matching/` — cosine similarity + dimension weighting
-- `vibe_match/api/` — FastAPI routes
+- `syncup/ingest/` — OAuth flows + Steam/Last.fm/Spotify API clients
+- `syncup/embeddings/` — item2vec training + user vector builders
+- `syncup/matching/` — cosine similarity + dimension weighting
+- `syncup/api/` — FastAPI routes
 - `tests/` — pytest suite
