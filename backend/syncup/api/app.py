@@ -6,10 +6,14 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from dotenv import load_dotenv
 
-from syncup.ingest.spotify import SpotifyClient
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException, Query, Request  # noqa: E402
+from fastapi.responses import RedirectResponse  # noqa: E402
+
+from syncup.ingest.spotify import SpotifyClient  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Lifespan — build shared clients once at startup

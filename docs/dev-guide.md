@@ -1,0 +1,286 @@
+# Developer Guide
+
+Internals, design decisions, and a map of what still needs to be built. Read this if you're onboarding or picking the project back up after a break.
+
+---
+
+## The idea in one paragraph
+
+SyncUp matches people based on their actual taste across platforms — not demographics, not dating. A user connects their Steam, Spotify, and Last.fm accounts. The system ingests their data (games owned + playtime, top artists, top tracks), builds a per-user embedding vector from item-level embeddings trained on public datasets, then finds other users whose vectors are close in cosine space. Users control per-service dimension weights ("weight my music 70%, games 30%") and can boost items that underrepresent their taste (e.g. "I love Disco Elysium despite low hours"). Matches share a profile card and a Discord/social handle — no in-app chat.
+
+---
+
+## What's actually running
+
+Start the server:
+
+```bash
+cd backend
+uvicorn syncup.api.app:app --reload --port 3000
+```
+
+Live routes (try them at `http://127.0.0.1:3000/docs`):
+
+| Method | Path | What it does |
+|--------|------|-------------|
+| GET | `/health` | Returns `{"status": "ok", "version": "0.1.0"}` |
+| GET | `/auth/spotify` | Redirects to Spotify's authorize page (PKCE flow) |
+| GET | `/auth/spotify/callback` | Exchanges auth code for tokens, returns token metadata |
+
+The rest of the planned API surface is in [api-contract.md](api-contract.md).
+
+---
+
+## Ingest layer (`syncup/ingest/`)
+
+### `spotify.py` — `SpotifyClient`
+
+OAuth 2.0 Authorization Code + PKCE. No client secret needed for PKCE.
+
+```python
+client = SpotifyClient(client_id="...", redirect_uri="http://127.0.0.1:3000/...")
+
+# Step 1: send user to Spotify
+verifier, challenge = client.generate_pkce_pair()
+url = client.get_authorize_url(state="random_state", code_challenge=challenge)
+
+# Step 2: Spotify redirects back with ?code=... — exchange it
+tokens = client.exchange_code(code="...", code_verifier=verifier)
+
+# Step 3: fetch data
+artists = client.fetch_top_artists(tokens.access_token, limit=50, time_range="medium_term")
+recent = client.fetch_recently_played(tokens.access_token, limit=50)
+
+# Step 4: refresh when expired
+new_tokens = client.refresh_access_token(tokens.refresh_token)
+```
+
+`time_range` options: `"short_term"` (4 weeks), `"medium_term"` (6 months), `"long_term"` (all time).
+
+`SpotifyClient` is a context manager — `with SpotifyClient(...) as c:` closes the HTTP connection automatically.
+
+### `steam.py` — `SteamClient`
+
+API key only, no OAuth. User provides their Steam ID or vanity URL.
+
+```python
+client = SteamClient(api_key="...")
+
+# Optional: resolve "halva" → "76561198xxxxxxxxx"
+steam_id = client.resolve_vanity_url("halva")
+
+games = client.get_owned_games(steam_id)
+# Each game: {"appid": 730, "name": "Counter-Strike 2", "playtime_forever": 1234, ...}
+
+profile = client.get_player_summary(steam_id)
+# {"personaname": "halva", "avatarfull": "https://...", ...}
+```
+
+### `lastfm.py` — `LastfmClient`
+
+API key only, no OAuth. User provides their Last.fm username.
+
+```python
+client = LastfmClient(api_key="...")
+
+artists = client.get_top_artists("username", limit=50, period="overall")
+# period options: "overall", "7day", "1month", "3month", "6month", "12month"
+
+tracks = client.get_top_tracks("username", limit=50, period="6month")
+# Each track: {"name": "...", "artist": {"name": "..."}, "playcount": "42", ...}
+```
+
+Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `ValueError`.
+
+### `crypto.py` — token encryption
+
+OAuth tokens must be encrypted before storing in the database. Uses AES-GCM (authenticated encryption).
+
+```python
+import os
+os.environ["SYNCUP_TOKEN_ENCRYPTION_KEY"] = "<base64-encoded 32-byte key>"
+
+from syncup.ingest.crypto import encrypt_token, decrypt_token
+
+ciphertext: bytes = encrypt_token("my_access_token")
+plaintext: str = decrypt_token(ciphertext)
+```
+
+Store the `bytes` blob in `service_connections.access_token` and `refresh_token` columns.
+
+The nonce (12 random bytes) is prepended to the ciphertext — no need to store it separately.
+
+Key must be 16, 24, or 32 bytes (128/192/256-bit AES). Generate once per environment:
+
+```bash
+python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+```
+
+---
+
+## Database (`syncup/db/`)
+
+### Models (`models.py`)
+
+Key tables:
+
+| Table | Purpose |
+|-------|---------|
+| `users` | App accounts (not per-service) |
+| `service_connections` | One row per (user, service) — stores encrypted OAuth tokens |
+| `items` | Games, artists, tracks — shared across users |
+| `user_item_interactions` | A user's relationship with an item (play count, rating, boost) |
+| `user_embeddings` | The aggregated taste vector per user per service |
+| `matches` | Cached match pairs with score and dimension breakdown |
+
+`items.embedding` is a `pgvector` column (1024-dimensional by default). An IVFFlat index speeds up ANN search but only applies to non-null rows.
+
+`service_connections.sync_status` is constrained to `pending | syncing | ok | error`.
+
+### Sessions (`session.py`)
+
+```python
+from syncup.db.session import get_session
+
+with get_session(session_factory) as session:
+    user = session.get(User, user_id)
+    session.commit()       # caller commits explicitly
+    # exception → auto-rollback
+```
+
+### Migrations (Alembic)
+
+The initial migration is at `alembic/versions/20260421_0001_initial_schema.py`.
+
+```bash
+# Apply migrations (run this once after creating the DB)
+alembic upgrade head
+
+# Create a new migration after changing models.py
+alembic revision --autogenerate -m "describe what changed"
+alembic upgrade head
+```
+
+---
+
+## Embedding pipeline (`syncup/embeddings/`)
+
+### Item2Vec (`item2vec.py`)
+
+A Word2Vec model where "words" are item IDs and "sentences" are play sequences (games a user has played, or tracks a user has listened to). Items that appear together in many users' histories end up near each other in vector space.
+
+```python
+from syncup.embeddings.item2vec import Item2VecConfig, Item2VecTrainer
+
+config = Item2VecConfig(vector_size=128, min_count=5, epochs=10)
+trainer = Item2VecTrainer(config)
+
+# sequences: list of lists of item IDs (strings)
+# e.g. [["730", "570", "271590"], ["730", "4000"], ...]
+trainer.train(sequences)
+
+vec = trainer.get_vector("730")   # numpy array for CS2
+similar = trainer.most_similar("730", topn=10)
+trainer.save("path/to/model.bin")
+
+# Later:
+trainer2 = Item2VecTrainer(config)
+trainer2.load("path/to/model.bin")
+```
+
+### User embeddings (`user_embeddings.py`)
+
+Takes a trained Item2Vec model + a user's item interactions and builds a single weighted-average vector for that user.
+
+```python
+from syncup.embeddings.user_embeddings import UserEmbeddingBuilder
+
+builder = UserEmbeddingBuilder(trainer)
+
+interactions = [
+    {"item_id": "730", "weight": 100.0},   # CS2, 100 hours
+    {"item_id": "570", "weight": 50.0},    # Dota 2, 50 hours
+]
+
+user_vec = builder.build(interactions)     # numpy array
+```
+
+Weight is typically playtime (minutes) for games, play count for tracks, or the user's explicit boost value.
+
+---
+
+## Matching engine (`syncup/matching/engine.py`)
+
+Cosine similarity between user vectors, with optional per-service dimension weighting.
+
+```python
+from syncup.matching.engine import MatchingEngine, DimensionWeights
+
+weights = DimensionWeights(spotify=0.7, steam=0.3, lastfm=0.0)
+engine = MatchingEngine(weights)
+
+score = engine.score(user_vec_a, user_vec_b)
+# Returns float in [-1, 1]. Higher = more similar.
+
+matches = engine.rank_matches(target_vec, candidate_vecs)
+# Returns sorted list of (index, score) pairs
+```
+
+---
+
+## Running tests
+
+```bash
+cd backend
+pytest                        # all 92 tests
+pytest tests/test_spotify.py  # one module
+pytest --cov=syncup           # with coverage report
+```
+
+Tests use `httpx`'s mock transport — no live API calls, no network required.
+
+---
+
+## What's missing (build order suggestion)
+
+### Phase 1 — make the backend stateful
+
+1. **PostgreSQL setup** — provision the DB, run `alembic upgrade head`
+2. **Token encryption key** — generate `SYNCUP_TOKEN_ENCRYPTION_KEY`, add to `.env`
+3. **Session/user model** — cookie-based sessions, `POST /auth/register`, `POST /auth/login`
+4. **Service connect routes** — after Spotify OAuth callback succeeds, write encrypted tokens to `service_connections`
+5. **Sync routes** — `POST /sync/spotify`, `POST /sync/steam` — fetch data from service APIs and write to `user_item_interactions`
+
+### Phase 2 — matching
+
+6. **Train Item2Vec** — use public datasets (Steam reviews, Million Song Dataset) or seed from real user data
+7. **Build user vectors** — `POST /embeddings/build` — run `UserEmbeddingBuilder` for a user and store in `user_embeddings`
+8. **Match endpoint** — `GET /matches` — cosine search over all user vectors, respecting dimension weights
+9. **Preference boost** — `PATCH /items/{id}/boost` — let a user increase an item's weight in their vector
+
+### Phase 3 — frontend
+
+10. **Next.js app** — profile page, "connect service" buttons (redirect to `/auth/spotify`), match feed
+11. **Match card** — show avatar, shared interests, compatibility score breakdown by service
+12. **Dimension sliders** — let users adjust `DimensionWeights` and see matches update
+
+---
+
+## Known gaps and sharp edges
+
+- **Port in api-contract.md**: doc says port 8000, server runs on 3000. Needs updating.
+- **Spotify callback returns tokens to browser**: the callback endpoint currently returns raw token data as JSON. When the session layer lands, it should write tokens to the DB instead and redirect to the profile page.
+- **No rate limiting on routes**: production will need this (especially sync endpoints).
+- **Steam/Last.fm routes not wired**: the clients exist and are tested, but there are no FastAPI routes for them yet.
+- **Token refresh not automated**: access tokens expire in 1 hour. The refresh logic is in `SpotifyClient.refresh_access_token()` but nothing calls it automatically yet — a background task or middleware will need to handle this.
+- **No auth middleware**: any route that accesses user data needs to check the session and return 401 if unauthenticated.
+
+---
+
+## Local dev tips
+
+- Always use `http://127.0.0.1:3000` not `http://localhost:3000` — Spotify validates the redirect URI exactly, and cookies don't carry across the redirect if the host changes.
+- `uvicorn --reload` watches for file changes and restarts automatically.
+- The Swagger UI at `/docs` has "Try it out" buttons — use them instead of curl for quick manual testing.
+- `pytest -x` stops at the first failure (faster feedback loop during development).
+- `ruff check .` and `mypy .` (from `backend/`) must both pass before committing.

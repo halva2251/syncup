@@ -2,20 +2,177 @@
 
 Match people by the vibe of their actual taste — not demographics, not dating.
 
-Connect Steam, Last.fm, and Spotify. A cross-domain embedding model learns what your library actually says about you. Find people who share your wavelength, with control over which dimensions matter and how similar matches should be.
+Connect Steam, Last.fm, and Spotify. A cross-domain embedding model learns what your library says about you. Find people who share your wavelength, with control over which dimensions matter.
 
-Built for an AI challenge — focused on innovation, impact, and "AI for good."
+---
 
-## Structure
+## What's been built
 
-- `backend/` — Python (FastAPI) + ML pipeline (ingestion, embeddings, matching)
-- `frontend/` — Next.js + TypeScript web app
-- `data/` — training datasets (not committed)
-- `docs/` — architecture notes, API contract, setup guides
+| Layer | Status | Notes |
+|-------|--------|-------|
+| Spotify OAuth + PKCE client | done | token exchange, refresh, top artists, recent tracks |
+| Steam API client | done | owned games, player summary, vanity URL resolution |
+| Last.fm API client | done | top artists, top tracks with period filtering |
+| AES-GCM token encryption | done | for storing OAuth tokens at rest |
+| SQLAlchemy schema + Alembic migration | done | full schema: users, items, embeddings, matches |
+| Item2Vec embedding model | done | gensim Word2Vec wrapper, train from play sequences |
+| User taste vectors | done | weighted average of item embeddings |
+| Matching engine | done | cosine similarity with per-service dimension weights |
+| FastAPI app | done | `/health`, `/auth/spotify`, `/auth/spotify/callback` |
+| Swagger UI | done | live at `http://127.0.0.1:3000/docs` |
+| Tests | done | 92 tests across all modules |
+| Frontend | not started | Next.js placeholder only |
+| Steam/Last.fm API routes | not started | clients exist, routes not wired |
+| User sessions / DB-backed auth | not started | |
+| PostgreSQL provisioned | not started | schema is ready, DB hasn't been created |
+
+---
 
 ## Quickstart
 
-Not runnable yet — setup instructions will land as backend and frontend scaffolds fill in. See [docs/api-keys.md](docs/api-keys.md) for service API credentials.
+### 1. Clone and enter the backend
+
+```bash
+git clone <repo>
+cd syncup/backend
+```
+
+### 2. Create a virtual env and install dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -e ".[dev,ml]"
+```
+
+Or with uv (faster):
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -e ".[dev,ml]"
+```
+
+### 3. Set up environment variables
+
+Copy this template to `backend/.env` and fill in the blanks:
+
+```dotenv
+# Steam
+STEAM_API_KEY=
+
+# Last.fm
+LASTFM_API_KEY=
+LASTFM_SHARED_SECRET=
+
+# Spotify
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/api/auth/spotify/callback
+
+# PostgreSQL
+DATABASE_URL=postgresql://syncup:syncup@localhost:5432/syncup
+
+# App secrets
+SESSION_SECRET=
+SYNCUP_TOKEN_ENCRYPTION_KEY=   # base64-encoded 32-byte AES key (see below)
+```
+
+For the encryption key, generate one:
+
+```bash
+python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
+```
+
+See [docs/api-keys.md](docs/api-keys.md) for how to register each service and get its credentials.
+
+### 4. Provision PostgreSQL
+
+```bash
+# Create the database (one-time)
+psql -U postgres -c "CREATE USER syncup WITH PASSWORD 'syncup';"
+psql -U postgres -c "CREATE DATABASE syncup OWNER syncup;"
+
+# Run migrations
+cd backend
+alembic upgrade head
+```
+
+### 5. Run the server
+
+```bash
+# From backend/
+uvicorn syncup.api.app:app --reload --port 3000
+```
+
+Or with uv:
+
+```bash
+uv run uvicorn syncup.api.app:app --reload --port 3000
+```
+
+Open `http://127.0.0.1:3000/docs` — Swagger UI with all routes and try-it-out.
+
+> **Important:** Always use `http://127.0.0.1:3000`, not `http://localhost:3000`. Spotify's OAuth redirect requires the exact URI registered in the dashboard, and session cookies won't survive the redirect if the host doesn't match.
+
+### 6. Run tests
+
+```bash
+cd backend
+pytest
+```
+
+---
+
+## Structure
+
+```
+syncup/
+├── backend/
+│   ├── syncup/
+│   │   ├── api/         app.py — FastAPI routes + lifespan
+│   │   ├── ingest/      spotify.py, steam.py, lastfm.py, crypto.py
+│   │   ├── embeddings/  item2vec.py, user_embeddings.py
+│   │   ├── matching/    engine.py
+│   │   └── db/          models.py, session.py, base.py
+│   ├── alembic/         migrations
+│   ├── tests/           one file per module
+│   ├── .env             secrets (never commit)
+│   └── pyproject.toml
+├── frontend/            Next.js (not started)
+└── docs/
+    ├── api-contract.md  planned API surface
+    ├── api-keys.md      how to register each service
+    ├── db-schema.md     schema reference
+    └── dev-guide.md     internals, design decisions, what to build next
+```
+
+---
+
+## Environment variables reference
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SPOTIFY_CLIENT_ID` | yes | from Spotify developer dashboard |
+| `SPOTIFY_CLIENT_SECRET` | yes | from Spotify developer dashboard |
+| `SPOTIFY_REDIRECT_URI` | yes | must match dashboard exactly |
+| `STEAM_API_KEY` | for Steam routes | from steamcommunity.com/dev/apikey |
+| `LASTFM_API_KEY` | for Last.fm routes | from last.fm/api/account/create |
+| `LASTFM_SHARED_SECRET` | for Last.fm routes | same registration |
+| `DATABASE_URL` | for DB | `postgresql://user:pass@host:port/dbname` |
+| `SESSION_SECRET` | for sessions | random string, keep secret |
+| `SYNCUP_TOKEN_ENCRYPTION_KEY` | for token storage | base64-encoded 16/24/32-byte key |
+
+---
+
+## Docs
+
+- [docs/api-keys.md](docs/api-keys.md) — how to register each service and get credentials
+- [docs/api-contract.md](docs/api-contract.md) — planned API surface (routes, request/response shapes)
+- [docs/db-schema.md](docs/db-schema.md) — full database schema
+- [docs/dev-guide.md](docs/dev-guide.md) — internals, design decisions, what to build next
+
+---
 
 ## License
 
