@@ -6,7 +6,6 @@ import hashlib
 import secrets
 import urllib.parse
 from dataclasses import dataclass, field
-from types import TracebackType
 
 import httpx
 
@@ -42,12 +41,7 @@ class SpotifyClient:
     def __enter__(self) -> SpotifyClient:
         return self
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()
 
     def generate_pkce_pair(self) -> tuple[str, str]:
