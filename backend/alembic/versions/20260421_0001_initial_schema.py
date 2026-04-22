@@ -16,6 +16,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
+from sqlalchemy import desc
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
@@ -138,6 +139,10 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
         sa.UniqueConstraint("user_id", "service"),
+        sa.CheckConstraint(
+            "sync_status IN ('pending', 'syncing', 'ok', 'error')",
+            name="ck_sync_status_values",
+        ),
     )
     op.create_index(
         "idx_service_connections_user", "service_connections", ["user_id"]
@@ -181,6 +186,7 @@ def upgrade() -> None:
         postgresql_using="ivfflat",
         postgresql_ops={"embedding": "vector_cosine_ops"},
         postgresql_with={"lists": 100},
+        postgresql_where=sa.text("embedding IS NOT NULL"),
     )
 
     op.create_table(
@@ -271,7 +277,7 @@ def upgrade() -> None:
         sa.Column(
             "item_id",
             postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("items.id"),
+            sa.ForeignKey("items.id", ondelete="SET NULL"),
             nullable=True,
         ),
         sa.Column(
@@ -344,7 +350,7 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             primary_key=True,
         ),
-        sa.Column("score", sa.Float(), nullable=False),
+        sa.Column("score", sa.Float(precision=53), nullable=False),
         sa.Column("breakdown", postgresql.JSONB(), nullable=False),
         sa.Column(
             "computed_at",
@@ -354,8 +360,8 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("user_a_id < user_b_id", name="ck_match_cache_order"),
     )
-    op.create_index("idx_match_cache_a", "match_cache", ["user_a_id", "score"])
-    op.create_index("idx_match_cache_b", "match_cache", ["user_b_id", "score"])
+    op.create_index("idx_match_cache_a", "match_cache", ["user_a_id", desc("score")])
+    op.create_index("idx_match_cache_b", "match_cache", ["user_b_id", desc("score")])
 
     op.create_table(
         "sessions",

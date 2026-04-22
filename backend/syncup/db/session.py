@@ -21,10 +21,15 @@ def sessionmaker_for(database_url: str) -> sessionmaker[Session]:
 def get_session(factory: sessionmaker[Session]) -> Iterator[Session]:
     """Yield a session and ensure it is closed when the caller is done.
 
-    Intended to be wrapped as a FastAPI dependency once routes exist.
+    The caller is responsible for calling ``session.commit()`` before
+    the context exits. On any exception the session is rolled back
+    automatically. Intended to be wrapped as a FastAPI dependency.
     """
     session = factory()
     try:
         yield session
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()

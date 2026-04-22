@@ -25,6 +25,7 @@ from sqlalchemy import (
     LargeBinary,
     Text,
     UniqueConstraint,
+    desc,
     func,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
@@ -154,6 +155,10 @@ class ServiceConnection(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "service"),
+        CheckConstraint(
+            "sync_status IN ('pending', 'syncing', 'ok', 'error')",
+            name="ck_sync_status_values",
+        ),
         Index("idx_service_connections_user", "user_id"),
     )
 
@@ -196,6 +201,7 @@ class Item(Base):
             postgresql_using="ivfflat",
             postgresql_ops={"embedding": "vector_cosine_ops"},
             postgresql_with={"lists": 100},
+            postgresql_where="embedding IS NOT NULL",
         ),
     )
 
@@ -273,7 +279,7 @@ class ManualObsession(Base):
     category: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     item_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("items.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("items.id", ondelete="SET NULL"), nullable=True
     )
     weight: Mapped[float] = mapped_column(
         Float, nullable=False, default=1.0, server_default="1.0"
@@ -351,7 +357,7 @@ class MatchCache(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    score: Mapped[float] = mapped_column(Float, nullable=False)
+    score: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
     breakdown: Mapped[dict[str, float]] = mapped_column(JSONB, nullable=False)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -359,8 +365,8 @@ class MatchCache(Base):
 
     __table_args__ = (
         CheckConstraint("user_a_id < user_b_id", name="ck_match_cache_order"),
-        Index("idx_match_cache_a", "user_a_id", "score"),
-        Index("idx_match_cache_b", "user_b_id", "score"),
+        Index("idx_match_cache_a", "user_a_id", desc("score")),
+        Index("idx_match_cache_b", "user_b_id", desc("score")),
     )
 
 
