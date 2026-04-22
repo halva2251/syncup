@@ -133,7 +133,7 @@ Key tables:
 | `user_embeddings` | The aggregated taste vector per user per service |
 | `matches` | Cached match pairs with score and dimension breakdown |
 
-`items.embedding` is a `pgvector` column (1024-dimensional by default). An IVFFlat index speeds up ANN search but only applies to non-null rows.
+`items.embedding` is a `pgvector` column (128-dimensional by default). An IVFFlat index speeds up ANN search but only applies to non-null rows.
 
 `service_connections.sync_status` is constrained to `pending | syncing | ok | error`.
 

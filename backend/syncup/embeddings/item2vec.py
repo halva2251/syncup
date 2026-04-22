@@ -65,7 +65,7 @@ class Item2VecModel:
             window=config.window,
             min_count=config.min_count,
             negative=config.negative,
-            sg=int(config.sg),
+            sg={TrainingMode.SKIP_GRAM: 1, TrainingMode.CBOW: 0}[config.sg],
             epochs=config.epochs,
             workers=config.workers,
         )

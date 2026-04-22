@@ -1,6 +1,6 @@
 # API Contract (Sketch)
 
-REST + JSON. FastAPI backend on `http://localhost:8000`, Next.js frontend on `http://localhost:3000`.
+REST + JSON. FastAPI backend on `http://127.0.0.1:3000`, Next.js frontend on `http://127.0.0.1:3001`.
 
 This is a **sketch** to align frontend and backend work. Names/shapes will firm up when routes are actually implemented.
 

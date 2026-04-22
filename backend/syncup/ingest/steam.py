@@ -71,4 +71,6 @@ class SteamClient:
         )
         resp.raise_for_status()
         players = resp.json()["response"]["players"]
+        if not players:
+            raise ValueError(f"No Steam profile found for steam_id {steam_id!r}")
         return players[0]  # type: ignore[no-any-return]

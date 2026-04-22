@@ -1,7 +1,6 @@
 """FastAPI application — entry point for the SyncUp backend."""
 from __future__ import annotations
 
-import os
 import secrets
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
@@ -10,9 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import httpx  # noqa: E402
 from fastapi import FastAPI, HTTPException, Query, Request  # noqa: E402
-from fastapi.responses import RedirectResponse  # noqa: E402
+from fastapi.responses import JSONResponse, RedirectResponse  # noqa: E402
 
+from syncup.config import Settings  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -20,14 +21,11 @@ from syncup.ingest.spotify import SpotifyClient  # noqa: E402
 # ---------------------------------------------------------------------------
 
 def _make_spotify_client() -> SpotifyClient:
-    client_id = os.environ.get("SPOTIFY_CLIENT_ID", "")
-    redirect_uri = os.environ.get(
-        "SPOTIFY_REDIRECT_URI",
-        "http://127.0.0.1:3000/api/auth/spotify/callback",
+    settings = Settings()  # type: ignore[call-arg]
+    return SpotifyClient(
+        client_id=settings.spotify_client_id,
+        redirect_uri=settings.spotify_redirect_uri,
     )
-    if not client_id:
-        raise RuntimeError("SPOTIFY_CLIENT_ID env var is not set")
-    return SpotifyClient(client_id=client_id, redirect_uri=redirect_uri)
 
 
 @asynccontextmanager
@@ -70,7 +68,7 @@ def spotify_callback(
     request: Request,
     code: Annotated[str, Query()],
     state: Annotated[str, Query()],
-) -> dict[str, Any]:
+) -> JSONResponse:
     """Exchange the Spotify authorization code for tokens.
 
     Callers are responsible for storing the returned tokens securely.
@@ -87,10 +85,15 @@ def spotify_callback(
 
     try:
         tokens = client.exchange_code(code=code, code_verifier=verifier)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Token exchange failed: {exc}") from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail=f"Spotify token exchange failed: {exc.response.text}",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not reach Spotify: {exc}") from exc
 
-    return {
-        "token_type": tokens.token_type,
-        "expires_in": tokens.expires_in,
-    }
+    response = JSONResponse({"token_type": tokens.token_type, "expires_in": tokens.expires_in})
+    response.delete_cookie("spotify_state")
+    response.delete_cookie("spotify_verifier")
+    return response

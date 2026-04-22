@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import httpx
 
 _AUTH_URL = "https://accounts.spotify.com/authorize"
-_TOKEN_URL = "https://accounts.spotify.com/api/token"
+_TOKEN_URL = "https://accounts.spotify.com/api/token"  # nosec B105
 _API_BASE = "https://api.spotify.com/v1"
 
 SCOPES = ["user-top-read", "user-library-read", "user-read-recently-played"]
