@@ -1,0 +1,23 @@
+services:
+  db:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: syncup
+      POSTGRES_PASSWORD: syncup
+      POSTGRES_DB: syncup
+    volumes:
+      # Mounted at /var/lib/postgresql (parent of PGDATA=/var/lib/postgresql/data)
+      # so the named volume owns the full postgres home directory.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncup -d syncup"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  pgdata:

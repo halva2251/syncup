@@ -18,7 +18,7 @@ htmlcov/
 
 # uv
 .python-version
-uv.lock
+# uv.lock is intentionally committed — pins exact versions for reproducible installs
 
 # Node
 node_modules/
