@@ -15,10 +15,14 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-client-id")
     # debug=True makes cookies non-secure so TestClient (HTTP, not HTTPS) can send them.
     monkeypatch.setenv("DEBUG", "true")
+    from unittest.mock import MagicMock, patch
+
     from syncup.api.app import app
 
-    with TestClient(app) as c:
-        yield c
+    # Patch sessionmaker_for so the lifespan doesn't try to open a real DB connection.
+    with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
+        with TestClient(app) as c:
+            yield c
 
 
 # ---------------------------------------------------------------------------

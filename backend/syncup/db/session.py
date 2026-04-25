@@ -1,13 +1,13 @@
 """Engine + session factory for the application DB.
 
 We expose a helper to construct a sessionmaker and a small generator
-dependency for request-scoped sessions. The FastAPI layer will wire
-this in when routes land.
+dependency for request-scoped sessions.
 """
 from __future__ import annotations
 
 from collections.abc import Iterator
 
+from fastapi import Request
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -53,3 +53,12 @@ def get_session(factory: sessionmaker[Session]) -> Iterator[Session]:
         raise
     finally:
         session.close()
+
+
+def get_db(request: Request) -> Iterator[Session]:
+    """FastAPI dependency: yield a request-scoped DB session.
+
+    The session factory is taken from ``app.state.db``, which is created
+    once at startup in the lifespan context manager.
+    """
+    yield from get_session(request.app.state.db)

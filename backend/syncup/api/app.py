@@ -16,7 +16,10 @@ from fastapi.routing import APIRouter
 
 load_dotenv()
 
+from syncup.auth.router import router as auth_router  # noqa: E402
 from syncup.config import Settings  # noqa: E402
+from syncup.db.session import sessionmaker_for  # noqa: E402
+from syncup.exceptions import SyncUpError  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
 
 logging.basicConfig(
@@ -27,17 +30,8 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Domain exceptions + error helpers
+# Error helpers (SyncUpError lives in syncup.exceptions)
 # ---------------------------------------------------------------------------
-
-class SyncUpError(Exception):
-    """Application-level error with a machine-readable code."""
-
-    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status_code = status_code
 
 
 _HTTP_STATUS_CODES: dict[int, str] = {
@@ -65,6 +59,12 @@ def _error_json(code: str, message: str, status_code: int) -> JSONResponse:
 async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
     settings = Settings()  # type: ignore[call-arg]
     app.state.settings = settings
+    app.state.db = sessionmaker_for(
+        settings.database_url,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_recycle=settings.db_pool_recycle,
+    )
     app.state.spotify = SpotifyClient(
         client_id=settings.spotify_client_id,
         redirect_uri=settings.spotify_redirect_uri,
@@ -189,3 +189,4 @@ def spotify_callback(
 
 
 app.include_router(router)
+app.include_router(auth_router)

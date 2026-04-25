@@ -11,7 +11,7 @@ default changes, both must move together and a migration must follow.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
@@ -40,9 +40,13 @@ def _uuid_pk() -> Mapped[uuid.UUID]:
     return mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
 
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
 def _created_at() -> Mapped[datetime]:
     return mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=func.now(), default=_now
     )
 
 
@@ -67,6 +71,7 @@ class User(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+        default=_now,
         onupdate=func.now(),
     )
 
