@@ -100,7 +100,10 @@ app.add_middleware(
 
 @app.exception_handler(RateLimitExceeded)
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    return _error_json("RATE_LIMITED", "Too many requests — please try again later.", 429)
+    response = _error_json("RATE_LIMITED", "Too many requests — please try again later.", 429)
+    if hasattr(exc, "headers") and exc.headers:
+        response.headers.update(exc.headers)
+    return response
 
 
 @app.exception_handler(SyncUpError)
