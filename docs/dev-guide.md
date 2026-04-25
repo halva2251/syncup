@@ -278,6 +278,71 @@ Tests use `httpx`'s mock transport — no live API calls, no network required.
 
 ---
 
+## Before you go to production — database checklist
+
+The current `docker-compose.yml` is intentionally minimal for local dev. Before deploying anywhere real, address all of these:
+
+### 1. Replace the superuser with a limited role
+
+`POSTGRES_USER=syncup` makes `syncup` a PostgreSQL superuser — it can drop tables, create roles, and modify the DB engine. The application doesn't need any of that.
+
+Fix: use a separate admin user to bootstrap, then create a least-privilege app role:
+
+```sql
+-- Run as the postgres superuser during provisioning
+CREATE USER syncup_app WITH PASSWORD 'strong-random-password';
+GRANT CONNECT ON DATABASE syncup TO syncup_app;
+GRANT USAGE ON SCHEMA public TO syncup_app;
+-- Grant only what the app actually needs
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO syncup_app;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO syncup_app;
+-- Ensure future tables get the same grants
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO syncup_app;
+```
+
+Then set `DATABASE_URL=postgresql://syncup_app:...@host:5432/syncup` in production.
+
+### 2. Never hardcode the DB password
+
+`POSTGRES_PASSWORD: syncup` in `docker-compose.yml` is a dev placeholder. For any real environment:
+
+- **Docker Swarm**: use Docker secrets (`secrets:` block in compose)
+- **Kubernetes**: use a Secret resource mounted as an env var
+- **Managed hosting (RDS, Cloud SQL, Supabase)**: use IAM auth or inject via the platform's secret manager
+- **Bare metal / VM**: inject via environment, not baked into the image
+
+### 3. Pin the image to a specific digest
+
+`pgvector/pgvector:pg18` is a floating tag — it will silently update when you `docker pull`. For production, pin to a specific digest:
+
+```bash
+# Get the current digest
+docker inspect --format='{{index .RepoDigests 0}}' pgvector/pgvector:pg18
+# e.g. pgvector/pgvector@sha256:abc123...
+```
+
+Then use that in your production compose or Kubernetes manifest:
+
+```yaml
+image: pgvector/pgvector@sha256:<digest>
+```
+
+Update the digest intentionally when you want to upgrade, not automatically on deploy.
+
+### 4. Other production hardening to add
+
+| Concern | What to do |
+|---------|-----------|
+| Connection pool limits | Set `max_connections` in PG config; tune `db_pool_size` in `Settings` to match |
+| Statement timeout | `ALTER SYSTEM SET statement_timeout = '30s';` — prevents runaway queries |
+| Idle transaction timeout | `ALTER SYSTEM SET idle_in_transaction_session_timeout = '30s';` |
+| Backups | `pg_dump` on a cron, or use managed DB backups (RDS automated backups, etc.) |
+| TLS | Enforce `sslmode=require` in `DATABASE_URL`; provision a cert |
+| Monitoring | Enable `pg_stat_statements` extension; point to Grafana or equivalent |
+
+---
+
 ## Local dev tips
 
 - Always use `http://127.0.0.1:3000` not `http://localhost:3000` — Spotify validates the redirect URI exactly, and cookies don't carry across the redirect if the host changes.
