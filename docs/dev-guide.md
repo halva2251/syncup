@@ -25,7 +25,14 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 |--------|------|-------------|
 | GET | `/api/health` | Returns `{"status": "ok", "version": "0.1.0"}` |
 | GET | `/api/auth/spotify` | Redirects to Spotify's authorize page (PKCE flow) |
-| GET | `/api/auth/spotify/callback` | Exchanges auth code for tokens, returns token metadata |
+| GET | `/api/auth/spotify/callback` | Exchanges auth code for tokens — **temporary**, returns JSON until DB wiring lands |
+| POST | `/api/auth/signup` | Create account with email + password; sets `syncup_session` cookie |
+| POST | `/api/auth/login` | Verify credentials; sets `syncup_session` cookie |
+| POST | `/api/auth/logout` | Invalidates session; always 204 |
+
+All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
+
+Rate limits: signup 5/min per IP, login 10/min per IP.
 
 The rest of the planned API surface is in [api-contract.md](api-contract.md).
 
@@ -126,12 +133,17 @@ Key tables:
 
 | Table | Purpose |
 |-------|---------|
-| `users` | App accounts (not per-service) |
-| `service_connections` | One row per (user, service) — stores encrypted OAuth tokens |
-| `items` | Games, artists, tracks — shared across users |
-| `user_item_interactions` | A user's relationship with an item (play count, rating, boost) |
-| `user_embeddings` | The aggregated taste vector per user per service |
-| `matches` | Cached match pairs with score and dimension breakdown |
+| `users` | App accounts — email/password or OAuth-linked |
+| `sessions` | Session tokens: one row per active login, expires_at indexed |
+| `auth_providers` | Social login links (provider + provider_user_id) |
+| `service_connections` | One row per (user, service) — stores encrypted OAuth tokens, sync status |
+| `items` | Games, artists, tracks — deduplicated across all users |
+| `user_items` | A user's engagement with an item (engagement_score, raw playtime/plays) |
+| `preference_overrides` | User-applied boost multipliers on specific items |
+| `manual_obsessions` | Freeform items a user adds that aren't from any service |
+| `user_dimension_weights` | Per-(user, service) weight for the matching score |
+| `user_embeddings` | The aggregated taste vector per (user, service), 128-dim pgvector |
+| `match_cache` | Cached match pairs with score + per-service breakdown JSONB |
 
 `items.embedding` is a `pgvector` column (128-dimensional by default). An IVFFlat index speeds up ANN search but only applies to non-null rows.
 
@@ -139,14 +151,20 @@ Key tables:
 
 ### Sessions (`session.py`)
 
-```python
-from syncup.db.session import get_session
+In FastAPI route handlers, use the `get_db` dependency — it pulls the session factory from `app.state.db` (set at startup) and handles rollback on exception:
 
-with get_session(session_factory) as session:
-    user = session.get(User, user_id)
-    session.commit()       # caller commits explicitly
-    # exception → auto-rollback
+```python
+from typing import Annotated
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from syncup.db.session import get_db
+
+def my_route(db: Annotated[Session, Depends(get_db)]) -> ...:
+    user = db.get(User, user_id)
+    db.commit()   # caller commits explicitly
 ```
+
+The lower-level `get_session(factory)` generator is available for scripts and one-off use outside of FastAPI.
 
 ### Migrations (Alembic)
 
@@ -233,12 +251,12 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 92 tests
+pytest                        # all 129 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
 
-Tests use `httpx`'s mock transport — no live API calls, no network required.
+Ingest client tests use `httpx`'s mock transport — no live API calls. Auth route tests use FastAPI's `TestClient` with `dependency_overrides` for the DB session (no real DB required). The DB schema test (`test_db_schema.py`) uses SQLAlchemy reflection against the live PostgreSQL container — make sure `docker compose up -d` is running.
 
 ---
 
@@ -246,35 +264,37 @@ Tests use `httpx`'s mock transport — no live API calls, no network required.
 
 ### Phase 1 — make the backend stateful
 
-1. **PostgreSQL setup** — provision the DB, run `alembic upgrade head`
-2. **Token encryption key** — generate `SYNCUP_TOKEN_ENCRYPTION_KEY`, add to `.env`
-3. **Session/user model** — cookie-based sessions, `POST /auth/register`, `POST /auth/login`
-4. **Service connect routes** — after Spotify OAuth callback succeeds, write encrypted tokens to `service_connections`
-5. **Sync routes** — `POST /sync/spotify`, `POST /sync/steam` — fetch data from service APIs and write to `user_item_interactions`
+1. ✅ **PostgreSQL setup** — provisioned via `docker compose up -d`, migration applied
+2. ✅ **Token encryption key** — `SYNCUP_TOKEN_ENCRYPTION_KEY` generated and in `.env`
+3. ✅ **Auth routes** — `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`; argon2id hashing, 30-day session cookies, `require_auth` FastAPI dependency
+4. **Fix Spotify callback** — currently returns JSON; should write encrypted tokens to `service_connections` and redirect to frontend
+5. **`GET /api/me`** — first protected route using `require_auth`; returns current user + service connection statuses
+6. **Steam/Last.fm connect routes** — clients exist and are tested; need FastAPI routes + DB writes to `service_connections`
+7. **Sync routes** — `POST /api/sync/spotify`, `/api/sync/steam`, `/api/sync/lastfm` — fetch data from service APIs and write to `user_items`
 
 ### Phase 2 — matching
 
-6. **Train Item2Vec** — use public datasets (Steam reviews, Million Song Dataset) or seed from real user data
-7. **Build user vectors** — `POST /embeddings/build` — run `UserEmbeddingBuilder` for a user and store in `user_embeddings`
-8. **Match endpoint** — `GET /matches` — cosine search over all user vectors, respecting dimension weights
-9. **Preference boost** — `PATCH /items/{id}/boost` — let a user increase an item's weight in their vector
+8. **Train Item2Vec** — use public datasets (Steam reviews, Million Song Dataset) or seed from real user data
+9. **Build user vectors** — `POST /api/embeddings/build` — run `build_user_vector()` for a user and store in `user_embeddings`
+10. **Match endpoint** — `GET /api/matches` — cosine search over all user vectors, respecting dimension weights
+11. **Preference boost** — `PATCH /api/items/{id}/boost` — let a user increase an item's weight in their vector
 
 ### Phase 3 — frontend
 
-10. **Next.js app** — profile page, "connect service" buttons (redirect to `/auth/spotify`), match feed
-11. **Match card** — show avatar, shared interests, compatibility score breakdown by service
-12. **Dimension sliders** — let users adjust `DimensionWeights` and see matches update
+12. **Next.js app** — profile page, "connect service" buttons (redirect to `/api/auth/spotify`), match feed
+13. **Match card** — show avatar, shared interests, compatibility score breakdown by service
+14. **Dimension sliders** — let users adjust per-service weights and see matches update
 
 ---
 
 ## Known gaps and sharp edges
 
-- **Spotify callback returns tokens to browser**: the callback endpoint currently returns raw token data as JSON. When the session layer lands, it should write encrypted tokens to `service_connections`, set a session cookie, and redirect to the frontend profile page.
-- **No rate limiting on routes**: production will need this (especially sync endpoints).
-- **Steam/Last.fm routes not wired**: the clients exist and are tested, but there are no FastAPI routes for them yet.
-- **Token refresh not automated**: access tokens expire in 1 hour. The refresh logic is in `SpotifyClient.refresh_access_token()` but nothing calls it automatically yet — a background task or middleware will need to handle this.
-- **No auth middleware**: any route that accesses user data needs to check the session and return 401 if unauthenticated.
-- **CORS origins are hardcoded**: `app.py` allows `127.0.0.1:3001` and `localhost:3001` (Next.js dev server). Update `CORSMiddleware` allow_origins for staging/production or drive it from `Settings.cors_allowed_origins`.
+- **Spotify callback returns tokens to browser**: the callback endpoint currently returns raw token data as JSON. Phase 1 step 4 will fix this — write encrypted tokens to `service_connections` and redirect to the frontend.
+- **Steam/Last.fm routes not wired**: the clients exist and are tested, but there are no FastAPI routes for them yet (Phase 1 step 6).
+- **Token refresh not automated**: Spotify access tokens expire in 1 hour. `SpotifyClient.refresh_access_token()` exists but nothing calls it — needs a background task or per-request check when tokens are used.
+- **Expired session cleanup**: `sessions.expires_at` is indexed but nothing deletes stale rows. Add a `pg_cron` job or a background task before production.
+- **CORS origins are hardcoded**: `app.py` allows `127.0.0.1:3001` and `localhost:3001`. Drive from `Settings.cors_allowed_origins` for staging/production.
+- **`SESSION_SECRET` not set**: `.env` has an empty `session_secret`. Generate before building any signed-cookie features.
 
 ---
 
