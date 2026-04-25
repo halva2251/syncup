@@ -16,11 +16,14 @@ from fastapi.routing import APIRouter
 
 load_dotenv()
 
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+
 from syncup.auth.router import router as auth_router  # noqa: E402
 from syncup.config import Settings  # noqa: E402
 from syncup.db.session import sessionmaker_for  # noqa: E402
 from syncup.exceptions import SyncUpError  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
+from syncup.limiter import limiter  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,6 +68,7 @@ async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
         max_overflow=settings.db_max_overflow,
         pool_recycle=settings.db_pool_recycle,
     )
+    app.state.limiter = limiter
     app.state.spotify = SpotifyClient(
         client_id=settings.spotify_client_id,
         redirect_uri=settings.spotify_redirect_uri,
@@ -93,6 +97,11 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Exception handlers — all errors return { "error": { "code", "message" } }
 # ---------------------------------------------------------------------------
+
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    return _error_json("RATE_LIMITED", "Too many requests — please try again later.", 429)
+
 
 @app.exception_handler(SyncUpError)
 async def _syncup_error_handler(request: Request, exc: SyncUpError) -> JSONResponse:

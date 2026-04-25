@@ -9,8 +9,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.auth.hashing import (
@@ -23,6 +24,7 @@ from syncup.db.models import Session as SessionRow
 from syncup.db.models import User
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
+from syncup.limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +44,24 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(min_length=1, max_length=100)
 
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, v: object) -> object:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, v: object) -> object:
+        if isinstance(v, str):
+            return v.strip().lower()
+        return v
 
 
 class UserOut(BaseModel):
@@ -89,9 +105,10 @@ def _set_session_cookie(response: Response, token: str, *, debug: bool) -> None:
 
 
 @router.post("/signup", status_code=201)
+@limiter.limit("5/minute")
 def signup(
-    body: SignupRequest,
     request: Request,
+    body: SignupRequest,
     db: Annotated[DbSession, Depends(get_db)],
 ) -> JSONResponse:
     """Create a new account and set a session cookie."""
@@ -114,21 +131,32 @@ def signup(
     db.flush()
 
     token = _make_session_token(user.id, db)
-    db.commit()
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        # Race condition: another request beat us to the same email between
+        # our pre-check and the INSERT.
+        raise SyncUpError(
+            "EMAIL_TAKEN", "An account with that email already exists", 409
+        ) from exc
 
     logger.info("New user signed up: %s", user.id)
 
     settings = request.app.state.settings
     user_data = UserOut.model_validate(user).model_dump(mode="json")
     response = JSONResponse({"user": user_data}, status_code=201)
+    response.headers["Location"] = "/api/me"
     _set_session_cookie(response, token, debug=settings.debug)
     return response
 
 
 @router.post("/login")
+@limiter.limit("10/minute")
 def login(
-    body: LoginRequest,
     request: Request,
+    body: LoginRequest,
     db: Annotated[DbSession, Depends(get_db)],
 ) -> JSONResponse:
     """Verify credentials and set a session cookie."""
@@ -149,7 +177,8 @@ def login(
     logger.info("User logged in: %s", user.id)
 
     settings = request.app.state.settings
-    response = JSONResponse({"user": UserOut.model_validate(user).model_dump(mode="json")})
+    user_data = UserOut.model_validate(user).model_dump(mode="json")
+    response = JSONResponse({"user": user_data})
     _set_session_cookie(response, token, debug=settings.debug)
     return response
 
@@ -185,7 +214,7 @@ def require_auth(
 
     Usage::
 
-        from syncup.auth.router import RequireAuth
+        from syncup.auth import RequireAuth
 
         @router.get("/me")
         def get_me(user: RequireAuth) -> ...:
@@ -196,7 +225,7 @@ def require_auth(
         raise SyncUpError("UNAUTHORIZED", "Authentication required", 401)
 
     session = db.get(SessionRow, token)
-    if session is None or session.expires_at.replace(tzinfo=UTC) < datetime.now(UTC):
+    if session is None or session.expires_at < datetime.now(UTC):
         raise SyncUpError("UNAUTHORIZED", "Session expired or invalid", 401)
 
     user = db.get(User, session.user_id)
