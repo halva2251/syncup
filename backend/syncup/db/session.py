@@ -12,9 +12,29 @@ from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 
-def sessionmaker_for(database_url: str) -> sessionmaker[Session]:
-    """Build a sessionmaker bound to a fresh engine for the given URL."""
-    engine: Engine = create_engine(database_url, pool_pre_ping=True, future=True)
+def sessionmaker_for(
+    database_url: str,
+    *,
+    pool_size: int = 5,
+    max_overflow: int = 10,
+    pool_recycle: int = 1800,
+) -> sessionmaker[Session]:
+    """Build a sessionmaker bound to a fresh engine for the given URL.
+
+    Args:
+        database_url: SQLAlchemy connection string.
+        pool_size: number of connections to keep open permanently.
+        max_overflow: connections above pool_size allowed under load.
+        pool_recycle: seconds after which idle connections are recycled;
+            prevents "server closed the connection unexpectedly" errors.
+    """
+    engine: Engine = create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_recycle=pool_recycle,
+    )
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

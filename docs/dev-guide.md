@@ -23,9 +23,9 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 
 | Method | Path | What it does |
 |--------|------|-------------|
-| GET | `/health` | Returns `{"status": "ok", "version": "0.1.0"}` |
-| GET | `/auth/spotify` | Redirects to Spotify's authorize page (PKCE flow) |
-| GET | `/auth/spotify/callback` | Exchanges auth code for tokens, returns token metadata |
+| GET | `/api/health` | Returns `{"status": "ok", "version": "0.1.0"}` |
+| GET | `/api/auth/spotify` | Redirects to Spotify's authorize page (PKCE flow) |
+| GET | `/api/auth/spotify/callback` | Exchanges auth code for tokens, returns token metadata |
 
 The rest of the planned API surface is in [api-contract.md](api-contract.md).
 
@@ -170,22 +170,21 @@ alembic upgrade head
 A Word2Vec model where "words" are item IDs and "sentences" are play sequences (games a user has played, or tracks a user has listened to). Items that appear together in many users' histories end up near each other in vector space.
 
 ```python
-from syncup.embeddings.item2vec import Item2VecConfig, Item2VecTrainer
+from pathlib import Path
+from syncup.embeddings.item2vec import TrainingConfig, Item2VecModel
 
-config = Item2VecConfig(vector_size=128, min_count=5, epochs=10)
-trainer = Item2VecTrainer(config)
+config = TrainingConfig(vector_size=128, min_count=5, epochs=10)
 
 # sequences: list of lists of item IDs (strings)
 # e.g. [["730", "570", "271590"], ["730", "4000"], ...]
-trainer.train(sequences)
+model = Item2VecModel.train(sequences, config)
 
-vec = trainer.get_vector("730")   # numpy array for CS2
-similar = trainer.most_similar("730", topn=10)
-trainer.save("path/to/model.bin")
+vec = model.vector("730")            # list[float] for CS2
+similar = model.most_similar("730", k=10)
+model.save(Path("path/to/model.bin"))
 
 # Later:
-trainer2 = Item2VecTrainer(config)
-trainer2.load("path/to/model.bin")
+model2 = Item2VecModel.load(Path("path/to/model.bin"))
 ```
 
 ### User embeddings (`user_embeddings.py`)
@@ -193,19 +192,18 @@ trainer2.load("path/to/model.bin")
 Takes a trained Item2Vec model + a user's item interactions and builds a single weighted-average vector for that user.
 
 ```python
-from syncup.embeddings.user_embeddings import UserEmbeddingBuilder
+from syncup.embeddings.user_embeddings import build_user_vector
 
-builder = UserEmbeddingBuilder(trainer)
+# item_id → engagement weight (playtime in minutes, play count, etc.)
+interactions = {
+    "730": 100.0,   # CS2, 100 hours
+    "570": 50.0,    # Dota 2, 50 hours
+}
 
-interactions = [
-    {"item_id": "730", "weight": 100.0},   # CS2, 100 hours
-    {"item_id": "570", "weight": 50.0},    # Dota 2, 50 hours
-]
-
-user_vec = builder.build(interactions)     # numpy array
+user_vec = build_user_vector(interactions, model)  # list[float], L2-normalised
 ```
 
-Weight is typically playtime (minutes) for games, play count for tracks, or the user's explicit boost value.
+Weight is typically playtime (minutes) for games, play count for tracks, or the user's explicit boost value. Weights are log1p-dampened internally so no single item dominates.
 
 ---
 
@@ -214,16 +212,19 @@ Weight is typically playtime (minutes) for games, play count for tracks, or the 
 Cosine similarity between user vectors, with optional per-service dimension weighting.
 
 ```python
-from syncup.matching.engine import MatchingEngine, DimensionWeights
+from syncup.matching.engine import UserProfile, match_score, rank_matches
 
-weights = DimensionWeights(spotify=0.7, steam=0.3, lastfm=0.0)
-engine = MatchingEngine(weights)
+profile_a = UserProfile(user_id="uuid-a", vectors={"steam": vec_a_steam, "spotify": vec_a_spotify})
+profile_b = UserProfile(user_id="uuid-b", vectors={"steam": vec_b_steam, "spotify": vec_b_spotify})
 
-score = engine.score(user_vec_a, user_vec_b)
+# per-service weights — renormalised automatically over shared services
+weights = {"steam": 0.3, "spotify": 0.7, "lastfm": 0.0}
+
+score = match_score(profile_a, profile_b, weights)
 # Returns float in [-1, 1]. Higher = more similar.
 
-matches = engine.rank_matches(target_vec, candidate_vecs)
-# Returns sorted list of (index, score) pairs
+top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
+# Returns list of (UserProfile, score) sorted highest-first.
 ```
 
 ---
@@ -268,12 +269,12 @@ Tests use `httpx`'s mock transport — no live API calls, no network required.
 
 ## Known gaps and sharp edges
 
-- **Port in api-contract.md**: doc says port 8000, server runs on 3000. Needs updating.
-- **Spotify callback returns tokens to browser**: the callback endpoint currently returns raw token data as JSON. When the session layer lands, it should write tokens to the DB instead and redirect to the profile page.
+- **Spotify callback returns tokens to browser**: the callback endpoint currently returns raw token data as JSON. When the session layer lands, it should write encrypted tokens to `service_connections`, set a session cookie, and redirect to the frontend profile page.
 - **No rate limiting on routes**: production will need this (especially sync endpoints).
 - **Steam/Last.fm routes not wired**: the clients exist and are tested, but there are no FastAPI routes for them yet.
 - **Token refresh not automated**: access tokens expire in 1 hour. The refresh logic is in `SpotifyClient.refresh_access_token()` but nothing calls it automatically yet — a background task or middleware will need to handle this.
 - **No auth middleware**: any route that accesses user data needs to check the session and return 401 if unauthenticated.
+- **CORS origins are hardcoded**: `app.py` allows `127.0.0.1:3001` and `localhost:3001` (Next.js dev server). Update `CORSMiddleware` allow_origins for staging/production or drive it from `Settings.cors_allowed_origins`.
 
 ---
 
