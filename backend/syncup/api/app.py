@@ -22,6 +22,7 @@ load_dotenv()
 
 from slowapi.errors import RateLimitExceeded  # noqa: E402
 
+from syncup.api.routes.connect import router as connect_router  # noqa: E402
 from syncup.api.routes.me import router as me_router  # noqa: E402
 from syncup.auth.router import require_auth  # noqa: E402
 from syncup.auth.router import router as auth_router  # noqa: E402
@@ -260,3 +261,4 @@ def spotify_callback(
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(me_router)
+app.include_router(connect_router)
