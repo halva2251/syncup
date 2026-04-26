@@ -263,30 +263,11 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 ---
 
-## What's missing (build order suggestion)
+## What to build next
 
-### Phase 1 — make the backend stateful
+See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-1. ✅ **PostgreSQL setup** — provisioned via `docker compose up -d`, migration applied
-2. ✅ **Token encryption key** — `SYNCUP_TOKEN_ENCRYPTION_KEY` generated and in `.env`
-3. ✅ **Auth routes** — `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`; argon2id hashing, 30-day session cookies, `require_auth` FastAPI dependency
-4. ✅ **Fix Spotify callback** — requires auth, AES-GCM encrypted tokens written to `service_connections`, redirects to `/`
-5. ✅ **`GET /api/me`** — returns current user + service connection statuses (service, sync_status, last_synced_at, token_expires_at, sync_error); no encrypted tokens exposed
-6. ✅ **Steam/Last.fm connect routes** — `POST /api/connect/steam` (steam_id or vanity_url) and `POST /api/connect/lastfm` (username); verify existence via API probe, upsert `service_connections`
-7. **Sync routes** — `POST /api/sync/spotify`, `/api/sync/steam`, `/api/sync/lastfm` — fetch data from service APIs and write to `user_items`
-
-### Phase 2 — matching
-
-8. **Train Item2Vec** — use public datasets (Steam reviews, Million Song Dataset) or seed from real user data
-9. **Build user vectors** — `POST /api/embeddings/build` — run `build_user_vector()` for a user and store in `user_embeddings`
-10. **Match endpoint** — `GET /api/matches` — cosine search over all user vectors, respecting dimension weights
-11. **Preference boost** — `PATCH /api/items/{id}/boost` — let a user increase an item's weight in their vector
-
-### Phase 3 — frontend
-
-12. **Next.js app** — profile page, "connect service" buttons (redirect to `/api/auth/spotify`), match feed
-13. **Match card** — show avatar, shared interests, compatibility score breakdown by service
-14. **Dimension sliders** — let users adjust per-service weights and see matches update
+The immediate next step is **Phase 1.1: Sync Routes** (`POST /api/sync/{service}`).
 
 ---
 

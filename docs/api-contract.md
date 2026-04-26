@@ -2,6 +2,8 @@
 
 REST + JSON. FastAPI backend on `http://127.0.0.1:3000`, Next.js frontend on `http://127.0.0.1:3001`.
 
+> **Path prefix:** all backend routes are served under `/api`. So `/me` in this document maps to `http://127.0.0.1:3000/api/me`. The prefix is omitted throughout for readability.
+
 This is a **sketch** to align frontend and backend work. Names/shapes will firm up when routes are actually implemented.
 
 ---
