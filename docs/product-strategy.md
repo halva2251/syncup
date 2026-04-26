@@ -214,11 +214,16 @@ Server mods will install this because it increases engagement. Users will sign u
 |---------|-------|
 | **SoundCloud** | Good for specific subcultures (SoundCloud rap, hyperpop, DJ mixes), but overlaps heavily with Spotify. |
 | **Twitch** (followed channels) | Strong signal for gaming/live culture overlap, but harder to extract meaningful embeddings from. |
+| **Tracker.gg** | Competitive game stats (Valorant, Rocket League, etc.) — niche but high-signal for the hardcore gamer segment. Priority if the user base skews competitive. |
 | **Strava** | For the outdoors/athletic crowd. "We both run 40km/week and listen to Drain while doing it" is a real match. |
 | **Pinterest** | Aesthetic boards are pure vibe, but the API is restricted and the user base skews differently. |
 | **Mastodon / Bluesky** | Following graph is interesting, but small user base and high privacy sensitivity. |
 | **Goodreads** | Book taste adds depth, though it correlates less cleanly with games/music than film does. StoryGraph is probably the better choice. |
 | **Netflix / streaming history** | Hard to access via API. Would be valuable if possible. |
+| **Reddit** (subreddit subscriptions) | Subreddit membership is surprisingly rich vibe data — someone subscribed to r/patientgamers, r/deathgrips, and r/dwarffortress is telling you exactly who they are. OAuth API is accessible but requires careful scoping for privacy. |
+| **IMDB** | Overlaps heavily with Letterboxd; Letterboxd users tend to be more engaged raters. Low priority. |
+| **GitHub** | Project interests could feed the activity feed layer, but the signal is too weak for taste-based matching. Revisit for the social/feed layer only. |
+| **PlayStation Network / Xbox Network** | Limited API access; worth exploring if the user base skews console. Not a priority over PC gaming (Steam has far better data). |
 
 ### Recommended MVP Set
 
@@ -340,6 +345,28 @@ GET /api/me/taste
 - **Viral loop:** Shareable cards bring in similar people organically
 - **Trust building:** Good recommendations prove the taste engine works before human matching launches
 - **Data flywheel:** Every user who connects services improves the recommendation quality for the next user
+
+---
+
+## Future Feature Ideas
+
+These came out of brainstorming and are worth tracking, but are deliberately deferred until the core matching loop is working.
+
+### Activity Feed
+
+Bridge activity from connected services into a social feed — "sam just scrobbled *Have a Nice Life* for the 200th time", "alex unlocked all achievements in *Hollow Knight*". This builds ambient awareness between matches without requiring in-app chat.
+
+The feed is a high-complexity feature that needs a strong user base to be useful. **Do not build until after the match feed is solid and being used.**
+
+### Tinder-Style Swipe Mode
+
+A swipe interface (yes/no) could work as a secondary match discovery mode on mobile. The argument for it: lower decision friction, familiar UX. The argument against: it frames the product as a dating app, which conflicts with the "find your people" positioning.
+
+Decision: build the scrollable feed first, evaluate swipe as an opt-in mobile mode after the first 500 users.
+
+### Recommendations on the Taste Card
+
+The taste card eventually doubles as a **discovery engine** — *"Because you love Disco Elysium, try Kentucky Route Zero."* See the full design in the [Taste Card & Discovery Engine](#taste-card--discovery-engine) section above.
 
 ---
 
