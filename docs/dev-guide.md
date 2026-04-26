@@ -29,7 +29,7 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | POST | `/api/auth/signup` | Create account with email + password; sets `syncup_session` cookie |
 | POST | `/api/auth/login` | Verify credentials; sets `syncup_session` cookie |
 | POST | `/api/auth/logout` | Invalidates session; always 204 |
-| GET | `/api/me` | Current user profile + service connection statuses; requires auth |
+| GET | `/api/me` | Current user + service connections; requires auth. Returns `{user: {...}, connections: [...]}` |
 | POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
 | POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
 
@@ -254,7 +254,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 129 tests
+pytest                        # all 154 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -276,7 +276,7 @@ The immediate next step is **Phase 1.1: Sync Routes** (`POST /api/sync/{service}
 - **Token refresh not automated**: Spotify access tokens expire in 1 hour. `SpotifyClient.refresh_access_token()` exists but nothing calls it automatically — needs a per-request check when tokens are used by sync routes.
 - **Sync routes not yet built**: `POST /api/sync/{spotify,steam,lastfm}` — fetch data from connected services and write to `user_items` (Phase 1 step 7).
 - **Expired session cleanup**: `sessions.expires_at` is indexed but nothing deletes stale rows. Add a `pg_cron` job or a background task before production.
-- **CORS origins are hardcoded**: `app.py` allows `127.0.0.1:3001` and `localhost:3001`. Drive from `Settings.cors_allowed_origins` for staging/production.
+- **CORS origins are hardcoded in `app.py`**: `Settings.cors_allowed_origins` already exists in `config.py` (overridable via env), but `app.py` still passes a hardcoded list to `CORSMiddleware` instead of reading from settings. Fix before any non-local deployment.
 - **`SESSION_SECRET` not set**: `.env` has an empty `session_secret`. Generate before building any signed-cookie features.
 
 ---

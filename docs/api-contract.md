@@ -4,7 +4,7 @@ REST + JSON. FastAPI backend on `http://127.0.0.1:3000`, Next.js frontend on `ht
 
 > **Path prefix:** all backend routes are served under `/api`. So `/me` in this document maps to `http://127.0.0.1:3000/api/me`. The prefix is omitted throughout for readability.
 
-This is a **sketch** to align frontend and backend work. Names/shapes will firm up when routes are actually implemented.
+Routes are marked **Live** (implemented) or **Sketch** (planned, shape may change).
 
 ---
 
@@ -24,7 +24,7 @@ This is a **sketch** to align frontend and backend work. Names/shapes will firm 
 
 ---
 
-## 1. Auth
+## 1. Auth — Live ✅
 
 ### `POST /auth/signup`
 Email/password signup.
@@ -61,33 +61,46 @@ Clears session. Returns 204.
 
 ## 2. Current user
 
-### `GET /me`
+### `GET /me` — Live ✅
+
+**Live** — returns a nested envelope:
 ```json
 {
-  "id": "uuid",
-  "email": "me@example.com",
-  "display_name": "alex",
-  "avatar_url": "https://...",
-  "bio": "slow games, slow music",
-  "discord_handle": "alex#1234",
-  "is_matchable": false,
-  "onboarded": true,
+  "user": {
+    "id": "uuid",
+    "email": "me@example.com",
+    "display_name": "alex",
+    "is_matchable": false,
+    "onboarded": true,
+    "created_at": "2026-04-21T12:00:00Z"
+  },
   "connections": [
-    { "service": "steam",   "status": "ok",      "last_synced_at": "..." },
-    { "service": "lastfm",  "status": "syncing", "last_synced_at": null  }
+    {
+      "service": "steam",
+      "external_user_id": "76561198...",
+      "sync_status": "ok",
+      "last_synced_at": "...",
+      "token_expires_at": null,
+      "sync_error": null
+    }
   ]
 }
 ```
 
-### `PATCH /me`
+> `avatar_url`, `bio`, and `discord_handle` are in the `users` table but not yet in `UserOut`. They'll be exposed once `PATCH /me` is built.
+```
+
+### `PATCH /me` — Sketch
 Fields: `display_name`, `bio`, `discord_handle`, `is_matchable`, `avatar_url`.
 
-### `DELETE /me`
+### `DELETE /me` — Sketch
 Hard-delete; cascades to all user data.
 
 ---
 
-## 3. Service connections
+## 3. Service connections — Sketch
+
+### `POST /connect/steam` and `POST /connect/lastfm` are **Live ✅** (at `/api/connect/steam`, `/api/connect/lastfm`). The `/me/connections/*` sub-routes below are planned.
 
 ### `GET /me/connections`
 Same shape as `connections` in `/me`.
@@ -107,7 +120,7 @@ Triggers a fresh pull. Returns `{ "status": "syncing" }`; actual work runs in ba
 
 ---
 
-## 4. Taste profile
+## 4. Taste profile — Sketch
 
 ### `GET /me/taste`
 Aggregated view:
@@ -149,7 +162,7 @@ Paginated raw items for a service/type.
 
 ---
 
-## 5. Dimension weights
+## 5. Dimension weights — Sketch
 
 ### `GET /me/dimensions`
 ```json
@@ -167,7 +180,7 @@ Send the full weights object. Backend normalises to sum to 1.0.
 
 ---
 
-## 6. Matches
+## 6. Matches — Sketch
 
 **Preconditions for any `/matches` endpoint:**
 - `is_matchable = true`
@@ -208,7 +221,7 @@ Forces re-compute of the user's embedding and invalidates their cached matches. 
 
 ---
 
-## 7. Onboarding helpers
+## 7. Onboarding helpers — Sketch
 
 ### `GET /onboarding/status`
 What the user still needs to do before becoming matchable.
