@@ -132,3 +132,12 @@ class SpotifyClient:
         )
         resp.raise_for_status()
         return resp.json()["items"]  # type: ignore[no-any-return]
+
+    def fetch_me(self, access_token: str) -> dict:  # type: ignore[type-arg]
+        """Return the current user's Spotify profile (includes ``id``)."""
+        resp = self.http.get(
+            f"{_API_BASE}/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
