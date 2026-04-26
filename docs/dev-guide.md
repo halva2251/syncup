@@ -25,10 +25,11 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 |--------|------|-------------|
 | GET | `/api/health` | Returns `{"status": "ok", "version": "0.1.0"}` |
 | GET | `/api/auth/spotify` | Redirects to Spotify's authorize page (PKCE flow) |
-| GET | `/api/auth/spotify/callback` | Exchanges auth code for tokens — **temporary**, returns JSON until DB wiring lands |
+| GET | `/api/auth/spotify/callback` | Completes Spotify OAuth: requires auth, encrypts tokens, writes `service_connections`, redirects to `/` |
 | POST | `/api/auth/signup` | Create account with email + password; sets `syncup_session` cookie |
 | POST | `/api/auth/login` | Verify credentials; sets `syncup_session` cookie |
 | POST | `/api/auth/logout` | Invalidates session; always 204 |
+| GET | `/api/me` | Current user profile + service connection statuses; requires auth |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 
@@ -267,8 +268,8 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 1. ✅ **PostgreSQL setup** — provisioned via `docker compose up -d`, migration applied
 2. ✅ **Token encryption key** — `SYNCUP_TOKEN_ENCRYPTION_KEY` generated and in `.env`
 3. ✅ **Auth routes** — `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`; argon2id hashing, 30-day session cookies, `require_auth` FastAPI dependency
-4. **Fix Spotify callback** — currently returns JSON; should write encrypted tokens to `service_connections` and redirect to frontend
-5. **`GET /api/me`** — first protected route using `require_auth`; returns current user + service connection statuses
+4. ✅ **Fix Spotify callback** — requires auth, AES-GCM encrypted tokens written to `service_connections`, redirects to `/`
+5. ✅ **`GET /api/me`** — returns current user + service connection statuses (service, sync_status, last_synced_at, token_expires_at, sync_error); no encrypted tokens exposed
 6. **Steam/Last.fm connect routes** — clients exist and are tested; need FastAPI routes + DB writes to `service_connections`
 7. **Sync routes** — `POST /api/sync/spotify`, `/api/sync/steam`, `/api/sync/lastfm` — fetch data from service APIs and write to `user_items`
 
@@ -289,9 +290,8 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 ## Known gaps and sharp edges
 
-- **Spotify callback returns tokens to browser**: the callback endpoint currently returns raw token data as JSON. Phase 1 step 4 will fix this — write encrypted tokens to `service_connections` and redirect to the frontend.
+- **Token refresh not automated**: Spotify access tokens expire in 1 hour. `SpotifyClient.refresh_access_token()` exists but nothing calls it automatically — needs a per-request check when tokens are used by sync routes.
 - **Steam/Last.fm routes not wired**: the clients exist and are tested, but there are no FastAPI routes for them yet (Phase 1 step 6).
-- **Token refresh not automated**: Spotify access tokens expire in 1 hour. `SpotifyClient.refresh_access_token()` exists but nothing calls it — needs a background task or per-request check when tokens are used.
 - **Expired session cleanup**: `sessions.expires_at` is indexed but nothing deletes stale rows. Add a `pg_cron` job or a background task before production.
 - **CORS origins are hardcoded**: `app.py` allows `127.0.0.1:3001` and `localhost:3001`. Drive from `Settings.cors_allowed_origins` for staging/production.
 - **`SESSION_SECRET` not set**: `.env` has an empty `session_secret`. Generate before building any signed-cookie features.
