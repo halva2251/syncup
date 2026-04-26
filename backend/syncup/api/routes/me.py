@@ -1,30 +1,19 @@
 """GET /api/me — current user profile and service connections."""
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
+from syncup.api.schemas import ServiceConnectionOut
 from syncup.auth.router import RequireAuth, UserOut
 from syncup.db.models import ServiceConnection
 from syncup.db.session import get_db
 
 router = APIRouter(prefix="/api", tags=["users"])
-
-
-class ServiceConnectionOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    service: str
-    external_user_id: str
-    sync_status: str
-    last_synced_at: datetime | None
-    token_expires_at: datetime | None
-    sync_error: str | None
 
 
 class MeOut(BaseModel):

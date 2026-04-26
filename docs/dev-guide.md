@@ -30,6 +30,8 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | POST | `/api/auth/login` | Verify credentials; sets `syncup_session` cookie |
 | POST | `/api/auth/logout` | Invalidates session; always 204 |
 | GET | `/api/me` | Current user profile + service connection statuses; requires auth |
+| POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
+| POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 
@@ -270,7 +272,7 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 3. ✅ **Auth routes** — `POST /api/auth/signup`, `POST /api/auth/login`, `POST /api/auth/logout`; argon2id hashing, 30-day session cookies, `require_auth` FastAPI dependency
 4. ✅ **Fix Spotify callback** — requires auth, AES-GCM encrypted tokens written to `service_connections`, redirects to `/`
 5. ✅ **`GET /api/me`** — returns current user + service connection statuses (service, sync_status, last_synced_at, token_expires_at, sync_error); no encrypted tokens exposed
-6. **Steam/Last.fm connect routes** — clients exist and are tested; need FastAPI routes + DB writes to `service_connections`
+6. ✅ **Steam/Last.fm connect routes** — `POST /api/connect/steam` (steam_id or vanity_url) and `POST /api/connect/lastfm` (username); verify existence via API probe, upsert `service_connections`
 7. **Sync routes** — `POST /api/sync/spotify`, `/api/sync/steam`, `/api/sync/lastfm` — fetch data from service APIs and write to `user_items`
 
 ### Phase 2 — matching
@@ -291,7 +293,7 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 ## Known gaps and sharp edges
 
 - **Token refresh not automated**: Spotify access tokens expire in 1 hour. `SpotifyClient.refresh_access_token()` exists but nothing calls it automatically — needs a per-request check when tokens are used by sync routes.
-- **Steam/Last.fm routes not wired**: the clients exist and are tested, but there are no FastAPI routes for them yet (Phase 1 step 6).
+- **Sync routes not yet built**: `POST /api/sync/{spotify,steam,lastfm}` — fetch data from connected services and write to `user_items` (Phase 1 step 7).
 - **Expired session cleanup**: `sessions.expires_at` is indexed but nothing deletes stale rows. Add a `pg_cron` job or a background task before production.
 - **CORS origins are hardcoded**: `app.py` allows `127.0.0.1:3001` and `localhost:3001`. Drive from `Settings.cors_allowed_origins` for staging/production.
 - **`SESSION_SECRET` not set**: `.env` has an empty `session_secret`. Generate before building any signed-cookie features.

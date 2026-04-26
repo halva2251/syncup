@@ -19,6 +19,15 @@ class LastfmClient:
         default_factory=lambda: httpx.Client(timeout=httpx.Timeout(10.0)), repr=False
     )
 
+    def close(self) -> None:
+        self.http.close()
+
+    def __enter__(self) -> LastfmClient:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
     def _validate_period(self, period: str) -> None:
         if period not in _VALID_PERIODS:
             valid = sorted(_VALID_PERIODS)
