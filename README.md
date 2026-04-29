@@ -14,17 +14,22 @@ Connect Steam, Last.fm, and Spotify. A cross-domain embedding model learns what 
 | Steam API client | done | owned games, player summary, vanity URL resolution |
 | Last.fm API client | done | top artists, top tracks with period filtering |
 | AES-GCM token encryption | done | for storing OAuth tokens at rest |
-| SQLAlchemy schema + Alembic migration | done | full schema: users, items, embeddings, matches |
+| SQLAlchemy schema + Alembic migrations | done | full schema: users, items, embeddings, matches |
 | Item2Vec embedding model | done | gensim Word2Vec wrapper, train from play sequences |
 | User taste vectors | done | weighted average of item embeddings |
 | Matching engine | done | cosine similarity with per-service dimension weights |
-| FastAPI app | done | `/health`, `/auth/spotify`, `/auth/spotify/callback` |
-| Swagger UI | done | live at `http://127.0.0.1:3000/docs` |
-| Tests | done | 92 tests across all modules |
-| Frontend | not started | Next.js placeholder only |
-| Steam/Last.fm API routes | not started | clients exist, routes not wired |
-| User sessions / DB-backed auth | not started | |
-| PostgreSQL provisioned | not started | schema is ready, DB hasn't been created |
+| Auth routes | done | signup, login, logout, session-based auth |
+| Service connect routes | done | Steam (steam_id/vanity), Last.fm, Spotify OAuth |
+| Sync routes | done | `POST /api/sync/{service}` — background data pull |
+| Taste profile endpoint | done | `GET /api/me/taste` — top items per service |
+| Manual obsessions | done | `GET/POST/DELETE /api/me/obsessions` |
+| Rate limiting | done | per-endpoint limits on all write routes |
+| PostgreSQL + Docker | done | `docker compose up -d` in `backend/` |
+| 215 passing tests | done | |
+| Preference overrides | in progress | Phase 1.4 |
+| Dimension weights, profile edit | next | Phases 1.5–1.6 |
+| Frontend | not started | Next.js — Phase 3 |
+| ML matching engine | not started | Phase 2 — needs Item2Vec training on public datasets |
 
 ---
 
@@ -86,15 +91,13 @@ python -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(32
 
 See [docs/api-keys.md](docs/api-keys.md) for how to register each service and get its credentials.
 
-### 4. Provision PostgreSQL
+### 4. Start PostgreSQL and run migrations
 
 ```bash
-# Create the database (one-time)
-psql -U postgres -c "CREATE USER syncup WITH PASSWORD 'syncup';"
-psql -U postgres -c "CREATE DATABASE syncup OWNER syncup;"
+# Start the DB container (from backend/)
+docker compose up -d
 
 # Run migrations
-cd backend
 alembic upgrade head
 ```
 
@@ -168,9 +171,11 @@ syncup/
 ## Docs
 
 - [docs/api-keys.md](docs/api-keys.md) — how to register each service and get credentials
-- [docs/api-contract.md](docs/api-contract.md) — planned API surface (routes, request/response shapes)
+- [docs/api-contract.md](docs/api-contract.md) — API surface: routes, request/response shapes
 - [docs/db-schema.md](docs/db-schema.md) — full database schema
 - [docs/dev-guide.md](docs/dev-guide.md) — internals, design decisions, what to build next
+- [docs/roadmap.md](docs/roadmap.md) — phased build plan and current status
+- [docs/product-strategy.md](docs/product-strategy.md) — cold start strategy, positioning, target user
 
 ---
 

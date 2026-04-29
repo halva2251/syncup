@@ -25,7 +25,8 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | Rate limiting (signup 5/min, login 10/min) | `syncup/limiter.py` |
 | `POST /api/sync/{service}` — background data pull (Steam, Spotify, Last.fm) | `syncup/api/routes/sync.py` |
 | `GET /api/me/taste` — aggregated taste profile (top items, obsessions, overrides) | `syncup/api/routes/taste.py` |
-| 197 passing tests | `backend/tests/` |
+| `GET/POST/DELETE /api/me/obsessions` — manual taste entries | `syncup/api/routes/obsessions.py` |
+| 215 passing tests | `backend/tests/` |
 
 ---
 
