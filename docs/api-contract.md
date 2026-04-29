@@ -128,7 +128,7 @@ Aggregated view:
 {
   "services": {
     "steam":   { "top_games":   [{ "id": "...", "name": "Disco Elysium", "hours": 50 }, ...] },
-    "lastfm":  { "top_artists": [...], "top_tags": ["post-punk", "shoegaze"] },
+    "lastfm":  { "top_artists": [...], "top_tags": [] },   // top_tags not yet synced — placeholder for later
     "spotify": { "top_artists": [...], "top_tracks": [...] }
   },
   "manual_obsessions": [
@@ -162,7 +162,37 @@ Paginated raw items for a service/type.
 
 ---
 
-## 5. Dimension weights — Sketch
+## 5. Recommendations — Sketch
+
+> **Archetype** (`label`, `description`) is deferred until after Item2Vec training. The taste card will ship without it initially.
+
+### `GET /me/recommendations`
+Service-native recommendations based on the user's top items. No ML required — uses each service's own similarity API. Returns per-service suggestions filtered to items the user doesn't already have.
+
+```json
+{
+  "lastfm": [
+    { "name": "Have a Nice Life", "type": "artist", "reason": "Similar to Grouper" },
+    { "name": "Grouper",          "type": "artist", "reason": "Similar to Planning for Burial" }
+  ],
+  "spotify": [
+    { "name": "Grouper",          "type": "artist", "reason": "Matches your listening profile" },
+    { "name": "The Caretaker",    "type": "artist", "reason": "Matches your listening profile" }
+  ],
+  "steam": null
+}
+```
+
+**Implementation notes:**
+- **Last.fm:** call `artist.getSimilar` for each top artist, deduplicate, filter out items already in `user_items`
+- **Spotify:** call `GET /recommendations` with seed artists + seed tracks from user's top items
+- **Steam:** no native similarity API — skip for now, return `null`. Revisit once we store game tags in `items.metadata`
+
+`steam: null` means not available yet — client should handle gracefully.
+
+---
+
+## 6. Dimension weights — Sketch
 
 ### `GET /me/dimensions`
 ```json
@@ -180,7 +210,7 @@ Send the full weights object. Backend normalises to sum to 1.0.
 
 ---
 
-## 6. Matches — Sketch
+## 7. Matches — Sketch
 
 **Preconditions for any `/matches` endpoint:**
 - `is_matchable = true`
@@ -221,7 +251,7 @@ Forces re-compute of the user's embedding and invalidates their cached matches. 
 
 ---
 
-## 7. Onboarding helpers — Sketch
+## 8. Onboarding helpers — Sketch
 
 ### `GET /onboarding/status`
 What the user still needs to do before becoming matchable.
