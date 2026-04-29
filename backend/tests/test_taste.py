@@ -342,6 +342,43 @@ def test_taste_limits_to_top_20_per_item_type(
     assert len(games) == 20
 
 
+def test_taste_top_20_limit_is_per_group_not_global(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    steam_rows = [
+        _taste_row(
+            "steam", "game", f"Game {i}", external_id=f"g{i}", engagement_score=1.0 - i * 0.01
+        )
+        for i in range(25)
+    ]
+    spotify_rows = [
+        _taste_row(
+            "spotify", "artist", f"Artist {i}", external_id=f"a{i}", engagement_score=0.5 - i * 0.01
+        )
+        for i in range(25)
+    ]
+    _set_execute_results(mock_db, steam_rows + spotify_rows)
+
+    resp = taste_client.get("/api/me/taste")
+    services = resp.json()["services"]
+    assert len(services["steam"]["top_games"]) == 20
+    assert len(services["spotify"]["top_artists"]) == 20
+
+
+def test_taste_ignores_unknown_service_item_type_combinations(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    known_row = _taste_row("steam", "game", "Half-Life 2", engagement_score=0.9)
+    unknown_row = _taste_row("letterboxd", "film", "Stalker", engagement_score=0.8)
+    _set_execute_results(mock_db, [known_row, unknown_row])
+
+    resp = taste_client.get("/api/me/taste")
+    assert resp.status_code == 200
+    services = resp.json()["services"]
+    assert "steam" in services
+    assert "letterboxd" not in services
+
+
 # ---------------------------------------------------------------------------
 # Manual obsessions
 # ---------------------------------------------------------------------------
