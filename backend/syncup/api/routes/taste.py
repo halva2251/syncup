@@ -5,7 +5,7 @@ import uuid
 from collections import defaultdict
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session as DbSession
 from syncup.auth.router import RequireAuth
 from syncup.db.models import Item, ManualObsession, PreferenceOverride, UserItem
 from syncup.db.session import get_db
+from syncup.limiter import limiter
 
 router = APIRouter(prefix="/api/me", tags=["taste"])
 
@@ -162,7 +163,9 @@ _CONVERTERS: dict[tuple[str, str], Any] = {
 
 
 @router.get("/taste", response_model=TasteOut, response_model_exclude_none=True)
+@limiter.limit("30/minute")
 def get_taste(
+    request: Request,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> TasteOut:
