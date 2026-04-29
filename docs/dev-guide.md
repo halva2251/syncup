@@ -32,10 +32,12 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | GET | `/api/me` | Current user + service connections; requires auth. Returns `{user: {...}, connections: [...]}` |
 | POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
 | POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
+| POST | `/api/sync/{service}` | Trigger background data pull for `spotify`, `steam`, or `lastfm`; requires auth. Returns `{"status": "syncing"}` immediately. |
+| GET | `/api/me/taste` | Aggregated taste profile (top items per service, obsessions, overrides); requires auth. Empty services are omitted from the response. |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 
-Rate limits: signup 5/min per IP, login 10/min per IP.
+Rate limits: signup 5/min, login 10/min, sync 5/min, taste 30/min (all per IP).
 
 The rest of the planned API surface is in [api-contract.md](api-contract.md).
 
@@ -254,7 +256,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 154 tests
+pytest                        # all 197 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -267,14 +269,12 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-The immediate next step is **Phase 1.1: Sync Routes** (`POST /api/sync/{service}`).
+The immediate next step is **Phase 1.3: Manual Obsessions** (`POST/GET/DELETE /api/me/obsessions`).
 
 ---
 
 ## Known gaps and sharp edges
 
-- **Token refresh not automated**: Spotify access tokens expire in 1 hour. `SpotifyClient.refresh_access_token()` exists but nothing calls it automatically — needs a per-request check when tokens are used by sync routes.
-- **Sync routes not yet built**: `POST /api/sync/{spotify,steam,lastfm}` — fetch data from connected services and write to `user_items` (Phase 1 step 7).
 - **Expired session cleanup**: `sessions.expires_at` is indexed but nothing deletes stale rows. Add a `pg_cron` job or a background task before production.
 - **CORS origins are hardcoded in `app.py`**: `Settings.cors_allowed_origins` already exists in `config.py` (overridable via env), but `app.py` still passes a hardcoded list to `CORSMiddleware` instead of reading from settings. Fix before any non-local deployment.
 - **`SESSION_SECRET` not set**: `.env` has an empty `session_secret`. Generate before building any signed-cookie features.
