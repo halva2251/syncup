@@ -25,6 +25,7 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 from syncup.api.routes.connect import router as connect_router  # noqa: E402
 from syncup.api.routes.me import router as me_router  # noqa: E402
 from syncup.api.routes.sync import router as sync_router  # noqa: E402
+from syncup.api.routes.taste import router as taste_router  # noqa: E402
 from syncup.auth.router import require_auth  # noqa: E402
 from syncup.auth.router import router as auth_router  # noqa: E402
 from syncup.config import Settings  # noqa: E402
@@ -264,3 +265,4 @@ app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(connect_router)
 app.include_router(sync_router)
+app.include_router(taste_router)
