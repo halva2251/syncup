@@ -256,7 +256,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 197 tests
+pytest                        # all 215 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -269,7 +269,7 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-The immediate next step is **Phase 1.3: Manual Obsessions** (`POST/GET/DELETE /api/me/obsessions`).
+The immediate next step is **Phase 1.4: Preference Overrides** (`POST/PATCH/DELETE /api/me/overrides`).
 
 ---
 
