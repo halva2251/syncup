@@ -294,7 +294,13 @@ class ManualObsession(Base):
     user: Mapped[User] = relationship(back_populates="manual_obsessions")
     item: Mapped[Item | None] = relationship(back_populates="manual_obsessions")
 
-    __table_args__ = (Index("idx_obsessions_user", "user_id"),)
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('game', 'music', 'film', 'book', 'show', 'other')",
+            name="ck_obsession_category_values",
+        ),
+        Index("idx_obsessions_user", "user_id"),
+    )
 
 
 class UserDimensionWeight(Base):

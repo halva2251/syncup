@@ -133,6 +133,20 @@ def test_list_obsessions_returns_items(obs_client: TestClient, mock_db: MagicMoc
     assert "created_at" in items[0]
 
 
+def test_list_obsessions_ordered_newest_first(
+    obs_client: TestClient, mock_db: MagicMock
+) -> None:
+    older = _make_obsession(name="Older", created_at=datetime(2025, 1, 1, tzinfo=UTC))
+    newer = _make_obsession(name="Newer", created_at=datetime(2025, 1, 2, tzinfo=UTC))
+    # DB returns DESC order (newest first) — verify route preserves it
+    mock_db.scalars.return_value.all.return_value = [newer, older]
+
+    resp = obs_client.get("/api/me/obsessions")
+    items = resp.json()
+    assert items[0]["name"] == "Newer"
+    assert items[1]["name"] == "Older"
+
+
 # ---------------------------------------------------------------------------
 # POST /api/me/obsessions
 # ---------------------------------------------------------------------------
@@ -188,6 +202,29 @@ def test_create_obsession_negative_weight_returns_422(obs_client: TestClient) ->
     resp = obs_client.post(
         "/api/me/obsessions",
         json={"category": "game", "name": "Disco Elysium", "weight": -1.0},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_obsession_minimum_positive_weight_accepted(obs_client: TestClient) -> None:
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={"category": "game", "name": "Disco Elysium", "weight": 0.001},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["weight"] == pytest.approx(0.001)
+
+
+def test_create_obsession_name_at_max_length_accepted(obs_client: TestClient) -> None:
+    resp = obs_client.post(
+        "/api/me/obsessions", json={"category": "other", "name": "x" * 200}
+    )
+    assert resp.status_code == 201
+
+
+def test_create_obsession_name_over_max_length_returns_422(obs_client: TestClient) -> None:
+    resp = obs_client.post(
+        "/api/me/obsessions", json={"category": "other", "name": "x" * 201}
     )
     assert resp.status_code == 422
 
