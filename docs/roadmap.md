@@ -23,7 +23,9 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | User embedding builder | `syncup/embeddings/user_embeddings.py` |
 | Cosine similarity matching engine | `syncup/matching/engine.py` |
 | Rate limiting (signup 5/min, login 10/min) | `syncup/limiter.py` |
-| 129 passing tests | `backend/tests/` |
+| `POST /api/sync/{service}` — background data pull (Steam, Spotify, Last.fm) | `syncup/api/routes/sync.py` |
+| `GET /api/me/taste` — aggregated taste profile (top items, obsessions, overrides) | `syncup/api/routes/taste.py` |
+| 197 passing tests | `backend/tests/` |
 
 ---
 
@@ -92,15 +94,21 @@ These feed directly into the user's match profile and lower the matchability thr
 4. Connect your services
 5. Review your taste card → set `is_matchable = true`
 
----
+### 1.8 Recommendations Endpoint
 
-## Phase 2 — Matching Engine
+`GET /api/me/recommendations` — service-native recommendations based on the user's top items. No ML required.
 
-**Goal:** users can see matches. Heuristic matching first; ML embeddings follow once there's enough data.
+- **Last.fm:** `artist.getSimilar` for each top artist → deduplicate → filter out already-known items
+- **Spotify:** `GET /recommendations` with seed artists + seed tracks
+- **Steam:** no native similarity API — return `null` for now
 
-### 2.1 Heuristic Matcher (launch day fallback)
+Separate from `GET /me/taste` deliberately: keeps the taste card fast and resilient if an upstream API is slow or down.
 
-Before any model training, use item overlap weighted by rarity:
+> **Archetype** (`label`, `description`) is deferred until after Item2Vec training (Phase 3). The taste card ships without it. See [api-contract.md §5](api-contract.md) for the pinned spec.
+
+### 1.9 Heuristic Matcher
+
+**Build this before the ML pipeline.** It's ~20 lines, requires no training, and produces better early matches than a poorly-trained model. Use it as the live matching engine until Item2Vec embeddings are ready.
 
 ```python
 def match_score_heuristic(user_a_items, user_b_items, item_popularity):
@@ -111,14 +119,32 @@ def match_score_heuristic(user_a_items, user_b_items, item_popularity):
     return normalize(score)
 ```
 
-Niche overlap (both love *Disco Elysium*) scores higher than mainstream overlap (both have *CS2*). This produces better early matches than a poorly-trained model.
+Niche overlap (both love *Disco Elysium*) scores higher than mainstream overlap (both have *CS2*).
 
-Phase transitions:
+Phase transitions (when to switch):
 - **0–100 users:** heuristic only
 - **100–1,000:** heuristic + Item2Vec on public datasets
 - **1,000+:** co-occurrence-trained embeddings from real user data
 
-### 2.2 Train Item2Vec on Public Datasets
+---
+
+## ⚠️ Phase ordering note
+
+**Build Phase 3.1–3.5 (frontend setup → taste card) before or in parallel with Phase 2.** The taste card is the cold-start product — it gives users value and drives organic sharing before any matches exist. The matching engine (Phase 2) is blocked on training data and can run in parallel. Don't wait for Phase 2 to finish before shipping the taste card.
+
+See [product-strategy.md §Phase 0](product-strategy.md) for the rationale.
+
+---
+
+## Phase 2 — Matching Engine (ML)
+
+**Goal:** replace the heuristic matcher with learned embeddings once there's enough data.
+
+> **Hard gate:** Phase 2.2–2.4 are blocked until Item2Vec training is complete (2.1). Training requires downloading public datasets, running training scripts offline, and populating `items.embedding` in the database. This is hours-to-days of work, not a route to implement. Plan accordingly.
+
+> **Trigger gap:** Currently, syncing a service does NOT automatically trigger user embedding computation. `POST /api/embeddings/build` (2.3) must be called explicitly after sync. Decide whether to trigger it automatically post-sync before building the match endpoint.
+
+### 2.1 Train Item2Vec on Public Datasets
 
 Public datasets to start with:
 - **Steam:** [Steam review dataset](https://cseweb.ucsd.edu/~jmcauley/datasets.html#steam_data) — play sequences per user
@@ -128,13 +154,13 @@ Training produces item vectors (128-dim). These feed into `user_embeddings` via 
 
 The training script does not need to be a FastAPI route — a one-off `python train_item2vec.py` is fine.
 
-### 2.3 Build User Embedding Endpoint
+### 2.2 Build User Embedding Endpoint
 
 `POST /api/embeddings/build` — compute (or recompute) a user's embedding from their `user_items`.
 
 Stores result in `user_embeddings`. Sets the user as potentially matchable.
 
-### 2.4 Match Endpoint
+### 2.3 Match Endpoint
 
 `GET /api/matches?limit=20&cursor=...` — top matches for the current user.
 
@@ -147,7 +173,7 @@ Implementation:
 
 `GET /api/matches/{user_id}` — detailed match view with shared highlights.
 
-### 2.5 Match Cache + Staleness
+### 2.4 Match Cache + Staleness
 
 - Invalidate cached matches when either user's embedding updates
 - Hard-expire after 24h

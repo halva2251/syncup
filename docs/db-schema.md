@@ -91,7 +91,7 @@ CREATE TABLE items (
     item_type              TEXT NOT NULL,    -- 'game' | 'track' | 'artist' | 'album'
     external_id            TEXT NOT NULL,
     name                   TEXT NOT NULL,
-    metadata               JSONB NOT NULL DEFAULT '{}',  -- genre, tags, image_url, raw
+    metadata               JSONB NOT NULL DEFAULT '{}',  -- shape documented below
     embedding              vector(128),
     embedding_computed_at  TIMESTAMPTZ,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -144,7 +144,7 @@ CREATE INDEX idx_overrides_user ON preference_overrides(user_id);
 CREATE TABLE manual_obsessions (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    category    TEXT NOT NULL,        -- 'game'|'music'|'film'|'book'|'show'|'other'
+    category    TEXT NOT NULL CHECK (category IN ('game','music','film','book','show','other')),
     name        TEXT NOT NULL,
     item_id     UUID REFERENCES items(id),  -- nullable: resolved if we can
     weight      REAL NOT NULL DEFAULT 1.0,
@@ -221,4 +221,13 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 - **Embedding dimension** — sketched at `vector(128)`. Might drop to 64 or bump to 256 depending on what the trained model produces.
 - **Token encryption** — `BYTEA` columns assume symmetric encryption (AES-GCM) with a key from env. Decide key rotation strategy later.
 - **Match cache TTL** — initial target: invalidate on any embedding update for either user; hard-expire after 24h.
-- **`items.metadata` shape** — keep it a free JSONB for now; might extract fields (tags, genre) into typed columns if query patterns demand it.
+- **`items.metadata` shape** — free JSONB, but the following keys are load-bearing and must stay stable:
+
+  | service | item_type | key | type | source |
+  |---------|-----------|-----|------|--------|
+  | `steam` | `game` | `img_icon_url` | string | Steam owned-games response |
+  | `lastfm` | `track` | `artist` | string | Last.fm top-tracks `artist.name` |
+  | `spotify` | `artist` | `genres` | string[] | Spotify artist object |
+  | `spotify` | `track` | `artists` | string[] | Spotify track `artists[].name` |
+
+  All other keys are optional/raw. Rename or remove load-bearing keys only with a migration.
