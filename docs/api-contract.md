@@ -123,7 +123,7 @@ Triggers a fresh pull. Returns `{ "status": "syncing" }`; actual work runs in ba
 ## 4. Taste profile — Sketch
 
 ### `GET /me/taste`
-Aggregated view:
+Aggregated view. Services with no items are omitted from the response entirely (not returned as `null`).
 ```json
 {
   "services": {

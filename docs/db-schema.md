@@ -112,7 +112,7 @@ CREATE TABLE user_items (
     user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     item_id           UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
     engagement_score  REAL NOT NULL,    -- 0..1, normalized
-    raw_value         REAL,             -- hours, play_count, etc.
+    raw_value         REAL,             -- original metric: minutes for Steam, play count for Last.fm/Spotify
     last_engaged_at   TIMESTAMPTZ,
     fetched_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, item_id)
