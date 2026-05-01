@@ -30,14 +30,24 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | POST | `/api/auth/login` | Verify credentials; sets `syncup_session` cookie |
 | POST | `/api/auth/logout` | Invalidates session; always 204 |
 | GET | `/api/me` | Current user + service connections; requires auth. Returns `{user: {...}, connections: [...]}` |
+| PATCH | `/api/me` | Partial profile update (`display_name`, `bio`, `discord_handle`, `avatar_url`, `is_matchable`); requires auth. Returns updated user. |
 | POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
 | POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
 | POST | `/api/sync/{service}` | Trigger background data pull for `spotify`, `steam`, or `lastfm`; requires auth. Returns `{"status": "syncing"}` immediately. |
 | GET | `/api/me/taste` | Aggregated taste profile (top items per service, obsessions, overrides); requires auth. Empty services are omitted from the response. |
+| GET | `/api/me/obsessions` | List manual obsessions; requires auth. |
+| POST | `/api/me/obsessions` | Add a manual obsession (`category`, `name`, `weight`); requires auth. Returns 201. |
+| DELETE | `/api/me/obsessions/{id}` | Delete a manual obsession; requires auth. Returns 204. |
+| GET | `/api/me/overrides` | List preference overrides with item details; requires auth. |
+| POST | `/api/me/overrides` | Create a preference override (`item_id`, `boost_multiplier`, `note`); requires auth. Returns 201. |
+| PATCH | `/api/me/overrides/{id}` | Update `boost_multiplier` or `note` on an override; requires auth. |
+| DELETE | `/api/me/overrides/{id}` | Delete a preference override; requires auth. Returns 204. |
+| GET | `/api/me/dimensions` | Current per-service dimension weights; requires auth. Returns `{"weights": {...}}`. |
+| PATCH | `/api/me/dimensions` | Replace dimension weights; backend normalises to sum 1.0; requires auth. |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 
-Rate limits: signup 5/min, login 10/min, sync 5/min, taste 30/min (all per IP).
+Rate limits: signup 5/min, login 10/min, sync 5/min, taste 30/min, obsessions 60/min read + 30/min write, overrides 60/min read + 30/min write, dimensions 60/min read + 30/min write, profile PATCH 30/min (all per IP).
 
 The rest of the planned API surface is in [api-contract.md](api-contract.md).
 
@@ -269,7 +279,7 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-The immediate next step is **Phase 1.4: Preference Overrides** (`POST/PATCH/DELETE /api/me/overrides`).
+The immediate next step is **Phase 1.7: Onboarding Status** (`GET /api/onboarding/status`).
 
 ---
 

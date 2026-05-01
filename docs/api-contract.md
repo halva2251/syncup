@@ -63,16 +63,20 @@ Clears session. Returns 204.
 
 ### `GET /me` — Live ✅
 
-**Live** — returns a nested envelope:
+Returns a nested envelope:
 ```json
 {
   "user": {
     "id": "uuid",
     "email": "me@example.com",
     "display_name": "alex",
+    "avatar_url": null,
+    "bio": null,
+    "discord_handle": null,
     "is_matchable": false,
     "onboarded": true,
-    "created_at": "2026-04-21T12:00:00Z"
+    "created_at": "2026-04-21T12:00:00Z",
+    "updated_at": "2026-04-21T12:00:00Z"
   },
   "connections": [
     {
@@ -87,11 +91,24 @@ Clears session. Returns 204.
 }
 ```
 
-> `avatar_url`, `bio`, and `discord_handle` are in the `users` table but not yet in `UserOut`. They'll be exposed once `PATCH /me` is built.
+### `PATCH /me` — Live ✅
+
+Partial update — only fields present in the body are written. Returns the updated user object (same shape as the `user` field in `GET /me`).
+
+```json
+// req — all fields optional
+{
+  "display_name": "alex",
+  "bio": "gamer and music nerd",
+  "discord_handle": "alex#1234",
+  "avatar_url": "https://example.com/avatar.png",
+  "is_matchable": true
+}
 ```
 
-### `PATCH /me` — Sketch
-Fields: `display_name`, `bio`, `discord_handle`, `is_matchable`, `avatar_url`.
+- `display_name`: min 1, max 200 chars; sending `null` is a no-op (field is NOT NULL)
+- `bio`, `discord_handle`, `avatar_url`: nullable; sending `null` clears the field
+- `is_matchable`: strict bool — `"yes"` and `"true"` are rejected (422)
 
 ### `DELETE /me` — Sketch
 Hard-delete; cascades to all user data.
@@ -120,9 +137,9 @@ Triggers a fresh pull. Returns `{ "status": "syncing" }`; actual work runs in ba
 
 ---
 
-## 4. Taste profile — Sketch
+## 4. Taste profile
 
-### `GET /me/taste`
+### `GET /me/taste` — Live ✅
 Aggregated view. Services with no items are omitted from the response entirely (not returned as `null`).
 ```json
 {
@@ -143,22 +160,26 @@ Aggregated view. Services with no items are omitted from the response entirely (
 ### `GET /me/taste/items?service=steam&item_type=game&cursor=...`
 Paginated raw items for a service/type.
 
-### `POST /me/overrides`
-```json
-// req
-{ "item_id": "...", "boost_multiplier": 2.5, "note": "my favourite despite low hours" }
-```
-
-### `PATCH /me/overrides/{id}` — update `boost_multiplier` or `note`
-### `DELETE /me/overrides/{id}`
-
-### `GET /me/obsessions`
-### `POST /me/obsessions`
+### `GET /me/obsessions` — Live ✅
+### `POST /me/obsessions` — Live ✅
 ```json
 // req
 { "category": "book", "name": "Blindsight", "weight": 1.5 }
+// category ∈ game | music | film | book | show | other
+// weight defaults to 1.0, must be > 0
 ```
-### `DELETE /me/obsessions/{id}`
+### `DELETE /me/obsessions/{id}` — Live ✅
+
+### `GET /me/overrides` — Live ✅
+### `POST /me/overrides` — Live ✅
+```json
+// req
+{ "item_id": "...", "boost_multiplier": 2.5, "note": "my favourite despite low hours" }
+// item_id must reference an existing items row
+// duplicate override for same item returns 409
+```
+### `PATCH /me/overrides/{id}` — Live ✅ — update `boost_multiplier` or `note`; sending `note: null` clears it
+### `DELETE /me/overrides/{id}` — Live ✅
 
 ---
 
@@ -192,21 +213,22 @@ Service-native recommendations based on the user's top items. No ML required —
 
 ---
 
-## 6. Dimension weights — Sketch
+## 6. Dimension weights
 
-### `GET /me/dimensions`
+### `GET /me/dimensions` — Live ✅
 ```json
-{
-  "weights": {
-    "steam":   0.3,
-    "lastfm":  0.5,
-    "spotify": 0.2
-  }
-}
+{ "weights": { "steam": 0.3, "lastfm": 0.5, "spotify": 0.2 } }
 ```
+Returns `{"weights": {}}` when no weights have been set yet.
 
-### `PATCH /me/dimensions`
-Send the full weights object. Backend normalises to sum to 1.0.
+### `PATCH /me/dimensions` — Live ✅
+Send the full weights object. Backend normalises to sum to 1.0. Full replacement — omitted services are removed.
+```json
+// req
+{ "weights": { "steam": 7, "spotify": 3 } }
+// → stored as { "steam": 0.7, "spotify": 0.3 }
+```
+Valid services: `steam`, `lastfm`, `spotify`. Unknown service keys → 422. All-zero → 422. Empty dict → 422.
 
 ---
 
