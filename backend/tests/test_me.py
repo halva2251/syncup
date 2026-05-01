@@ -111,8 +111,12 @@ def test_me_returns_user_data(me_client: TestClient) -> None:
     assert user["display_name"] == "Test User"
     assert "id" in user
     assert "created_at" in user
+    assert "updated_at" in user
     assert "is_matchable" in user
     assert "onboarded" in user
+    assert "avatar_url" in user
+    assert "bio" in user
+    assert "discord_handle" in user
 
 
 # ---------------------------------------------------------------------------

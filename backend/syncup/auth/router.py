@@ -70,9 +70,13 @@ class UserOut(BaseModel):
     id: uuid.UUID
     email: str | None
     display_name: str
+    avatar_url: str | None
+    bio: str | None
+    discord_handle: str | None
     is_matchable: bool
     onboarded: bool
     created_at: datetime
+    updated_at: datetime
 
 
 # ---------------------------------------------------------------------------
