@@ -237,22 +237,15 @@ def test_get_matches_does_not_trigger_refresh_on_cache_hit(
 
 def test_get_matches_triggers_refresh_on_cache_miss(
     match_client: tuple[TestClient, User],
-    mock_db: MagicMock,
 ) -> None:
-    client, user = match_client
-    other = _make_user()
-    row = _make_cache_row(user.id, other.id)
-    mock_db.scalars.return_value.all.return_value = [other]
-
-    # First call returns empty (cache miss), second returns results (after refresh).
-    with patch(
-        "syncup.api.routes.matches._load_cached_matches",
-        side_effect=[[], [row]],
-    ), patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
+    client, _ = match_client
+    # Cache miss → schedule background refresh and return empty immediately.
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[]), \
+         patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
         resp = client.get("/api/matches")
 
     mock_refresh.assert_called_once()
-    assert len(resp.json()["items"]) == 1
+    assert resp.json() == {"items": [], "next_cursor": None}
 
 
 # ---------------------------------------------------------------------------
@@ -284,15 +277,14 @@ def test_get_matches_cursor_advances_page(
     client, user = match_client
     others = [_make_user(display_name=f"User {i}") for i in range(4)]
     rows = [_make_cache_row(user.id, o.id, score=0.9 - i * 0.1) for i, o in enumerate(others)]
-    mock_db.scalars.return_value.all.return_value = others[2:]
 
     with patch("syncup.api.routes.matches._load_cached_matches", return_value=rows):
-        # Get first page to obtain cursor.
-        with patch("syncup.api.routes.matches._load_cached_matches", return_value=rows):
-            first_resp = client.get("/api/matches?limit=2")
+        mock_db.scalars.return_value.all.return_value = others[:2]
+        first_resp = client.get("/api/matches?limit=2")
         cursor = first_resp.json()["next_cursor"]
         assert cursor is not None
 
+        mock_db.scalars.return_value.all.return_value = others[2:]
         resp = client.get(f"/api/matches?limit=2&cursor={cursor}")
 
     assert resp.status_code == 200
@@ -363,3 +355,55 @@ def test_recompute_invalidates_cache_and_returns_204(
         resp = client.post("/api/me/recompute")
     assert resp.status_code == 204
     mock_refresh.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Cache expiry
+# ---------------------------------------------------------------------------
+
+
+def test_load_cached_matches_queries_db_with_cutoff() -> None:
+    """_load_cached_matches delegates the staleness filter to the DB."""
+    from syncup.api.routes.matches import _load_cached_matches
+
+    user_id = uuid.uuid4()
+    mock_db = MagicMock(spec=DbSession)
+    mock_db.scalars.return_value.all.return_value = []
+
+    result = _load_cached_matches(user_id, mock_db)
+
+    assert result == []
+    mock_db.scalars.assert_called_once()
+
+
+def test_load_cached_matches_returns_rows_from_db() -> None:
+    """_load_cached_matches returns whatever the DB gives back."""
+    from syncup.api.routes.matches import _load_cached_matches
+
+    user_id = uuid.uuid4()
+    row = _make_cache_row(user_id, uuid.uuid4())
+    mock_db = MagicMock(spec=DbSession)
+    mock_db.scalars.return_value.all.return_value = [row]
+
+    result = _load_cached_matches(user_id, mock_db)
+
+    assert result == [row]
+
+
+# ---------------------------------------------------------------------------
+# Empty matchable pool
+# ---------------------------------------------------------------------------
+
+
+def test_get_matches_returns_empty_when_only_user_in_pool(
+    match_client: tuple[TestClient, User],
+) -> None:
+    """When the requesting user is the only matchable user, return empty gracefully."""
+    client, _ = match_client
+    # Cache miss triggers refresh; refresh finds no other users; second load returns empty.
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[]), \
+         patch("syncup.api.routes.matches._refresh_match_cache"):
+        resp = client.get("/api/matches")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"items": [], "next_cursor": None}
