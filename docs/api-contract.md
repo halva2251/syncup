@@ -117,7 +117,32 @@ Hard-delete; cascades to all user data.
 
 ## 3. Service connections — Sketch
 
-### `POST /connect/steam` and `POST /connect/lastfm` are **Live ✅** (at `/api/connect/steam`, `/api/connect/lastfm`). The `/me/connections/*` sub-routes below are planned.
+### `POST /connect/steam` and `POST /connect/lastfm` are **Live ✅** (at `/api/connect/steam`, `/api/connect/lastfm`).
+
+### `POST /connect/letterboxd/import` — Sketch (Phase 1.10)
+Multipart file upload. Accepts Letterboxd diary CSV export.
+```
+Content-Type: multipart/form-data
+field: file — the CSV file (max 10 MB)
+```
+- Parses `Name`, `Year`, `Rating` columns; skips rows with empty `Rating`
+- **Wipe-and-replace**: deletes all existing Letterboxd items for this user, then inserts from the CSV, all in a single DB transaction (rollback on failure preserves old data)
+- Creates/replaces a `service_connections` row with `sync_status = 'ok'`
+- Returns 201 `{"imported": N}` on success; 413 if file exceeds 10 MB; 422 if CSV is malformed
+
+### `POST /connect/rateyourmusic/import` — Sketch (Phase 1.10)
+Same pattern as Letterboxd import. Accepts RateYourMusic ratings export CSV.
+- Parses `Title`, `Release_Date` (year), `Rating` columns
+- Same wipe-and-replace, 10 MB cap, 201/413/422 responses
+
+### `GET /connect/{service}/oauth/start` — Sketch (Phase 1.10)
+Initiate OAuth for `service` ∈ `anilist`, `trakt`, `reddit`.
+Returns `{"authorize_url": "https://..."}` or redirects directly (TBD per service).
+
+### `GET /connect/{service}/oauth/callback` — Sketch (Phase 1.10)
+Complete OAuth handshake for the above services.
+
+### The `/me/connections/*` sub-routes below are planned.
 
 ### `GET /me/connections`
 Same shape as `connections` in `/me`.
@@ -228,7 +253,7 @@ Send the full weights object. Backend normalises to sum to 1.0. Full replacement
 { "weights": { "steam": 7, "spotify": 3 } }
 // → stored as { "steam": 0.7, "spotify": 0.3 }
 ```
-Valid services: `steam`, `lastfm`, `spotify`. Unknown service keys → 422. All-zero → 422. Empty dict → 422.
+Valid services: any service registered in `ServiceRegistry` (currently `steam`, `lastfm`, `spotify`; expands automatically as new services are added). Unknown service keys → 422. All-zero → 422. Empty dict → 422.
 
 ---
 
