@@ -266,8 +266,7 @@ The taste card isn't just a summary — it's a **discovery engine**. Based on th
 
 | Phase | Approach | What it needs |
 |-------|----------|---------------|
-| **Now** | Service-native similarity APIs | Last.fm `artist.getSimilar`, Steam tag overlap, Spotify recommendations API. No trained model required. |
-| **Soon** | Item-to-item via Item2Vec | A trained model on public datasets. For each of user's top items, find nearest neighbors in embedding space, filter out what they already have. |
+| **Now** | Item-to-item via Item2Vec | A trained model on public datasets. For each of user's top items, find nearest neighbours in embedding space, filter out what they already have. Cross-domain: game taste can surface music recommendations even without a music service connected. |
 | **Later** | Archetype-based collaborative | Cluster users by taste similarity. Recommend items that are popular in the cluster but missing from the target user. Requires ~500+ active users. |
 
 **Example recommendations:**

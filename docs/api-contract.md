@@ -183,12 +183,13 @@ Paginated raw items for a service/type.
 
 ---
 
-## 5. Recommendations — Sketch
+## 5. Recommendations — Deferred (post-Item2Vec)
 
 > **Archetype** (`label`, `description`) is deferred until after Item2Vec training. The taste card will ship without it initially.
 
-### `GET /me/recommendations`
-Service-native recommendations based on the user's top items. No ML required — uses each service's own similarity API. Returns per-service suggestions filtered to items the user doesn't already have.
+### `GET /me/recommendations` — Sketch (blocked on Phase 2.1)
+
+Cross-domain recommendations based on the user's full taste profile. Deliberately skipped as a service-native API proxy — will be built on top of Item2Vec embeddings so recommendations work across domains (e.g. music suggestions derived from game taste, even if no music service is connected).
 
 ```json
 {
@@ -204,12 +205,11 @@ Service-native recommendations based on the user's top items. No ML required —
 }
 ```
 
-**Implementation notes:**
-- **Last.fm:** call `artist.getSimilar` for each top artist, deduplicate, filter out items already in `user_items`
-- **Spotify:** call `GET /recommendations` with seed artists + seed tracks from user's top items
-- **Steam:** no native similarity API — skip for now, return `null`. Revisit once we store game tags in `items.metadata`
-
-`steam: null` means not available yet — client should handle gracefully.
+**Implementation plan (Phase 2.1+):**
+- For each of the user's top items, find nearest neighbours in Item2Vec embedding space
+- Filter out items already in `user_items`
+- Cross-domain: game embeddings can surface music recommendations and vice versa
+- `steam: null` until Steam game tag embeddings are trained
 
 ---
 
@@ -275,17 +275,24 @@ Forces re-compute of the user's embedding and invalidates their cached matches. 
 
 ## 8. Onboarding helpers — Sketch
 
-### `GET /onboarding/status`
+### `GET /onboarding/status` — Live ✅
 What the user still needs to do before becoming matchable.
 ```json
 {
   "has_display_name": true,
+  "has_languages": false,
   "has_connection_or_obsessions": false,
   "has_reviewed_taste": false,
   "has_set_matchable": false,
   "next_step": "connect_service"
 }
 ```
+
+- `has_display_name`: always `true` (NOT NULL at signup)
+- `has_languages`: `true` when `users.languages` is set; skippable — does not block `next_step`
+- `has_connection_or_obsessions`: ≥1 `ok`-status service connection OR ≥3 manual obsessions
+- `has_reviewed_taste`: derived from `has_connection_or_obsessions` (no extra DB state)
+- `next_step`: `"connect_service"` → `"set_matchable"` → `null` (fully onboarded)
 
 ---
 

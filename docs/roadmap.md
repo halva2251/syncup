@@ -29,7 +29,9 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `GET/POST/PATCH/DELETE /api/me/overrides` — preference overrides (boost/demote items) | `syncup/api/routes/overrides.py` |
 | `GET/PATCH /api/me/dimensions` — per-service dimension weights (normalised to 1.0) | `syncup/api/routes/dimensions.py` |
 | `PATCH /api/me` — profile edit (`display_name`, `bio`, `discord_handle`, `avatar_url`, `is_matchable`) | `syncup/api/routes/me.py` |
-| 280 passing tests | `backend/tests/` |
+| `GET /api/onboarding/status` — onboarding progress: booleans + `next_step` hint | `syncup/api/routes/onboarding.py` |
+| `languages` field on `users` — nullable TEXT[], skippable during onboarding | `syncup/db/models.py`, migration `20260502_0003` |
+| 300 passing tests | `backend/tests/` |
 
 ---
 
@@ -87,28 +89,24 @@ These feed directly into the user's match profile and lower the matchability thr
 
 `PATCH /api/me` — let users set `display_name`, `bio`, `discord_handle`, `is_matchable`, `avatar_url`.
 
-### 1.7 Onboarding Status
+### 1.7 Onboarding Status ✅
 
 `GET /api/onboarding/status` — tells the frontend which onboarding steps are still pending so it can route the user correctly.
 
 **Onboarding order (confirmed):**
-1. Display name
-2. Languages spoken (new field, add to `users` table)
+1. Display name (always set at signup)
+2. Languages spoken (`users.languages`, nullable TEXT[], skippable)
 3. Freeform interests / likes / dislikes (map to `manual_obsessions` during onboarding)
 4. Connect your services
 5. Review your taste card → set `is_matchable = true`
 
-### 1.8 Recommendations Endpoint
+Response fields: `has_display_name`, `has_languages`, `has_connection_or_obsessions`, `has_reviewed_taste`, `has_set_matchable`, `next_step`.
 
-`GET /api/me/recommendations` — service-native recommendations based on the user's top items. No ML required.
+### 1.8 Recommendations Endpoint — deferred
 
-- **Last.fm:** `artist.getSimilar` for each top artist → deduplicate → filter out already-known items
-- **Spotify:** `GET /recommendations` with seed artists + seed tracks
-- **Steam:** no native similarity API — return `null` for now
+`GET /api/me/recommendations` — skipped as a service-native API proxy. Will be built on top of Item2Vec embeddings after Phase 2.1 (model training), enabling cross-domain recommendations (e.g. music suggestions from game taste). See Phase 2 for the implementation plan.
 
-Separate from `GET /me/taste` deliberately: keeps the taste card fast and resilient if an upstream API is slow or down.
-
-> **Archetype** (`label`, `description`) is deferred until after Item2Vec training (Phase 3). The taste card ships without it. See [api-contract.md §5](api-contract.md) for the pinned spec.
+### 1.9 Heuristic Matcher
 
 ### 1.9 Heuristic Matcher
 
@@ -134,9 +132,9 @@ Phase transitions (when to switch):
 
 ## ⚠️ Phase ordering note
 
-**Build Phase 3.1–3.5 (frontend setup → taste card) before or in parallel with Phase 2.** The taste card is the cold-start product — it gives users value and drives organic sharing before any matches exist. The matching engine (Phase 2) is blocked on training data and can run in parallel. Don't wait for Phase 2 to finish before shipping the taste card.
+**Phase 3 (frontend) is deferred** — starting after Phase 2 is complete. Phase 2 (ML training + matching) is the current priority. The frontend will be built once the backend matching pipeline is functional.
 
-See [product-strategy.md §Phase 0](product-strategy.md) for the rationale.
+See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rationale.
 
 ---
 
