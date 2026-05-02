@@ -44,10 +44,11 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | DELETE | `/api/me/overrides/{id}` | Delete a preference override; requires auth. Returns 204. |
 | GET | `/api/me/dimensions` | Current per-service dimension weights; requires auth. Returns `{"weights": {...}}`. |
 | PATCH | `/api/me/dimensions` | Replace dimension weights; backend normalises to sum 1.0; requires auth. |
+| GET | `/api/onboarding/status` | Onboarding progress for the current user; requires auth. Returns boolean flags + `next_step` hint. |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 
-Rate limits: signup 5/min, login 10/min, sync 5/min, taste 30/min, obsessions 60/min read + 30/min write, overrides 60/min read + 30/min write, dimensions 60/min read + 30/min write, profile PATCH 30/min (all per IP).
+Rate limits: signup 5/min, login 10/min, sync 5/min, taste 30/min, obsessions 60/min read + 30/min write, overrides 60/min read + 30/min write, dimensions 60/min read + 30/min write, profile PATCH 30/min, onboarding status 60/min (all per IP).
 
 The rest of the planned API surface is in [api-contract.md](api-contract.md).
 
@@ -279,7 +280,7 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-The immediate next step is **Phase 1.7: Onboarding Status** (`GET /api/onboarding/status`).
+The immediate next step is **Phase 1.9: Heuristic Matcher** — ~20 lines, no training required, gives real matches at launch while Item2Vec is being trained. Phase 1.8 (recommendations) is deferred until after Phase 2.1 (Item2Vec training).
 
 ---
 

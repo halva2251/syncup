@@ -23,13 +23,16 @@ Connect Steam, Last.fm, and Spotify. A cross-domain embedding model learns what 
 | Sync routes | done | `POST /api/sync/{service}` — background data pull |
 | Taste profile endpoint | done | `GET /api/me/taste` — top items per service |
 | Manual obsessions | done | `GET/POST/DELETE /api/me/obsessions` |
-| Rate limiting | done | per-endpoint limits on all write routes |
+| Preference overrides | done | `GET/POST/PATCH/DELETE /api/me/overrides` |
+| Dimension weights | done | `GET/PATCH /api/me/dimensions` |
+| Profile edit | done | `PATCH /api/me` |
+| Onboarding status | done | `GET /api/onboarding/status` |
+| Rate limiting | done | per-endpoint limits on all routes |
 | PostgreSQL + Docker | done | `docker compose up -d` in `backend/` |
-| 215 passing tests | done | |
-| Preference overrides | in progress | Phase 1.4 |
-| Dimension weights, profile edit | next | Phases 1.5–1.6 |
-| Frontend | not started | Next.js — Phase 3 |
-| ML matching engine | not started | Phase 2 — needs Item2Vec training on public datasets |
+| 300 passing tests | done | |
+| Heuristic matcher | next | Phase 1.9 — ~20 lines, real matches before ML is ready |
+| ML training pipeline | not started | Phase 2 — Item2Vec on public datasets |
+| Frontend | not started | Phase 3 — Next.js, deferred until after Phase 2 |
 
 ---
 
@@ -97,8 +100,8 @@ See [docs/api-keys.md](docs/api-keys.md) for how to register each service and ge
 # Start the DB container (from backend/)
 docker compose up -d
 
-# Run migrations
-alembic upgrade head
+# Run migrations (use the venv alembic, not the system one)
+.venv/bin/alembic upgrade head
 ```
 
 ### 5. Run the server
