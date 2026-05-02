@@ -373,6 +373,9 @@ class MatchCache(Base):
     )
     score: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
     breakdown: Mapped[dict[str, float]] = mapped_column(JSONB, nullable=False)
+    highlights: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB, nullable=False, server_default="[]", default=list
+    )
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
