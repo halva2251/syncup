@@ -28,7 +28,7 @@ from sqlalchemy import (
     desc,
     func,
 )
-from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from syncup.db.base import Base
@@ -60,6 +60,9 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     discord_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    languages: Mapped[list[str] | None] = mapped_column(
+        ARRAY(Text), nullable=True
+    )
     is_matchable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
