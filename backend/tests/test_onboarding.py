@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
-from syncup.db.models import ManualObsession, ServiceConnection, User
+from syncup.db.models import User
 
 
 # ---------------------------------------------------------------------------
@@ -33,42 +33,10 @@ def _make_user(**kwargs: object) -> User:
     return User(**{**defaults, **kwargs})
 
 
-def _make_connection(**kwargs: object) -> ServiceConnection:
-    now = datetime.now(UTC)
-    defaults: dict[str, object] = {
-        "id": uuid.uuid4(),
-        "user_id": uuid.uuid4(),
-        "service": "steam",
-        "external_user_id": "76561198000000000",
-        "sync_status": "ok",
-        "last_synced_at": now,
-        "token_expires_at": None,
-        "sync_error": None,
-        "access_token_encrypted": None,
-        "refresh_token_encrypted": None,
-        "created_at": now,
-    }
-    return ServiceConnection(**{**defaults, **kwargs})
 
-
-def _make_obsession(**kwargs: object) -> ManualObsession:
-    now = datetime.now(UTC)
-    defaults: dict[str, object] = {
-        "id": uuid.uuid4(),
-        "user_id": uuid.uuid4(),
-        "category": "game",
-        "name": "Disco Elysium",
-        "weight": 1.0,
-        "created_at": now,
-    }
-    return ManualObsession(**{**defaults, **kwargs})
-
-
-def _scalars_returning(items: list[object]) -> MagicMock:
-    """Return a mock that acts like db.scalars(...) returning `items`."""
-    result = MagicMock()
-    result.all.return_value = items
-    return result
+def _counts(ok_connections: int, obsessions: int) -> list[int]:
+    """Return scalar count values in route query order: connections first, obsessions second."""
+    return [ok_connections, obsessions]
 
 
 # ---------------------------------------------------------------------------
@@ -97,10 +65,10 @@ def _make_ob_client(
     monkeypatch: pytest.MonkeyPatch,
     mock_db: MagicMock,
     user: User,
-    connections: list[ServiceConnection],
-    obsessions: list[ManualObsession],
+    ok_connections: int,
+    obsessions: int,
 ) -> Generator[TestClient, None, None]:
-    """Authenticated client with configurable DB state."""
+    """Authenticated client with configurable DB state (counts, not objects)."""
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("DEBUG", "true")
 
@@ -108,10 +76,7 @@ def _make_ob_client(
     from syncup.auth.router import require_auth
     from syncup.db.session import get_db
 
-    mock_db.scalars.side_effect = [
-        _scalars_returning(connections),
-        _scalars_returning(obsessions),
-    ]
+    mock_db.scalar.side_effect = _counts(ok_connections, obsessions)
 
     app.dependency_overrides[get_db] = lambda: mock_db
     app.dependency_overrides[require_auth] = lambda: user
@@ -129,7 +94,7 @@ def ob_client(
 ) -> Generator[TestClient, None, None]:
     """Default authenticated client: no connections, no obsessions, not matchable."""
     yield from _make_ob_client(
-        monkeypatch, mock_db, _make_user(), connections=[], obsessions=[]
+        monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=0
     )
 
 
@@ -184,7 +149,7 @@ def test_has_languages_true_when_set(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
     user = _make_user(languages=["en", "fi"])
-    for c in _make_ob_client(monkeypatch, mock_db, user, [], []):
+    for c in _make_ob_client(monkeypatch, mock_db, user, ok_connections=0, obsessions=0):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_languages"] is True
 
@@ -203,7 +168,7 @@ def test_one_ok_connection_is_true(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
     for c in _make_ob_client(
-        monkeypatch, mock_db, _make_user(), [_make_connection()], []
+        monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_connection_or_obsessions"] is True
@@ -214,11 +179,7 @@ def test_pending_connection_does_not_count(
 ) -> None:
     """Only ok-status connections count — the route queries status='ok'."""
     for c in _make_ob_client(
-        monkeypatch,
-        mock_db,
-        _make_user(),
-        connections=[],  # route filters to ok; pending is excluded at DB level
-        obsessions=[],
+        monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_connection_or_obsessions"] is False
@@ -227,8 +188,7 @@ def test_pending_connection_does_not_count(
 def test_three_obsessions_is_true(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
-    obs = [_make_obsession() for _ in range(3)]
-    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), [], obs):
+    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=3):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_connection_or_obsessions"] is True
 
@@ -236,8 +196,7 @@ def test_three_obsessions_is_true(
 def test_two_obsessions_is_false(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
-    obs = [_make_obsession() for _ in range(2)]
-    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), [], obs):
+    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=2):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_connection_or_obsessions"] is False
 
@@ -245,8 +204,7 @@ def test_two_obsessions_is_false(
 def test_four_obsessions_is_true(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
-    obs = [_make_obsession() for _ in range(4)]
-    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), [], obs):
+    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=4):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_connection_or_obsessions"] is True
 
@@ -255,7 +213,7 @@ def test_connection_and_zero_obsessions_is_true(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
     for c in _make_ob_client(
-        monkeypatch, mock_db, _make_user(), [_make_connection()], []
+        monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_connection_or_obsessions"] is True
@@ -275,7 +233,7 @@ def test_has_reviewed_taste_true_when_has_connection(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
     for c in _make_ob_client(
-        monkeypatch, mock_db, _make_user(), [_make_connection()], []
+        monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_reviewed_taste"] is True
@@ -296,7 +254,7 @@ def test_has_set_matchable_true_when_matchable(
 ) -> None:
     user = _make_user(is_matchable=True)
     for c in _make_ob_client(
-        monkeypatch, mock_db, user, [_make_connection()], []
+        monkeypatch, mock_db, user, ok_connections=1, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_set_matchable"] is True
@@ -316,7 +274,7 @@ def test_next_step_set_matchable_when_has_connection(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
     for c in _make_ob_client(
-        monkeypatch, mock_db, _make_user(), [_make_connection()], []
+        monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["next_step"] == "set_matchable"
@@ -325,8 +283,7 @@ def test_next_step_set_matchable_when_has_connection(
 def test_next_step_set_matchable_when_three_obsessions(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
-    obs = [_make_obsession() for _ in range(3)]
-    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), [], obs):
+    for c in _make_ob_client(monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=3):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["next_step"] == "set_matchable"
 
@@ -336,7 +293,7 @@ def test_next_step_null_when_fully_onboarded(
 ) -> None:
     user = _make_user(is_matchable=True)
     for c in _make_ob_client(
-        monkeypatch, mock_db, user, [_make_connection()], []
+        monkeypatch, mock_db, user, ok_connections=1, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["next_step"] is None

@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.auth.router import RequireAuth
@@ -34,19 +34,21 @@ def get_onboarding_status(
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> OnboardingStatusOut:
-    ok_connections = db.scalars(
-        select(ServiceConnection).where(
+    ok_connection_count: int = db.scalar(
+        select(func.count()).select_from(ServiceConnection).where(
             ServiceConnection.user_id == user.id,
             ServiceConnection.sync_status == "ok",
         )
-    ).all()
+    ) or 0
 
-    obsessions = db.scalars(
-        select(ManualObsession).where(ManualObsession.user_id == user.id)
-    ).all()
+    obsession_count: int = db.scalar(
+        select(func.count()).select_from(ManualObsession).where(
+            ManualObsession.user_id == user.id,
+        )
+    ) or 0
 
     has_connection_or_obsessions = (
-        len(ok_connections) > 0 or len(obsessions) >= _OBSESSIONS_THRESHOLD
+        ok_connection_count > 0 or obsession_count >= _OBSESSIONS_THRESHOLD
     )
 
     if not has_connection_or_obsessions:
