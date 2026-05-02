@@ -33,7 +33,11 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | PATCH | `/api/me` | Partial profile update (`display_name`, `bio`, `discord_handle`, `avatar_url`, `is_matchable`); requires auth. Returns updated user. |
 | POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
 | POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
-| POST | `/api/sync/{service}` | Trigger background data pull for `spotify`, `steam`, or `lastfm`; requires auth. Returns `{"status": "syncing", "service": "<name>"}` immediately. |
+| POST | `/api/connect/letterboxd/import` | CSV file upload (Letterboxd diary export); wipe-and-replace; requires auth *(Phase 1.10)* |
+| POST | `/api/connect/rateyourmusic/import` | CSV file upload (RYM ratings export); wipe-and-replace; requires auth *(Phase 1.10)* |
+| GET | `/api/connect/{service}/oauth/start` | Start OAuth for `anilist`, `trakt`, `reddit`; requires auth *(Phase 1.10)* |
+| GET | `/api/connect/{service}/oauth/callback` | Complete OAuth for the above services *(Phase 1.10)* |
+| POST | `/api/sync/{service}` | Trigger background data pull for any registered service; requires auth. Returns `{"status": "syncing", "service": "<name>"}` immediately. |
 | GET | `/api/me/taste` | Aggregated taste profile (top items per service, obsessions, overrides); requires auth. Empty services are omitted from the response. |
 | GET | `/api/me/obsessions` | List manual obsessions; requires auth. |
 | POST | `/api/me/obsessions` | Add a manual obsession (`category`, `name`, `weight`); requires auth. Returns 201. |
@@ -58,6 +62,73 @@ The rest of the planned API surface is in [api-contract.md](api-contract.md).
 ---
 
 ## Ingest layer (`syncup/ingest/`)
+
+### Architecture overview (Phase 1.10+)
+
+Every service client satisfies the `ServiceClient` Protocol defined in `protocol.py`. The `ServiceRegistry` in `registry.py` maps service name strings to client instances. The sync route calls `get_client(service).fetch_items(connection)` without knowing which service it is.
+
+```
+protocol.py        → ServiceClient Protocol, RawItem TypedDict, TokenPair
+registry.py        → ServiceRegistry: dict[str, ServiceClient] + get_client()
+steam.py           → SteamClient (API key, no OAuth)
+spotify.py         → SpotifyClient (OAuth PKCE)
+lastfm.py          → LastfmClient (API key, no OAuth)
+letterboxd.py      → LetterboxdClient (CSV import, no auth)
+anilist.py         → AniListClient (GraphQL OAuth)
+trakt.py           → TraktClient (REST OAuth)
+reddit.py          → RedditClient (OAuth, subreddit membership)
+rateyourmusic.py   → RateYourMusicClient (CSV import, no auth)
+crypto.py          → Token encryption (AES-GCM)
+```
+
+**`RawItem`** is the common output type every client returns. Fields:
+- `external_id`: service-native ID (Steam appid, AniList media ID, subreddit name, etc.)
+- `name`: display name
+- `item_type`: `'game'|'film'|'show'|'anime'|'manga'|'track'|'artist'|'album'|'community'`
+- `raw_value`: original metric (minutes played, scrobble count, rating value)
+- `raw_type`: `'consumption'` or `'rating'` — determines normalization in the embedding builder
+- `metadata`: free dict, service-specific keys (see `db-schema.md` for load-bearing keys)
+
+**`raw_type` explains the difference:**
+- `'consumption'` — the number represents *how much* the user engaged (hours, plays, listens). Normalized with `log1p` dampening.
+- `'rating'` — the number represents *how much the user liked it* (stars out of 5, score out of 100). Normalized per a per-service formula (see roadmap.md for the formulas). Ratings of 0 ("not rated") are treated as absent — the item is not stored.
+
+### How to add a new service
+
+1. **Create `syncup/ingest/{service}.py`** with a client class that satisfies `ServiceClient`:
+   ```python
+   from syncup.ingest.protocol import RawItem, ServiceClient, TokenPair
+   from syncup.db.models import ServiceConnection
+
+   class MyServiceClient:
+       service_name = "myservice"  # must be ClassVar[str]
+
+       def fetch_items(self, connection: ServiceConnection) -> list[RawItem]:
+           # fetch from API, return RawItem list
+           ...
+
+       def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
+           # return None if service doesn't use OAuth tokens
+           return None
+   ```
+
+2. **Register it in `registry.py`**:
+   ```python
+   from syncup.ingest.myservice import MyServiceClient
+   register(MyServiceClient(...))
+   ```
+   That's it. The sync route and dimensions validation pick it up automatically.
+
+3. **Add tests** in `tests/test_myservice.py`:
+   - Mock the HTTP layer (pytest-httpx or httpx mock transport)
+   - Test happy path, empty response, invalid/missing data
+   - Add `assert isinstance(client, ServiceClient)` for Protocol conformance
+
+4. **Update docs**: add the service to the tables in `db-schema.md` (service column values, metadata keys) and `api-contract.md` (connect endpoint).
+
+5. **Add a connect route** in `api/routes/connect.py` — OAuth services get a start + callback endpoint; CSV import services get a file upload endpoint.
+
+
 
 ### `spotify.py` — `SpotifyClient`
 
@@ -283,7 +354,11 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-**Phase 1 is complete.** The immediate next step is **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, Million Song Dataset / Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow. Phase 1.8 (cross-domain recommendations) is deferred until after Phase 2.1.
+**Phase 1 is complete. Phase 1.10 (service expansion) is next.**
+
+Phase 1.10 adds Letterboxd, AniList, Trakt, Reddit, and RateYourMusic via a new `ServiceClient` Protocol + `ServiceRegistry`. The Foundation steps (F1–F7) must land as a single PR before any individual service is added. Services are then independent PRs. See `roadmap.md §Phase 1.10` for the full spec.
+
+After Phase 1.10, **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow.
 
 ---
 

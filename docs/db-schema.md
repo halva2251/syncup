@@ -68,7 +68,7 @@ CREATE INDEX idx_auth_providers_user ON auth_providers(user_id);
 CREATE TABLE service_connections (
     id                       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id                  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    service                  TEXT NOT NULL,    -- 'steam' | 'lastfm' | 'spotify'
+    service                  TEXT NOT NULL,    -- 'steam'|'lastfm'|'spotify'|'letterboxd'|'anilist'|'trakt'|'reddit'|'rateyourmusic'
     external_user_id         TEXT NOT NULL,
     access_token_encrypted   BYTEA,            -- nullable for services using plain API keys
     refresh_token_encrypted  BYTEA,
@@ -88,8 +88,8 @@ CREATE INDEX idx_service_connections_user ON service_connections(user_id);
 -- =============================================================
 CREATE TABLE items (
     id                     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    service                TEXT NOT NULL,    -- 'steam' | 'lastfm' | 'spotify'
-    item_type              TEXT NOT NULL,    -- 'game' | 'track' | 'artist' | 'album'
+    service                TEXT NOT NULL,    -- 'steam'|'lastfm'|'spotify'|'letterboxd'|'anilist'|'trakt'|'reddit'|'rateyourmusic'
+    item_type              TEXT NOT NULL,    -- 'game'|'track'|'artist'|'album'|'film'|'show'|'anime'|'manga'|'community'
     external_id            TEXT NOT NULL,
     name                   TEXT NOT NULL,
     metadata               JSONB NOT NULL DEFAULT '{}',  -- shape documented below
@@ -112,12 +112,18 @@ CREATE TABLE user_items (
     id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     item_id           UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-    engagement_score  REAL NOT NULL,    -- 0..1, normalized
-    raw_value         REAL,             -- original metric: minutes for Steam, play count for Last.fm/Spotify
+    engagement_score  REAL NOT NULL,    -- 0..1, normalized (see normalization formulas in roadmap.md)
+    raw_value         REAL,             -- original metric: minutes (Steam), play count (Last.fm/Spotify), rating (Letterboxd/AniList/Trakt/RYM)
+    raw_type          TEXT NOT NULL DEFAULT 'consumption'  -- 'consumption' | 'rating'
+                          CHECK (raw_type IN ('consumption', 'rating')),
     last_engaged_at   TIMESTAMPTZ,
     fetched_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, item_id)
 );
+
+-- raw_type distinguishes consumption signals (hours played, scrobble count) from
+-- rating signals (star ratings). The embedding builder applies different normalization
+-- logic for each type. Added in migration 0006.
 
 CREATE INDEX idx_user_items_user ON user_items(user_id);
 CREATE INDEX idx_user_items_item ON user_items(item_id);
@@ -145,7 +151,8 @@ CREATE INDEX idx_overrides_user ON preference_overrides(user_id);
 CREATE TABLE manual_obsessions (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    category    TEXT NOT NULL CHECK (category IN ('game','music','film','book','show','other')),
+    category    TEXT NOT NULL CHECK (category IN ('game','music','film','book','show','anime','manga','community','other')),
+    -- anime/manga/community added in migration 0007 to match AniList and Reddit item_types
     name        TEXT NOT NULL,
     item_id     UUID REFERENCES items(id),  -- nullable: resolved if we can
     weight      REAL NOT NULL DEFAULT 1.0,
@@ -171,7 +178,7 @@ CREATE TABLE user_dimension_weights (
 -- =============================================================
 CREATE TABLE user_embeddings (
     user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    service      TEXT NOT NULL,        -- 'steam'|'lastfm'|'spotify'|'combined'
+    service      TEXT NOT NULL,        -- 'steam'|'lastfm'|'spotify'|'letterboxd'|'anilist'|'trakt'|'reddit'|'rateyourmusic'|'combined'
     embedding    vector(128) NOT NULL,
     computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, service)
@@ -231,5 +238,23 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
   | `lastfm` | `track` | `artist` | string | Last.fm top-tracks `artist.name` |
   | `spotify` | `artist` | `genres` | string[] | Spotify artist object |
   | `spotify` | `track` | `artists` | string[] | Spotify track `artists[].name` |
+  | `letterboxd` | `film` | `title_normalized` | string | Lowercased/stripped film name |
+  | `letterboxd` | `film` | `release_year` | int | Year column from Letterboxd CSV |
+  | `trakt` | `film` | `title_normalized` | string | Lowercased/stripped film name |
+  | `trakt` | `film` | `release_year` | int | Release year from Trakt API |
+  | `trakt` | `show` | `title_normalized` | string | Lowercased/stripped show name |
+  | `trakt` | `show` | `release_year` | int | First air year from Trakt API |
+  | `anilist` | `anime` | `title_normalized` | string | Lowercased/stripped title |
+  | `anilist` | `anime` | `release_year` | int | `startDate.year` from AniList |
+  | `anilist` | `anime` | `format` | string | `TV`\|`MOVIE`\|`OVA`\|`ONA`\|`SPECIAL` |
+  | `anilist` | `manga` | `title_normalized` | string | Lowercased/stripped title |
+  | `anilist` | `manga` | `release_year` | int | `startDate.year` from AniList |
+  | `reddit` | `community` | `subreddit_name` | string | Subreddit name (without r/) |
+  | `reddit` | `community` | `subscribers` | int | Subscriber count at ingest time |
+  | `reddit` | `community` | `description` | string | `public_description`, first 200 chars |
+  | `rateyourmusic` | `album` | `title_normalized` | string | Lowercased/stripped album title |
+  | `rateyourmusic` | `album` | `release_year` | int | Year from `Release_Date` column |
+
+  **Cross-service deduplication note:** Films and shows from different services (Letterboxd + Trakt) are stored as separate `items` rows (one per service). The heuristic matcher and embedding builder deduplicate media items by `(title_normalized, release_year)` when scoring — a film shared between two services counts as one shared item, not two. The `title_normalized` + `release_year` metadata keys are therefore load-bearing for all film/show/anime/manga `item_type` values.
 
   All other keys are optional/raw. Rename or remove load-bearing keys only with a migration.

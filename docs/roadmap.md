@@ -38,6 +38,122 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 
 ---
 
+## Phase 1.10 — Service Expansion
+
+**Goal:** Add Letterboxd, AniList, Trakt, Reddit, and RateYourMusic to the ingest pipeline. Introduce a `ServiceClient` Protocol so every future service slots in without touching the sync route.
+
+> **Status:** Planned. Foundation must land before any individual service.
+
+### F1–F7 Foundation (single PR)
+
+All foundation steps are coupled and must ship together:
+
+| Step | What | Why |
+|------|------|-----|
+| F1 | `syncup/ingest/protocol.py` — `ServiceClient` Protocol + `RawItem` TypedDict | Defines the contract every ingest client must satisfy |
+| F2 | `syncup/ingest/registry.py` — `ServiceRegistry` | Service-agnostic dispatch; eliminates if/elif chains in sync route |
+| F3 | Migration 0006 — `raw_type TEXT` on `user_items` | Distinguishes consumption signals (hours, scrobbles) from rating signals (stars) for the embedding builder |
+| F4 | Dynamic service validation in dimensions route | Replace hardcoded `{"steam","lastfm","spotify"}` with `registered_services()` |
+| F5 | Migration 0007 — expand `manual_obsessions.category` CHECK | Add `'anime'`, `'manga'`, `'community'` |
+| F6 | Retrofit `steam.py`, `spotify.py`, `lastfm.py` to satisfy Protocol | Add `service_name: ClassVar[str]`, register in registry |
+| F7 | Sync route goes generic | Calls `get_client(service).fetch_items(connection)` for any service |
+
+**Migration 0006 SQL:**
+```sql
+ALTER TABLE user_items
+    ADD COLUMN raw_type TEXT NOT NULL DEFAULT 'consumption'
+    CHECK (raw_type IN ('consumption', 'rating'));
+```
+
+**Migration 0007 SQL:**
+```sql
+ALTER TABLE manual_obsessions
+    DROP CONSTRAINT manual_obsessions_category_check,
+    ADD CONSTRAINT manual_obsessions_category_check
+        CHECK (category IN ('game','music','film','book','show','anime','manga','community','other'));
+```
+
+### S1 — Letterboxd (CSV import)
+
+- Endpoint: `POST /api/connect/letterboxd/import` (multipart file upload)
+- Format: Letterboxd diary export CSV — uses `Name`, `Year`, `Rating` columns
+- Rating normalization: `(rating - 0.5) / 4.5` → `engagement_score`
+- `item_type = 'film'`, `raw_type = 'rating'`
+- Metadata: `{"title_normalized": str, "release_year": int}`
+- Re-import: wipe-and-replace in a DB transaction
+- File size cap: 10 MB
+- No OAuth; connection row set to `sync_status = 'ok'` after successful import
+
+### S2 — AniList (GraphQL OAuth)
+
+- Auth: OAuth 2.0 authorization code flow
+- Fetch: `MediaListCollection` query for ANIME + MANGA lists; skip score=0 entries
+- Rating normalization: `score / 100.0` → `engagement_score`
+- `item_type = 'anime'` or `'manga'`, `raw_type = 'rating'`
+- Metadata: `{"title_normalized": str, "release_year": int, "format": str}`
+
+### S3 — Trakt.tv (REST OAuth)
+
+- Auth: OAuth 2.0 authorization code flow; tokens expire in 3 months
+- Fetch: `/users/me/watched/movies` (films) + `/users/me/watched/shows` (shows)
+- `raw_value = plays` for films, `raw_value = episodes_watched` for shows, `raw_type = 'consumption'`
+- `item_type = 'film'` or `'show'`
+- Metadata: `{"title_normalized": str, "release_year": int}`
+- **Film deduplication with Letterboxd**: items remain service-specific in DB but heuristic + embedding layer match films on `(title_normalized, release_year)` across services — a film shared between Letterboxd and Trakt counts as one shared item in scoring
+
+### S4 — Reddit (OAuth)
+
+- Auth: OAuth 2.0, scopes `identity mysubreddits`; read-only
+- Fetch: `/subreddits/mine/subscriber` (paginated)
+- **Filter**: exclude subreddits with `subscribers > 1_000_000` (mainstream noise, not taste signal)
+- `raw_value = 1 / log(subscribers + 2)` — niche communities score higher
+- `raw_type = 'consumption'`, `item_type = 'community'`
+- Metadata: `{"subreddit_name": str, "subscribers": int, "description": str (first 200 chars)}`
+
+### S5 — RateYourMusic (CSV import)
+
+- Same CSV import flow as Letterboxd
+- Format: RateYourMusic export — uses `Title`, `Release_Date` (year), `Rating` columns
+- `item_type = 'album'`, `raw_type = 'rating'`
+- Rating normalization: `(rating - 0.5) / 4.5` → `engagement_score` (same as Letterboxd)
+
+### Services explicitly NOT building (with reasons)
+
+| Service | Reason |
+|---------|--------|
+| Twitter/X | API now paid, expensive, severe rate limits — no viable path |
+| Instagram | Meta locked personal data API post-Cambridge Analytica; only business accounts work |
+| IMDB | No public API; never had one |
+| Goodreads | Amazon shut down the API in December 2020 |
+| YouTube Music | Distinct from YouTube; YouTube Data API v3 does not expose music listening history |
+| SoundCloud | API exists but has been unreliable and poorly documented; revisit when stable |
+| PlayStation Network / Xbox Network | Limited API access; defer until user base skews console |
+
+### Tier 2 services (deferred, not blocked)
+
+| Service | Notes |
+|---------|-------|
+| Apple Music | MusicKit JWT auth is non-trivial server-side; implement after Tier 1 is stable |
+| StoryGraph | No public API yet; CSV import when ready |
+
+### Rating normalization reference
+
+All service ratings are normalized to `engagement_score ∈ [0, 1]`. Raw values are preserved in `raw_value`.
+
+| Service | Raw scale | Formula |
+|---------|-----------|---------|
+| Letterboxd | 0.5–5.0 (half-stars) | `(rating - 0.5) / 4.5` |
+| RateYourMusic | 0.5–5.0 (half-stars) | `(rating - 0.5) / 4.5` |
+| AniList | 0–100 | `rating / 100.0` |
+| Trakt | 1–10 | `(rating - 1) / 9.0` |
+| Steam | minutes played | `log1p(minutes) / log1p(max)` — existing |
+| Last.fm | scrobble count | `log1p(count) / log1p(max)` — existing |
+| Spotify | play count | same as Last.fm — existing |
+
+Ratings of 0 (AniList "not rated") are treated as absent — item is not stored.
+
+---
+
 ## Phase 1 — Sync & Taste Profile
 
 **Goal:** users connect their services, data gets pulled into the database, and they can see their taste profile. Matching not yet required.
