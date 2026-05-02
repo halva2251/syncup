@@ -22,7 +22,7 @@ class OnboardingStatusOut(BaseModel):
     has_display_name: bool
     has_languages: bool
     has_connection_or_obsessions: bool
-    has_reviewed_taste: bool
+    has_taste_data: bool
     has_set_matchable: bool
     next_step: str | None
 
@@ -62,7 +62,7 @@ def get_onboarding_status(
         has_display_name=bool(user.display_name),
         has_languages=user.languages is not None,
         has_connection_or_obsessions=has_connection_or_obsessions,
-        has_reviewed_taste=has_connection_or_obsessions,
+        has_taste_data=has_connection_or_obsessions,
         has_set_matchable=user.is_matchable,
         next_step=next_step,
     )

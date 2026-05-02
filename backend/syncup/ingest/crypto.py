@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import functools
 import os
 import secrets
 
@@ -12,6 +13,7 @@ _KEY_ENV = "SYNCUP_TOKEN_ENCRYPTION_KEY"
 _VALID_KEY_LENGTHS = (16, 24, 32)
 
 
+@functools.lru_cache(maxsize=1)
 def _get_key() -> bytes:
     raw = base64.b64decode(os.environ[_KEY_ENV])
     if len(raw) not in _VALID_KEY_LENGTHS:

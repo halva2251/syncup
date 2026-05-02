@@ -1,3 +1,7 @@
+# LOCAL DEVELOPMENT ONLY — not suitable for production as-is.
+# Before deploying: pin the image digest, replace the hardcoded password,
+# create a least-privilege DB user, and inject secrets via env/secrets manager.
+# See docs/dev-guide.md "Before you go to production" for the full checklist.
 name: syncup
 
 services:

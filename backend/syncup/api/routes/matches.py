@@ -80,6 +80,7 @@ def _decode_cursor(cursor: str | None) -> int:
     try:
         return int(base64.b64decode(cursor).decode())
     except Exception:
+        logger.warning("Invalid match cursor %r — resetting to page 0", cursor)
         return 0
 
 
@@ -129,9 +130,12 @@ def _refresh_match_cache(
         for row in rows:
             user_data[row.user_id][row.service][row.item_id] = row.name
 
-        # Item popularity: {item_id: count of users who have it}
+        # Item popularity: count only matchable users so rarity reflects
+        # the active matching pool, not all users who ever synced.
         pop_rows = db.execute(
             select(UserItem.item_id, func.count(UserItem.user_id).label("pop"))
+            .join(User, UserItem.user_id == User.id)
+            .where(User.is_matchable == True)  # noqa: E712
             .group_by(UserItem.item_id)
         ).all()
         popularity: dict[uuid.UUID, int] = {row.item_id: row.pop for row in pop_rows}

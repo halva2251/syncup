@@ -232,15 +232,16 @@ Valid services: `steam`, `lastfm`, `spotify`. Unknown service keys → 422. All-
 
 ---
 
-## 7. Matches — Sketch
+## 7. Matches — Live ✅
 
-**Preconditions for any `/matches` endpoint:**
+**Preconditions:**
 - `is_matchable = true`
-- At least 1 service connected **or** ≥ 3 manual obsessions
-- User's combined embedding has been computed
+- At least 1 `ok`-status service connection **or** ≥ 3 manual obsessions
 
-### `GET /matches?limit=20&cursor=...`
-Top matches for the current user.
+> Currently powered by the heuristic matcher (Phase 1.9). Will switch to Item2Vec cosine similarity after Phase 2.1 training.
+
+### `GET /matches?limit=20&cursor=...` — Live ✅
+Top matches for the current user. Returns empty immediately on cache miss; match cache is refreshed in the background.
 ```json
 {
   "items": [
@@ -265,11 +266,11 @@ Top matches for the current user.
 }
 ```
 
-### `GET /matches/{user_id}`
-Detailed view of a specific match — same shape as one `items` entry above, plus a fuller `shared_highlights` list and per-service top overlaps.
+### `GET /matches/{user_id}` — Live ✅
+Single match detail — same shape as one `items` entry above.
 
-### `POST /me/recompute`
-Forces re-compute of the user's embedding and invalidates their cached matches. Rate-limited.
+### `POST /me/recompute` — Live ✅
+Forces refresh of the user's match cache. Rate-limited to 1/hour. Returns 204 immediately; computation runs in background.
 
 ---
 
@@ -282,7 +283,7 @@ What the user still needs to do before becoming matchable.
   "has_display_name": true,
   "has_languages": false,
   "has_connection_or_obsessions": false,
-  "has_reviewed_taste": false,
+  "has_taste_data": false,
   "has_set_matchable": false,
   "next_step": "connect_service"
 }
@@ -291,7 +292,7 @@ What the user still needs to do before becoming matchable.
 - `has_display_name`: always `true` (NOT NULL at signup)
 - `has_languages`: `true` when `users.languages` is set; skippable — does not block `next_step`
 - `has_connection_or_obsessions`: ≥1 `ok`-status service connection OR ≥3 manual obsessions
-- `has_reviewed_taste`: derived from `has_connection_or_obsessions` (no extra DB state)
+- `has_taste_data`: `true` when the user has taste data to display (derived from `has_connection_or_obsessions`)
 - `next_step`: `"connect_service"` → `"set_matchable"` → `null` (fully onboarded)
 
 ---

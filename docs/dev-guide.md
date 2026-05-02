@@ -33,7 +33,7 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | PATCH | `/api/me` | Partial profile update (`display_name`, `bio`, `discord_handle`, `avatar_url`, `is_matchable`); requires auth. Returns updated user. |
 | POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
 | POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
-| POST | `/api/sync/{service}` | Trigger background data pull for `spotify`, `steam`, or `lastfm`; requires auth. Returns `{"status": "syncing"}` immediately. |
+| POST | `/api/sync/{service}` | Trigger background data pull for `spotify`, `steam`, or `lastfm`; requires auth. Returns `{"status": "syncing", "service": "<name>"}` immediately. |
 | GET | `/api/me/taste` | Aggregated taste profile (top items per service, obsessions, overrides); requires auth. Empty services are omitted from the response. |
 | GET | `/api/me/obsessions` | List manual obsessions; requires auth. |
 | POST | `/api/me/obsessions` | Add a manual obsession (`category`, `name`, `weight`); requires auth. Returns 201. |
@@ -45,10 +45,13 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | GET | `/api/me/dimensions` | Current per-service dimension weights; requires auth. Returns `{"weights": {...}}`. |
 | PATCH | `/api/me/dimensions` | Replace dimension weights; backend normalises to sum 1.0; requires auth. |
 | GET | `/api/onboarding/status` | Onboarding progress for the current user; requires auth. Returns boolean flags + `next_step` hint. |
+| GET | `/api/matches` | Top matches (heuristic scorer); requires auth + `is_matchable=true`. Returns empty on cache miss, refreshes in background. |
+| GET | `/api/matches/{user_id}` | Single match detail with `shared_highlights`; requires auth + `is_matchable=true`. |
+| POST | `/api/me/recompute` | Force match cache refresh; requires auth. Returns 204 immediately. Rate-limited to 1/hour. |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 
-Rate limits: signup 5/min, login 10/min, sync 5/min, taste 30/min, obsessions 60/min read + 30/min write, overrides 60/min read + 30/min write, dimensions 60/min read + 30/min write, profile PATCH 30/min, onboarding status 60/min (all per IP).
+Rate limits: signup 5/min, login 10/min, connect 10/min, sync 5/min, taste 30/min, obsessions 60/min read + 30/min write, overrides 60/min read + 30/min write, dimensions 60/min read + 30/min write, profile GET 60/min + PATCH 30/min, onboarding 60/min, matches 30/min, match detail 60/min, recompute 1/hour (all per IP).
 
 The rest of the planned API surface is in [api-contract.md](api-contract.md).
 
@@ -280,7 +283,7 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-The immediate next step is **Phase 1.9: Heuristic Matcher** — ~20 lines, no training required, gives real matches at launch while Item2Vec is being trained. Phase 1.8 (recommendations) is deferred until after Phase 2.1 (Item2Vec training).
+**Phase 1 is complete.** The immediate next step is **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, Million Song Dataset / Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow. Phase 1.8 (cross-domain recommendations) is deferred until after Phase 2.1.
 
 ---
 

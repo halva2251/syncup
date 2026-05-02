@@ -31,7 +31,9 @@ class ProfilePatch(BaseModel):
 
 
 @router.get("/me", response_model=MeOut)
+@limiter.limit("60/minute")
 def get_me(
+    request: Request,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> MeOut:
