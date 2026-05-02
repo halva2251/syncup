@@ -103,7 +103,7 @@ These feed directly into the user's match profile and lower the matchability thr
 4. Connect your services
 5. Review your taste card → set `is_matchable = true`
 
-Response fields: `has_display_name`, `has_languages`, `has_connection_or_obsessions`, `has_reviewed_taste`, `has_set_matchable`, `next_step`.
+Response fields: `has_display_name`, `has_languages`, `has_connection_or_obsessions`, `has_taste_data`, `has_set_matchable`, `next_step`.
 
 ### 1.8 Recommendations Endpoint — deferred
 
@@ -313,7 +313,7 @@ For services without APIs: consider a "paste your export" flow (Letterboxd, Rate
 
 - [ ] Automated Spotify token refresh before each sync
 - [ ] Session cleanup job (delete rows where `expires_at < now()`)
-- [ ] `CORS_ALLOWED_ORIGINS` driven from env, not hardcoded
+- [x] `CORS_ALLOWED_ORIGINS` driven from env, not hardcoded
 - [ ] `SESSION_SECRET` generated and in `.env`
 - [ ] Production DB: limited-privilege app user (not superuser)
 - [ ] Rate limits on all write endpoints

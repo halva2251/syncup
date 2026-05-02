@@ -270,7 +270,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 215 tests
+pytest                        # all 338 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -290,8 +290,7 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 ## Known gaps and sharp edges
 
 - **Expired session cleanup**: `sessions.expires_at` is indexed but nothing deletes stale rows. Add a `pg_cron` job or a background task before production.
-- **CORS origins are hardcoded in `app.py`**: `Settings.cors_allowed_origins` already exists in `config.py` (overridable via env), but `app.py` still passes a hardcoded list to `CORSMiddleware` instead of reading from settings. Fix before any non-local deployment.
-- **`SESSION_SECRET` not set**: `.env` has an empty `session_secret`. Generate before building any signed-cookie features.
+- **`match_cache` stale row cleanup**: rows older than 24h are excluded by the freshness query but never deleted. Add a cleanup job before production to prevent table bloat.
 
 ---
 

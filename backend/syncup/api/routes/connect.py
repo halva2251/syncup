@@ -33,8 +33,8 @@ router = APIRouter(prefix="/api/connect", tags=["connect"])
 
 
 class ConnectSteamRequest(BaseModel):
-    steam_id: str | None = Field(None, min_length=1)
-    vanity_url: str | None = Field(None, min_length=1)
+    steam_id: str | None = Field(None, min_length=1, max_length=100)
+    vanity_url: str | None = Field(None, min_length=1, max_length=100)
 
     @model_validator(mode="after")
     def exactly_one(self) -> Self:
