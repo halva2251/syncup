@@ -11,13 +11,6 @@ class Settings(BaseSettings):
     # Current sessions use a random token stored server-side — no signing needed.
     session_secret: str = ""
 
-    # ── CORS ─────────────────────────────────────────────────────────────────
-    # JSON list, e.g. '["http://127.0.0.1:3001"]'
-    cors_allowed_origins: list[str] = [
-        "http://127.0.0.1:3001",
-        "http://localhost:3001",
-    ]
-
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str = "postgresql://syncup:syncup@localhost:5432/syncup"
     db_pool_size: int = 5

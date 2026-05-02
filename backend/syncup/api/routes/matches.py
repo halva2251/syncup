@@ -103,6 +103,12 @@ def _load_cached_matches(user_id: uuid.UUID, db: DbSession) -> list[MatchCache]:
     )
 
 
+# Phase 1 cap: loading all matchable users' items into memory is fine at
+# 0–500 users (max ~50k rows). Replace with chunked iteration or a
+# server-side cursor before scaling beyond that.
+_MAX_HEURISTIC_USERS = 500
+
+
 def _refresh_match_cache(
     db_factory: sessionmaker[DbSession], user_id: uuid.UUID
 ) -> None:
@@ -113,11 +119,21 @@ def _refresh_match_cache(
     """
     db = db_factory()
     try:
+        # Fetch matchable user IDs first, capped to avoid loading unbounded
+        # rows into memory. TODO: replace with chunked iteration in Phase 2.
+        matchable_ids = db.scalars(
+            select(User.id)
+            .where(User.is_matchable == True)  # noqa: E712
+            .limit(_MAX_HEURISTIC_USERS)
+        ).all()
+
+        if not matchable_ids:
+            return
+
         rows = db.execute(
             select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
             .join(Item, UserItem.item_id == Item.id)
-            .join(User, UserItem.user_id == User.id)
-            .where(User.is_matchable == True)  # noqa: E712
+            .where(UserItem.user_id.in_(matchable_ids))
         ).all()
 
         if not rows:
@@ -134,8 +150,7 @@ def _refresh_match_cache(
         # the active matching pool, not all users who ever synced.
         pop_rows = db.execute(
             select(UserItem.item_id, func.count(UserItem.user_id).label("pop"))
-            .join(User, UserItem.user_id == User.id)
-            .where(User.is_matchable == True)  # noqa: E712
+            .where(UserItem.user_id.in_(matchable_ids))
             .group_by(UserItem.item_id)
         ).all()
         popularity: dict[uuid.UUID, int] = {row.item_id: row.pop for row in pop_rows}
