@@ -2,16 +2,17 @@
 from __future__ import annotations
 
 import base64
+import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import desc, func, or_, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
+from sqlalchemy.orm import sessionmaker
 
 from syncup.auth.router import RequireAuth
 from syncup.db.models import Item, MatchCache, User, UserItem
@@ -23,6 +24,8 @@ from syncup.matching.heuristic import (
     heuristic_score,
     top_shared_highlights,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["matches"])
 
@@ -99,76 +102,89 @@ def _load_cached_matches(user_id: uuid.UUID, db: DbSession) -> list[MatchCache]:
     )
 
 
-def _refresh_match_cache(user_id: uuid.UUID, db: DbSession) -> None:
-    """Compute heuristic scores vs all matchable users and write to match_cache."""
-    rows = db.execute(
-        select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
-        .join(Item, UserItem.item_id == Item.id)
-        .join(User, UserItem.user_id == User.id)
-        .where(User.is_matchable == True)  # noqa: E712
-    ).all()
+def _refresh_match_cache(
+    db_factory: sessionmaker[DbSession], user_id: uuid.UUID
+) -> None:
+    """Compute heuristic scores vs all matchable users and write to match_cache.
 
-    if not rows:
-        return
-
-    # Group: {user_id: {service: {item_id: name}}}
-    user_data: dict[uuid.UUID, dict[str, dict[uuid.UUID, str]]] = defaultdict(
-        lambda: defaultdict(dict)
-    )
-    for row in rows:
-        user_data[row.user_id][row.service][row.item_id] = row.name
-
-    # Item popularity: {item_id: count of users who have it}
-    pop_rows = db.execute(
-        select(UserItem.item_id, func.count(UserItem.user_id).label("pop"))
-        .group_by(UserItem.item_id)
-    ).all()
-    popularity: dict[uuid.UUID, int] = {row.item_id: row.pop for row in pop_rows}
-
-    my_data = user_data.get(user_id, {})
-    if not my_data:
-        return
-
-    my_by_service = {svc: frozenset(items.keys()) for svc, items in my_data.items()}
-    all_my = frozenset().union(*my_by_service.values())
-
-    now = datetime.now(UTC)
-
-    for other_id, other_data in user_data.items():
-        if other_id == user_id:
-            continue
-
-        other_by_service = {svc: frozenset(items.keys()) for svc, items in other_data.items()}
-        all_other = frozenset().union(*other_by_service.values())
-
-        score = heuristic_score(all_my, all_other, popularity)
-        breakdown = heuristic_breakdown(my_by_service, other_by_service, popularity)
-
-        item_names: dict[uuid.UUID, str] = {}
-        for svc_items in my_data.values():
-            item_names.update(svc_items)
-        for svc_items in other_data.values():
-            item_names.update(svc_items)
-
-        highlights = top_shared_highlights(my_by_service, other_by_service, item_names, popularity)
-
-        a_id, b_id = (user_id, other_id) if user_id < other_id else (other_id, user_id)
-        db.merge(
-            MatchCache(
-                user_a_id=a_id,
-                user_b_id=b_id,
-                score=score,
-                breakdown=breakdown,
-                highlights=[{"service": h.service, "item_name": h.item_name} for h in highlights],
-                computed_at=now,
-            )
-        )
-
+    Runs as a BackgroundTask — creates its own DB session so the request
+    session can close before computation finishes.
+    """
+    db = db_factory()
     try:
+        rows = db.execute(
+            select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
+            .join(Item, UserItem.item_id == Item.id)
+            .join(User, UserItem.user_id == User.id)
+            .where(User.is_matchable == True)  # noqa: E712
+        ).all()
+
+        if not rows:
+            return
+
+        # Group: {user_id: {service: {item_id: name}}}
+        user_data: dict[uuid.UUID, dict[str, dict[uuid.UUID, str]]] = defaultdict(
+            lambda: defaultdict(dict)
+        )
+        for row in rows:
+            user_data[row.user_id][row.service][row.item_id] = row.name
+
+        # Item popularity: {item_id: count of users who have it}
+        pop_rows = db.execute(
+            select(UserItem.item_id, func.count(UserItem.user_id).label("pop"))
+            .group_by(UserItem.item_id)
+        ).all()
+        popularity: dict[uuid.UUID, int] = {row.item_id: row.pop for row in pop_rows}
+
+        my_data = user_data.get(user_id, {})
+        if not my_data:
+            return
+
+        my_by_service = {svc: frozenset(items.keys()) for svc, items in my_data.items()}
+        all_my = frozenset().union(*my_by_service.values())
+
+        # Build once — the requesting user's item names don't change per iteration.
+        my_item_names: dict[uuid.UUID, str] = {}
+        for svc_items in my_data.values():
+            my_item_names.update(svc_items)
+
+        now = datetime.now(UTC)
+
+        for other_id, other_data in user_data.items():
+            if other_id == user_id:
+                continue
+
+            other_by_service = {svc: frozenset(items.keys()) for svc, items in other_data.items()}
+            all_other = frozenset().union(*other_by_service.values())
+
+            score = heuristic_score(all_my, all_other, popularity)
+            breakdown = heuristic_breakdown(my_by_service, other_by_service, popularity)
+
+            item_names = {**my_item_names}
+            for svc_items in other_data.values():
+                item_names.update(svc_items)
+
+            highlights = top_shared_highlights(my_by_service, other_by_service, item_names, popularity)
+
+            a_id, b_id = (user_id, other_id) if user_id < other_id else (other_id, user_id)
+            db.merge(
+                MatchCache(
+                    user_a_id=a_id,
+                    user_b_id=b_id,
+                    score=score,
+                    breakdown=breakdown,
+                    highlights=[{"service": h.service, "item_name": h.item_name} for h in highlights],
+                    computed_at=now,
+                )
+            )
+
         db.commit()
-    except SQLAlchemyError as exc:
+
+    except Exception:
         db.rollback()
-        raise SyncUpError("INTERNAL_ERROR", "Failed to cache match results", 500) from exc
+        logger.exception("Match cache refresh failed for user %s", user_id)
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +196,7 @@ def _refresh_match_cache(user_id: uuid.UUID, db: DbSession) -> None:
 @limiter.limit("30/minute")
 def get_matches(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
     limit: int = Query(default=20, ge=1, le=100),
@@ -190,8 +207,8 @@ def get_matches(
 
     cached = _load_cached_matches(user.id, db)
     if not cached:
-        _refresh_match_cache(user.id, db)
-        cached = _load_cached_matches(user.id, db)
+        background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
+        return MatchListOut(items=[], next_cursor=None)
 
     offset = _decode_cursor(cursor)
     page = cached[offset : offset + limit]
@@ -243,6 +260,8 @@ def get_match_detail(
     row = db.get(MatchCache, (a_id, b_id))
     if not row:
         raise SyncUpError("NOT_FOUND", "Match not found", 404)
+    if user.id not in (row.user_a_id, row.user_b_id):
+        raise SyncUpError("FORBIDDEN", "Not your match", 403)
 
     other = db.get(User, other_user_id)
     if not other:
@@ -261,9 +280,10 @@ def get_match_detail(
 @limiter.limit("1/hour")
 def recompute_matches(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> Response:
     """Force recompute of the user's match cache. Rate-limited to 1/hour."""
-    _refresh_match_cache(user.id, db)
+    background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
     return Response(status_code=204)
