@@ -20,6 +20,7 @@ from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.ingest.lastfm import LastfmClient
 from syncup.ingest.steam import SteamClient
+from syncup.limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,7 @@ def _upsert_connection(
 
 
 @router.post("/steam", response_model=ServiceConnectionOut)
+@limiter.limit("10/minute")
 def connect_steam(
     request: Request,
     body: ConnectSteamRequest,
@@ -130,6 +132,7 @@ def connect_steam(
 
 
 @router.post("/lastfm", response_model=ServiceConnectionOut)
+@limiter.limit("10/minute")
 def connect_lastfm(
     request: Request,
     body: ConnectLastfmRequest,

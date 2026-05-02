@@ -16,6 +16,8 @@ def _make_key() -> str:
 
 @pytest.fixture(autouse=True)
 def set_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syncup.ingest.crypto import _get_key
+    _get_key.cache_clear()
     monkeypatch.setenv("SYNCUP_TOKEN_ENCRYPTION_KEY", _make_key())
 
 
@@ -41,8 +43,10 @@ def test_ciphertext_is_bytes() -> None:
 
 
 def test_wrong_key_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    from syncup.ingest.crypto import _get_key
     ct = encrypt_token("secret")
     monkeypatch.setenv("SYNCUP_TOKEN_ENCRYPTION_KEY", _make_key())
+    _get_key.cache_clear()  # force re-read so decrypt uses the new (wrong) key
     with pytest.raises(InvalidTag):
         decrypt_token(ct)
 

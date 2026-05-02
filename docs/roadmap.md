@@ -31,7 +31,10 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `PATCH /api/me` — profile edit (`display_name`, `bio`, `discord_handle`, `avatar_url`, `is_matchable`) | `syncup/api/routes/me.py` |
 | `GET /api/onboarding/status` — onboarding progress: booleans + `next_step` hint | `syncup/api/routes/onboarding.py` |
 | `languages` field on `users` — nullable TEXT[], skippable during onboarding | `syncup/db/models.py`, migration `20260502_0003` |
-| 300 passing tests | `backend/tests/` |
+| `GET /api/matches` + `GET /api/matches/{user_id}` + `POST /api/me/recompute` — heuristic matching | `syncup/api/routes/matches.py` |
+| `match_cache.highlights` JSONB — cached top shared items per match pair | `syncup/db/models.py`, migration `20260502_0004` |
+| `updated_at` DB trigger on `users` | migration `20260502_0005` |
+| 338 passing tests | `backend/tests/` |
 
 ---
 
@@ -106,11 +109,9 @@ Response fields: `has_display_name`, `has_languages`, `has_connection_or_obsessi
 
 `GET /api/me/recommendations` — skipped as a service-native API proxy. Will be built on top of Item2Vec embeddings after Phase 2.1 (model training), enabling cross-domain recommendations (e.g. music suggestions from game taste). See Phase 2 for the implementation plan.
 
-### 1.9 Heuristic Matcher
+### 1.9 Heuristic Matcher ✅
 
-### 1.9 Heuristic Matcher
-
-**Build this before the ML pipeline.** It's ~20 lines, requires no training, and produces better early matches than a poorly-trained model. Use it as the live matching engine until Item2Vec embeddings are ready.
+**Built.** Rarity-weighted item-overlap scorer in `syncup/matching/heuristic.py`, powering `GET /api/matches` until Item2Vec embeddings are ready. It's ~20 lines, requires no training, and produces better early matches than a poorly-trained model. Use it as the live matching engine until Item2Vec embeddings are ready.
 
 ```python
 def match_score_heuristic(user_a_items, user_b_items, item_popularity):

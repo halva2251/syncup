@@ -29,8 +29,8 @@ Connect Steam, Last.fm, and Spotify. A cross-domain embedding model learns what 
 | Onboarding status | done | `GET /api/onboarding/status` |
 | Rate limiting | done | per-endpoint limits on all routes |
 | PostgreSQL + Docker | done | `docker compose up -d` in `backend/` |
-| 300 passing tests | done | |
-| Heuristic matcher | next | Phase 1.9 — ~20 lines, real matches before ML is ready |
+| Heuristic matcher + GET /api/matches | done | Phase 1.9 — rarity-weighted overlap, cache-aside, BackgroundTasks refresh |
+| 338 passing tests | done | |
 | ML training pipeline | not started | Phase 2 — Item2Vec on public datasets |
 | Frontend | not started | Phase 3 — Next.js, deferred until after Phase 2 |
 

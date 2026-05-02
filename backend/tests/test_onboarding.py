@@ -120,7 +120,7 @@ def test_onboarding_status_returns_all_fields(ob_client: TestClient) -> None:
     assert "has_display_name" in data
     assert "has_languages" in data
     assert "has_connection_or_obsessions" in data
-    assert "has_reviewed_taste" in data
+    assert "has_taste_data" in data
     assert "has_set_matchable" in data
     assert "next_step" in data
 
@@ -220,23 +220,23 @@ def test_connection_and_zero_obsessions_is_true(
 
 
 # ---------------------------------------------------------------------------
-# has_reviewed_taste — derived from has_connection_or_obsessions
+# has_taste_data — derived from has_connection_or_obsessions
 # ---------------------------------------------------------------------------
 
 
-def test_has_reviewed_taste_false_when_no_data(ob_client: TestClient) -> None:
+def test_has_taste_data_false_when_no_data(ob_client: TestClient) -> None:
     resp = ob_client.get("/api/onboarding/status")
-    assert resp.json()["has_reviewed_taste"] is False
+    assert resp.json()["has_taste_data"] is False
 
 
-def test_has_reviewed_taste_true_when_has_connection(
+def test_has_taste_data_true_when_has_connection(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
     for c in _make_ob_client(
         monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0
     ):
         resp = c.get("/api/onboarding/status")
-        assert resp.json()["has_reviewed_taste"] is True
+        assert resp.json()["has_taste_data"] is True
 
 
 # ---------------------------------------------------------------------------

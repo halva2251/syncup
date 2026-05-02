@@ -1,7 +1,9 @@
 """FastAPI application — entry point for the SyncUp backend."""
 from __future__ import annotations
 
+import json
 import logging
+import os
 import secrets
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -48,6 +50,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _cors_origins() -> list[str]:
+    """Read CORS allowed origins from env, with safe local-dev fallback."""
+    raw = os.environ.get("CORS_ALLOWED_ORIGINS")
+    if raw:
+        try:
+            return json.loads(raw)
+        except (ValueError, json.JSONDecodeError):
+            logger.warning("Could not parse CORS_ALLOWED_ORIGINS — using defaults")
+    return ["http://127.0.0.1:3001", "http://localhost:3001"]
+
+
 # ---------------------------------------------------------------------------
 # Error helpers (SyncUpError lives in syncup.exceptions)
 # ---------------------------------------------------------------------------
@@ -77,6 +90,13 @@ def _error_json(code: str, message: str, status_code: int) -> JSONResponse:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
     settings = Settings()  # type: ignore[call-arg]
+
+    if not settings.debug and not settings.syncup_token_encryption_key:
+        raise RuntimeError(
+            "SYNCUP_TOKEN_ENCRYPTION_KEY is not set. "
+            "Generate one: python -c \"import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())\""
+        )
+
     app.state.settings = settings
     app.state.db = sessionmaker_for(
         settings.database_url,
@@ -103,7 +123,7 @@ app = FastAPI(title="SyncUp API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3001", "http://localhost:3001"],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

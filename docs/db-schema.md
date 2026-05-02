@@ -37,10 +37,11 @@ CREATE TABLE users (
     avatar_url      TEXT,
     bio             TEXT,
     discord_handle  TEXT,                       -- shown to matches after reveal
+    languages       TEXT[],                     -- nullable; skippable during onboarding
     is_matchable    BOOLEAN NOT NULL DEFAULT false,
     onboarded       BOOLEAN NOT NULL DEFAULT false,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()  -- auto-updated by trigger trg_users_updated_at
 );
 
 CREATE INDEX idx_users_matchable ON users(is_matchable) WHERE is_matchable = true;
@@ -189,8 +190,9 @@ CREATE INDEX idx_user_embeddings_combined
 CREATE TABLE match_cache (
     user_a_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     user_b_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    score        REAL NOT NULL,        -- 0..1 cosine similarity
+    score        REAL NOT NULL,        -- 0..1 heuristic/cosine similarity
     breakdown    JSONB NOT NULL,       -- {steam: 0.72, lastfm: 0.89, spotify: 0.81}
+    highlights   JSONB NOT NULL DEFAULT '[]',  -- [{service, item_name}, ...] top shared items
     computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_a_id, user_b_id),
     CHECK (user_a_id < user_b_id)
