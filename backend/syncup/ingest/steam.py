@@ -2,14 +2,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import ClassVar
 
 import httpx
+
+from syncup.db.models import ServiceConnection
+from syncup.ingest.protocol import RawItem, TokenPair
 
 _API_BASE = "https://api.steampowered.com"
 
 
 @dataclass
 class SteamClient:
+    service_name: ClassVar[str] = "steam"
+
     api_key: str
     http: httpx.Client = field(
         default_factory=lambda: httpx.Client(timeout=httpx.Timeout(10.0)), repr=False
@@ -74,3 +81,40 @@ class SteamClient:
         if not players:
             raise ValueError(f"No Steam profile found for steam_id {steam_id!r}")
         return players[0]  # type: ignore[no-any-return]
+
+    # ------------------------------------------------------------------
+    # ServiceClient Protocol implementation
+    # ------------------------------------------------------------------
+
+    def fetch_items(self, connection: ServiceConnection) -> list[RawItem]:
+        """Fetch all owned games for the connected Steam account."""
+        steam_id: str = connection.external_user_id
+        games = self.get_owned_games(steam_id)
+        if not games:
+            return []
+        max_playtime = max((g.get("playtime_forever", 0) for g in games), default=1) or 1
+        result: list[RawItem] = []
+        for game in games:
+            appid = str(game["appid"])
+            playtime = float(game.get("playtime_forever", 0))
+            rtime = game.get("rtime_last_played")
+            last_at: datetime | None = (
+                datetime.fromtimestamp(rtime, tz=UTC) if rtime else None
+            )
+            result.append(
+                RawItem(
+                    external_id=appid,
+                    name=game.get("name", f"App {appid}"),
+                    item_type="game",
+                    engagement_score=playtime / max_playtime,
+                    raw_value=playtime,
+                    raw_type="consumption",
+                    metadata={"img_icon_url": game.get("img_icon_url", "")},
+                    last_engaged_at=last_at,
+                )
+            )
+        return result
+
+    def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
+        """Steam uses an API key — no OAuth token refresh needed."""
+        return None
