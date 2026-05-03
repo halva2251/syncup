@@ -102,7 +102,7 @@ Note: `engagement_score` uses proportion-based normalization in the client. Log1
 
 1. **Create `syncup/ingest/{service}.py`** with a client class that satisfies `ServiceClient`:
    ```python
-   from syncup.ingest.protocol import RawItem, ServiceClient, TokenPair
+   from syncup.ingest.protocol import RawItem, ServiceClient, SyncClientError, TokenPair
    from syncup.db.models import ServiceConnection
 
    class MyServiceClient:
@@ -110,12 +110,15 @@ Note: `engagement_score` uses proportion-based normalization in the client. Log1
 
        def fetch_items(self, connection: ServiceConnection) -> list[RawItem]:
            # fetch from API, return RawItem list
+           # raise SyncClientError for expected, user-safe failures (not ValueError)
            ...
 
        def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
            # return None if service doesn't use OAuth tokens
            return None
    ```
+
+   **Error convention:** raise `SyncClientError` (from `protocol.py`) for any expected failure with a message safe to show the user — e.g. missing token, user not found, bad credentials. Do NOT raise plain `ValueError`; the sync task only trusts `SyncClientError` messages and treats all other exceptions as a generic error to avoid leaking internal state.
 
 2. **Register it in `registry.py`**:
    For built-in clients, add instantiation to `register_default_clients()` in `registry.py` (called from the app lifespan). For new services:
@@ -193,7 +196,7 @@ tracks = client.get_top_tracks("username", limit=50, period="6month")
 # Each track: {"name": "...", "artist": {"name": "..."}, "playcount": "42", ...}
 ```
 
-Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `ValueError`.
+Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `ValueError` (will be changed to `SyncClientError` in the S1 PR).
 
 ### `crypto.py` — token encryption
 
