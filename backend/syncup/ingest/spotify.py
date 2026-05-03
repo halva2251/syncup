@@ -6,8 +6,13 @@ import hashlib
 import secrets
 import urllib.parse
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 import httpx
+
+from syncup.db.models import ServiceConnection
+from syncup.ingest.protocol import RawItem, TokenPair
 
 _AUTH_URL = "https://accounts.spotify.com/authorize"
 _TOKEN_URL = "https://accounts.spotify.com/api/token"  # nosec B105
@@ -27,6 +32,8 @@ class TokenResponse:
 
 @dataclass
 class SpotifyClient:
+    service_name: ClassVar[str] = "spotify"
+
     client_id: str
     redirect_uri: str
     # Not required for PKCE; kept for future flows that need it (e.g. client credentials).
@@ -141,3 +148,101 @@ class SpotifyClient:
         )
         resp.raise_for_status()
         return resp.json()  # type: ignore[no-any-return]
+
+    # ------------------------------------------------------------------
+    # ServiceClient Protocol implementation
+    # ------------------------------------------------------------------
+
+    _TOKEN_REFRESH_BUFFER: ClassVar[timedelta] = timedelta(seconds=60)
+
+    def fetch_items(self, connection: ServiceConnection) -> list[RawItem]:
+        """Fetch top artists and recently played tracks for the connected account."""
+        from syncup.ingest.crypto import decrypt_token
+
+        token_bytes: bytes | None = connection.access_token_encrypted
+        if token_bytes is None:
+            raise ValueError("Missing access token — reconnect Spotify via OAuth")
+        access_token = decrypt_token(token_bytes)
+
+        top_artists = self.fetch_top_artists(
+            access_token, limit=50, time_range="medium_term"
+        )
+        recently_played = self.fetch_recently_played(access_token, limit=50)
+
+        result: list[RawItem] = []
+        n_artists = len(top_artists)
+        for i, artist in enumerate(top_artists):
+            result.append(
+                RawItem(
+                    external_id=artist["id"],
+                    name=artist["name"],
+                    item_type="artist",
+                    engagement_score=(n_artists - i) / n_artists if n_artists else 0.0,
+                    raw_value=float(n_artists - i),
+                    raw_type="consumption",
+                    metadata={"genres": artist.get("genres", [])},
+                    last_engaged_at=None,
+                )
+            )
+
+        track_occurrences: dict[str, dict] = {}  # type: ignore[type-arg]
+        for event in recently_played:
+            track = event["track"]
+            tid = track["id"]
+            if tid not in track_occurrences:
+                track_occurrences[tid] = {
+                    "name": track["name"],
+                    "artists": [a["name"] for a in track.get("artists", [])],
+                    "count": 0,
+                    "played_at": event.get("played_at"),
+                }
+            track_occurrences[tid]["count"] += 1
+
+        max_count = max((info["count"] for info in track_occurrences.values()), default=1) or 1
+        for tid, info in track_occurrences.items():
+            last_at: datetime | None = None
+            if info["played_at"]:
+                try:
+                    last_at = datetime.fromisoformat(info["played_at"])
+                except (ValueError, TypeError):
+                    pass
+            result.append(
+                RawItem(
+                    external_id=tid,
+                    name=info["name"],
+                    item_type="track",
+                    engagement_score=info["count"] / max_count,
+                    raw_value=float(info["count"]),
+                    raw_type="consumption",
+                    metadata={"artists": info["artists"]},
+                    last_engaged_at=last_at,
+                )
+            )
+
+        return result
+
+    def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
+        """Refresh the Spotify access token if it is expired or within the buffer window.
+
+        Returns None if the token is still valid; returns a TokenPair if a new
+        token was obtained. The caller is responsible for persisting the new tokens.
+        """
+        from syncup.ingest.crypto import decrypt_token
+
+        expires_at: datetime | None = connection.token_expires_at
+        now = datetime.now(UTC)
+
+        if expires_at is None or expires_at > now + self._TOKEN_REFRESH_BUFFER:
+            return None
+
+        refresh_bytes: bytes | None = connection.refresh_token_encrypted
+        if refresh_bytes is None:
+            raise ValueError("Missing refresh token — reconnect Spotify via OAuth")
+
+        old_refresh = decrypt_token(refresh_bytes)
+        new_tokens = self.refresh_access_token(old_refresh)
+        return TokenPair(
+            access_token=new_tokens.access_token,
+            refresh_token=new_tokens.refresh_token,
+            expires_at=now + timedelta(seconds=new_tokens.expires_in),
+        )

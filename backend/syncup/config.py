@@ -34,4 +34,22 @@ class Settings(BaseSettings):
     lastfm_api_key: str = ""
     lastfm_shared_secret: str = ""
 
+    # ── AniList ──────────────────────────────────────────────────────────────
+    # Register at https://anilist.co/settings/developer before use.
+    anilist_client_id: str | None = None
+    anilist_client_secret: str | None = None
+    anilist_redirect_uri: str = "http://127.0.0.1:3000/api/connect/anilist/oauth/callback"
+
+    # ── Trakt.tv ─────────────────────────────────────────────────────────────
+    # Register at https://trakt.tv/oauth/applications before use.
+    trakt_client_id: str | None = None
+    trakt_client_secret: str | None = None
+    trakt_redirect_uri: str = "http://127.0.0.1:3000/api/connect/trakt/oauth/callback"
+
+    # ── Reddit ───────────────────────────────────────────────────────────────
+    # Register at https://www.reddit.com/prefs/apps before use.
+    reddit_client_id: str | None = None
+    reddit_client_secret: str | None = None
+    reddit_redirect_uri: str = "http://127.0.0.1:3000/api/connect/reddit/oauth/callback"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}

@@ -230,6 +230,9 @@ class UserItem(Base):
     )
     engagement_score: Mapped[float] = mapped_column(Float, nullable=False)
     raw_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    raw_type: Mapped[str] = mapped_column(
+        Text, nullable=False, default="consumption", server_default="consumption"
+    )
     last_engaged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -299,7 +302,7 @@ class ManualObsession(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "category IN ('game', 'music', 'film', 'book', 'show', 'other')",
+            "category IN ('game', 'music', 'film', 'book', 'show', 'anime', 'manga', 'community', 'other')",
             name="ck_obsession_category_values",
         ),
         Index("idx_obsessions_user", "user_id"),
