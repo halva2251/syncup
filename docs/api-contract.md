@@ -190,7 +190,8 @@ Paginated raw items for a service/type.
 ```json
 // req
 { "category": "book", "name": "Blindsight", "weight": 1.5 }
-// category ∈ game | music | film | book | show | other
+// category ∈ game | music | film | book | show | anime | manga | community | other
+// (anime, manga, community added in migration 0007 for AniList and Reddit support)
 // weight defaults to 1.0, must be > 0
 ```
 ### `DELETE /me/obsessions/{id}` — Live ✅
@@ -339,6 +340,6 @@ What the user still needs to do before becoming matchable.
 
 ## Open questions
 
-- **Match reveal flow** — current design shows full profile + discord immediately. Do we want a "request to connect" step before revealing discord handle? Decide before building `/matches`.
+- **Match reveal flow** — ~~Decide before building `/matches`.~~ **Decided:** show full profile + discord handle immediately for MVP. "Request to connect" step deferred to V2. Already implemented in `GET /matches`.
 - **Background jobs** — sync triggers are async; frontend needs to poll `/me/connections` or we add a WebSocket/SSE endpoint. Start with polling.
 - **Rate limits on `/me/recompute`** — initial target: 1/hour per user.
