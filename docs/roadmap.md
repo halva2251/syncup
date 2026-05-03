@@ -34,7 +34,17 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `GET /api/matches` + `GET /api/matches/{user_id}` + `POST /api/me/recompute` — heuristic matching | `syncup/api/routes/matches.py` |
 | `match_cache.highlights` JSONB — cached top shared items per match pair | `syncup/db/models.py`, migration `20260502_0004` |
 | `updated_at` DB trigger on `users` | migration `20260502_0005` |
-| 338 passing tests | `backend/tests/` |
+| `ServiceClient` Protocol + `RawItem` TypedDict | `syncup/ingest/protocol.py` |
+| `ServiceRegistry` — service-agnostic dispatch | `syncup/ingest/registry.py` |
+| Migration 0006 — `raw_type TEXT` column on `user_items` | migration `20260503_0006` |
+| Migration 0007 — expanded `manual_obsessions.category` CHECK | migration `20260503_0007` |
+| `SteamClient`, `SpotifyClient`, `LastfmClient` — retrofitted to satisfy Protocol | `syncup/ingest/{steam,spotify,lastfm}.py` |
+| Sync route generic dispatch via registry | `syncup/api/routes/sync.py` |
+| Dimensions route dynamic service validation | `syncup/api/routes/dimensions.py` |
+| `register_default_clients()` in app lifespan | `syncup/api/app.py` |
+| AniList, Trakt, Reddit OAuth env vars | `syncup/config.py` |
+| `normalize_title()` utility for cross-service film dedup | `syncup/ingest/_text.py` |
+| 384 passing tests | `backend/tests/` |
 
 ---
 
@@ -42,7 +52,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 
 **Goal:** Add Letterboxd, AniList, Trakt, Reddit, and RateYourMusic to the ingest pipeline. Introduce a `ServiceClient` Protocol so every future service slots in without touching the sync route.
 
-> **Status:** Planned. Foundation must land before any individual service.
+> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). Services S1–S5 are next — each ships as an independent PR.
 
 ### F1–F7 Foundation (single PR)
 
@@ -83,6 +93,9 @@ ALTER TABLE manual_obsessions
 - Re-import: wipe-and-replace in a DB transaction
 - File size cap: 10 MB
 - No OAuth; connection row set to `sync_status = 'ok'` after successful import
+
+**Also lands in S1 PR (bundled — touches the same protocol layer):**
+- Add `SyncClientError` to `syncup/ingest/protocol.py` — a custom exception class for expected, user-safe errors raised by service clients. The generic sync task's `_safe_error_message` will trust `SyncClientError` messages and treat all other exceptions (including third-party `ValueError`) as a generic "Sync failed — please retry". Retrofit `SteamClient`, `SpotifyClient`, `LastfmClient` to raise `SyncClientError` instead of `ValueError` in `fetch_items()` and `refresh_token()`. `LetterboxdClient` uses it from day one.
 
 ### S2 — AniList (GraphQL OAuth)
 
@@ -146,11 +159,12 @@ All service ratings are normalized to `engagement_score ∈ [0, 1]`. Raw values 
 | RateYourMusic | 0.5–5.0 (half-stars) | `(rating - 0.5) / 4.5` |
 | AniList | 0–100 | `rating / 100.0` |
 | Trakt | 1–10 | `(rating - 1) / 9.0` |
-| Steam | minutes played | `log1p(minutes) / log1p(max)` — existing |
-| Last.fm | scrobble count | `log1p(count) / log1p(max)` — existing |
-| Spotify | play count | same as Last.fm — existing |
+| Steam | minutes played | `playtime / max_playtime` — proportion-based |
+| Last.fm | scrobble count | `count / max_count` — proportion-based |
+| Spotify (artists) | rank | `(n - i) / n` — rank-based |
+| Spotify (tracks) | play count | `count / max_count` — proportion-based |
 
-Ratings of 0 (AniList "not rated") are treated as absent — item is not stored.
+Proportion-based normalization is applied by each client in `fetch_items()`. Log1p dampening (for handling outliers) is applied by the embedding builder during item2vec training, not in `user_items`. Ratings of 0 (AniList "not rated") are treated as absent — item is not stored.
 
 ---
 

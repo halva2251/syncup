@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import httpx
+
+from syncup.db.models import ServiceConnection
+from syncup.ingest.protocol import RawItem, TokenPair
 
 _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 
@@ -14,6 +18,8 @@ _MAX_LIMIT = 1000
 
 @dataclass
 class LastfmClient:
+    service_name: ClassVar[str] = "lastfm"
+
     api_key: str
     http: httpx.Client = field(
         default_factory=lambda: httpx.Client(timeout=httpx.Timeout(10.0)), repr=False
@@ -118,3 +124,62 @@ class LastfmClient:
         body: dict = resp.json()
         self._check_api_error(body)
         return body["toptracks"]["track"]  # type: ignore[no-any-return]
+
+    # ------------------------------------------------------------------
+    # ServiceClient Protocol implementation
+    # ------------------------------------------------------------------
+
+    def fetch_items(self, connection: ServiceConnection) -> list[RawItem]:
+        """Fetch top artists and tracks for the connected Last.fm account."""
+        username: str = connection.external_user_id
+        top_artists = self.get_top_artists(username, limit=50, period="overall")
+        top_tracks = self.get_top_tracks(username, limit=50, period="overall")
+
+        result: list[RawItem] = []
+
+        if top_artists:
+            max_plays = (
+                max((float(a.get("playcount", 0)) for a in top_artists), default=1.0) or 1.0
+            )
+            for artist in top_artists:
+                external_id = artist.get("mbid") or artist["name"]
+                playcount = float(artist.get("playcount", 0))
+                result.append(
+                    RawItem(
+                        external_id=external_id,
+                        name=artist["name"],
+                        item_type="artist",
+                        engagement_score=playcount / max_plays,
+                        raw_value=playcount,
+                        raw_type="consumption",
+                        metadata={},
+                        last_engaged_at=None,
+                    )
+                )
+
+        if top_tracks:
+            max_plays = (
+                max((float(t.get("playcount", 0)) for t in top_tracks), default=1.0) or 1.0
+            )
+            for track in top_tracks:
+                artist_name = track.get("artist", {}).get("name", "")
+                external_id = track.get("mbid") or f"{track['name']}::{artist_name}"
+                playcount = float(track.get("playcount", 0))
+                result.append(
+                    RawItem(
+                        external_id=external_id,
+                        name=track["name"],
+                        item_type="track",
+                        engagement_score=playcount / max_plays,
+                        raw_value=playcount,
+                        raw_type="consumption",
+                        metadata={"artist": artist_name},
+                        last_engaged_at=None,
+                    )
+                )
+
+        return result
+
+    def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
+        """Last.fm uses an API key — no OAuth token refresh needed."""
+        return None

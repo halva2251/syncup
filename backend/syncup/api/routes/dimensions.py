@@ -13,11 +13,10 @@ from syncup.auth.router import RequireAuth
 from syncup.db.models import UserDimensionWeight
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
+from syncup.ingest.registry import registered_services
 from syncup.limiter import limiter
 
 router = APIRouter(prefix="/api/me", tags=["dimensions"])
-
-_VALID_SERVICES = frozenset({"steam", "lastfm", "spotify"})
 
 
 class DimensionWeightsOut(BaseModel):
@@ -32,7 +31,9 @@ class DimensionWeightsIn(BaseModel):
     def validate_weights(cls, v: dict[str, float]) -> dict[str, float]:
         if not v:
             raise ValueError("weights must not be empty")
-        invalid = set(v) - _VALID_SERVICES
+        # Call registered_services() at validation time so the check always
+        # reflects the current registry — not a value captured at import time.
+        invalid = set(v) - registered_services()
         if invalid:
             raise ValueError(f"Unknown services: {sorted(invalid)}")
         if any(w < 0 for w in v.values()):

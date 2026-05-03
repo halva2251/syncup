@@ -37,7 +37,7 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | POST | `/api/connect/rateyourmusic/import` | CSV file upload (RYM ratings export); wipe-and-replace; requires auth *(Phase 1.10)* |
 | GET | `/api/connect/{service}/oauth/start` | Start OAuth for `anilist`, `trakt`, `reddit`; requires auth *(Phase 1.10)* |
 | GET | `/api/connect/{service}/oauth/callback` | Complete OAuth for the above services *(Phase 1.10)* |
-| POST | `/api/sync/{service}` | Trigger background data pull for any registered service; requires auth. Returns `{"status": "syncing", "service": "<name>"}` immediately. |
+| POST | `/api/sync/{service}` | Trigger background data pull for any registered service; requires auth. Returns `{"status": "syncing", "service": "<name>"}` immediately. Unknown service → 404 SERVICE_NOT_FOUND. |
 | GET | `/api/me/taste` | Aggregated taste profile (top items per service, obsessions, overrides); requires auth. Empty services are omitted from the response. |
 | GET | `/api/me/obsessions` | List manual obsessions; requires auth. |
 | POST | `/api/me/obsessions` | Add a manual obsession (`category`, `name`, `weight`); requires auth. Returns 201. |
@@ -70,6 +70,7 @@ Every service client satisfies the `ServiceClient` Protocol defined in `protocol
 ```
 protocol.py        → ServiceClient Protocol, RawItem TypedDict, TokenPair
 registry.py        → ServiceRegistry: dict[str, ServiceClient] + get_client()
+_text.py           → normalize_title() — shared title normalisation for cross-service dedup
 steam.py           → SteamClient (API key, no OAuth)
 spotify.py         → SpotifyClient (OAuth PKCE)
 lastfm.py          → LastfmClient (API key, no OAuth)
@@ -86,18 +87,22 @@ crypto.py          → Token encryption (AES-GCM)
 - `name`: display name
 - `item_type`: `'game'|'film'|'show'|'anime'|'manga'|'track'|'artist'|'album'|'community'`
 - `raw_value`: original metric (minutes played, scrobble count, rating value)
+- `engagement_score`: pre-computed by the client (0.0–1.0); Steam uses `playtime/max`, Spotify uses rank-based for artists / count/max for tracks, Last.fm uses `playcount/max`
 - `raw_type`: `'consumption'` or `'rating'` — determines normalization in the embedding builder
+- `last_engaged_at`: most recent engagement timestamp; None when unknown
 - `metadata`: free dict, service-specific keys (see `db-schema.md` for load-bearing keys)
 
 **`raw_type` explains the difference:**
-- `'consumption'` — the number represents *how much* the user engaged (hours, plays, listens). Normalized with `log1p` dampening.
+- `'consumption'` — the number represents *how much* the user engaged (hours, plays, listens). Normalized with proportion-based formulas (e.g. `playtime/max_playtime`).
 - `'rating'` — the number represents *how much the user liked it* (stars out of 5, score out of 100). Normalized per a per-service formula (see roadmap.md for the formulas). Ratings of 0 ("not rated") are treated as absent — the item is not stored.
+
+Note: `engagement_score` uses proportion-based normalization in the client. Log1p dampening (for handling outliers) is applied by the embedding builder during training, not in `user_items`.
 
 ### How to add a new service
 
 1. **Create `syncup/ingest/{service}.py`** with a client class that satisfies `ServiceClient`:
    ```python
-   from syncup.ingest.protocol import RawItem, ServiceClient, TokenPair
+   from syncup.ingest.protocol import RawItem, ServiceClient, SyncClientError, TokenPair
    from syncup.db.models import ServiceConnection
 
    class MyServiceClient:
@@ -105,6 +110,7 @@ crypto.py          → Token encryption (AES-GCM)
 
        def fetch_items(self, connection: ServiceConnection) -> list[RawItem]:
            # fetch from API, return RawItem list
+           # raise SyncClientError for expected, user-safe failures (not ValueError)
            ...
 
        def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
@@ -112,7 +118,10 @@ crypto.py          → Token encryption (AES-GCM)
            return None
    ```
 
+   **Error convention:** raise `SyncClientError` (from `protocol.py`) for any expected failure with a message safe to show the user — e.g. missing token, user not found, bad credentials. Do NOT raise plain `ValueError`; the sync task only trusts `SyncClientError` messages and treats all other exceptions as a generic error to avoid leaking internal state.
+
 2. **Register it in `registry.py`**:
+   For built-in clients, add instantiation to `register_default_clients()` in `registry.py` (called from the app lifespan). For new services:
    ```python
    from syncup.ingest.myservice import MyServiceClient
    register(MyServiceClient(...))
@@ -187,7 +196,7 @@ tracks = client.get_top_tracks("username", limit=50, period="6month")
 # Each track: {"name": "...", "artist": {"name": "..."}, "playcount": "42", ...}
 ```
 
-Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `ValueError`.
+Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `ValueError` (will be changed to `SyncClientError` in the S1 PR).
 
 ### `crypto.py` — token encryption
 
@@ -341,7 +350,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 338 tests
+pytest                        # all 384 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -354,11 +363,16 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-**Phase 1 is complete. Phase 1.10 (service expansion) is next.**
+**Phase 1.10 Foundation is complete.** The `ServiceClient` Protocol, `ServiceRegistry`, migrations 0006–0007, and retrofitted clients (Steam, Spotify, Last.fm) are all live. 384 tests passing.
 
-Phase 1.10 adds Letterboxd, AniList, Trakt, Reddit, and RateYourMusic via a new `ServiceClient` Protocol + `ServiceRegistry`. The Foundation steps (F1–F7) must land as a single PR before any individual service is added. Services are then independent PRs. See `roadmap.md §Phase 1.10` for the full spec.
+**Next: S1–S5 individual services** — each ships as its own PR on top of the Foundation:
+- S1: Letterboxd (CSV import)
+- S2: AniList (GraphQL OAuth)
+- S3: Trakt.tv (REST OAuth)
+- S4: Reddit (OAuth)
+- S5: RateYourMusic (CSV import)
 
-After Phase 1.10, **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow.
+After S1–S5, **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow.
 
 ---
 
@@ -366,6 +380,7 @@ After Phase 1.10, **Phase 2.1: Item2Vec training** on public datasets (Steam rev
 
 - **Expired session cleanup**: `sessions.expires_at` is indexed but nothing deletes stale rows. Add a `pg_cron` job or a background task before production.
 - **`match_cache` stale row cleanup**: rows older than 24h are excluded by the freshness query but never deleted. Add a cleanup job before production to prevent table bloat.
+- **No batching in sync**: `_do_sync_generic` issues 2 DB roundtrips per item. For Steam libraries with 1000+ games this is 2000+ roundtrips. Pre-existing behavior, not a regression. Batch if performance becomes an issue.
 
 ---
 
