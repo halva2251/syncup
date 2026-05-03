@@ -94,6 +94,9 @@ ALTER TABLE manual_obsessions
 - File size cap: 10 MB
 - No OAuth; connection row set to `sync_status = 'ok'` after successful import
 
+**Also lands in S1 PR (bundled — touches the same protocol layer):**
+- Add `SyncClientError` to `syncup/ingest/protocol.py` — a custom exception class for expected, user-safe errors raised by service clients. The generic sync task's `_safe_error_message` will trust `SyncClientError` messages and treat all other exceptions (including third-party `ValueError`) as a generic "Sync failed — please retry". Retrofit `SteamClient`, `SpotifyClient`, `LastfmClient` to raise `SyncClientError` instead of `ValueError` in `fetch_items()` and `refresh_token()`. `LetterboxdClient` uses it from day one.
+
 ### S2 — AniList (GraphQL OAuth)
 
 - Auth: OAuth 2.0 authorization code flow
