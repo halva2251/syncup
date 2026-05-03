@@ -6,6 +6,7 @@ get_client() and registered_services() for service-agnostic dispatch.
 """
 from __future__ import annotations
 
+from syncup.config import Settings
 from syncup.ingest.protocol import ServiceClient
 
 _REGISTRY: dict[str, ServiceClient] = {}
@@ -37,7 +38,7 @@ def _clear() -> None:
     _REGISTRY.clear()
 
 
-def register_default_clients(settings: object) -> None:
+def register_default_clients(settings: Settings) -> None:
     """Construct and register the built-in service clients.
 
     Called from the app lifespan with the loaded Settings object.
@@ -47,14 +48,12 @@ def register_default_clients(settings: object) -> None:
     from syncup.ingest.spotify import SpotifyClient
     from syncup.ingest.steam import SteamClient
 
-    register(SteamClient(api_key=getattr(settings, "steam_api_key", "")))
-    register(
-        LastfmClient(api_key=getattr(settings, "lastfm_api_key", ""))
-    )
+    register(SteamClient(api_key=settings.steam_api_key))
+    register(LastfmClient(api_key=settings.lastfm_api_key))
     register(
         SpotifyClient(
-            client_id=getattr(settings, "spotify_client_id", ""),
-            redirect_uri=getattr(settings, "spotify_redirect_uri", ""),
-            client_secret=getattr(settings, "spotify_client_secret", None),
+            client_id=settings.spotify_client_id,
+            redirect_uri=settings.spotify_redirect_uri,
+            client_secret=settings.spotify_client_secret,
         )
     )

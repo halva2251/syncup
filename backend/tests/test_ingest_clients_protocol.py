@@ -213,3 +213,56 @@ def test_spotify_refresh_token_returns_none_when_no_expiry() -> None:
     conn = MagicMock()
     conn.token_expires_at = None
     assert client.refresh_token(conn) is None
+
+
+def test_spotify_refresh_token_calls_api_when_token_expired() -> None:
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import patch
+
+    from syncup.ingest.protocol import TokenPair
+    from syncup.ingest.spotify import TokenResponse
+
+    client = SpotifyClient(client_id="id", redirect_uri="http://localhost/cb")
+    conn = MagicMock()
+    conn.token_expires_at = datetime.now(UTC) - timedelta(minutes=5)
+    conn.refresh_token_encrypted = b"enc_refresh"
+
+    new_token_resp = TokenResponse(
+        access_token="new-access",
+        refresh_token="new-refresh",
+        expires_in=3600,
+        token_type="Bearer",
+    )
+
+    with (
+        patch("syncup.ingest.crypto.decrypt_token", return_value="old-refresh"),
+        patch.object(client, "refresh_access_token", return_value=new_token_resp) as mock_refresh,
+    ):
+        result = client.refresh_token(conn)
+
+    mock_refresh.assert_called_once_with("old-refresh")
+    assert isinstance(result, TokenPair)
+    assert result.access_token == "new-access"
+    assert result.refresh_token == "new-refresh"
+    assert result.expires_at is not None
+
+
+def test_spotify_refresh_token_raises_when_refresh_token_missing() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    client = SpotifyClient(client_id="id", redirect_uri="http://localhost/cb")
+    conn = MagicMock()
+    conn.token_expires_at = datetime.now(UTC) - timedelta(minutes=5)
+    conn.refresh_token_encrypted = None
+
+    with pytest.raises(ValueError, match="Missing refresh token"):
+        client.refresh_token(conn)
+
+
+def test_spotify_fetch_items_raises_when_access_token_missing() -> None:
+    client = SpotifyClient(client_id="id", redirect_uri="http://localhost/cb")
+    conn = MagicMock()
+    conn.access_token_encrypted = None
+
+    with pytest.raises(ValueError, match="Missing access token"):
+        client.fetch_items(conn)

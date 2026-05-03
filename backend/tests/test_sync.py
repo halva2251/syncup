@@ -16,7 +16,6 @@ from syncup.api.routes.sync import (  # noqa: PLC2701
     _do_sync_generic,
     _safe_error_message,
 )
-from syncup.config import Settings
 from syncup.db.models import ServiceConnection, User
 from syncup.ingest.protocol import RawItem, TokenPair
 
@@ -211,12 +210,6 @@ def mock_db_factory(mock_session: MagicMock) -> MagicMock:
     return factory
 
 
-@pytest.fixture
-def mock_settings() -> MagicMock:
-    s = MagicMock(spec=Settings)
-    return s
-
-
 def _mock_client(items: list[RawItem], token_pair: TokenPair | None = None) -> MagicMock:
     client = MagicMock()
     client.fetch_items.return_value = items
@@ -232,7 +225,6 @@ def _mock_client(items: list[RawItem], token_pair: TokenPair | None = None) -> M
 def test_do_sync_generic_happy_path(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
-    mock_settings: MagicMock,
 ) -> None:
     user_id = uuid.uuid4()
     conn = _make_connection("steam", "76561198000000000")
@@ -240,7 +232,7 @@ def test_do_sync_generic_happy_path(
     client = _mock_client([_raw_item("730"), _raw_item("570")])
 
     with patch("syncup.api.routes.sync.get_client", return_value=client):
-        _do_sync_generic(mock_db_factory, mock_settings, user_id, "steam")
+        _do_sync_generic(mock_db_factory, user_id, "steam")
 
     assert conn.sync_status == "ok"
     assert conn.last_synced_at is not None
@@ -254,13 +246,12 @@ def test_do_sync_generic_happy_path(
 def test_do_sync_generic_no_connection_exits_gracefully(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
-    mock_settings: MagicMock,
 ) -> None:
     mock_session.scalar.return_value = None
     client = _mock_client([])
 
     with patch("syncup.api.routes.sync.get_client", return_value=client):
-        _do_sync_generic(mock_db_factory, mock_settings, uuid.uuid4(), "steam")
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam")
 
     client.fetch_items.assert_not_called()
     mock_session.execute.assert_not_called()
@@ -271,14 +262,13 @@ def test_do_sync_generic_no_connection_exits_gracefully(
 def test_do_sync_generic_empty_items(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
-    mock_settings: MagicMock,
 ) -> None:
     conn = _make_connection("steam", "76561198000000000")
     mock_session.scalar.return_value = conn
     client = _mock_client([])
 
     with patch("syncup.api.routes.sync.get_client", return_value=client):
-        _do_sync_generic(mock_db_factory, mock_settings, uuid.uuid4(), "steam")
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam")
 
     assert conn.sync_status == "ok"
     mock_session.execute.assert_not_called()
@@ -293,7 +283,6 @@ def test_do_sync_generic_empty_items(
 def test_do_sync_generic_refresh_token_when_client_returns_pair(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
-    mock_settings: MagicMock,
 ) -> None:
     user_id = uuid.uuid4()
     conn = _make_connection("spotify", "spotify-user-id")
@@ -313,7 +302,7 @@ def test_do_sync_generic_refresh_token_when_client_returns_pair(
         patch("syncup.api.routes.sync.get_client", return_value=client),
         patch("syncup.api.routes.sync.encrypt_token", return_value=b"enc") as mock_enc,
     ):
-        _do_sync_generic(mock_db_factory, mock_settings, user_id, "spotify")
+        _do_sync_generic(mock_db_factory, user_id, "spotify")
 
     # encrypt_token called for access + refresh
     assert mock_enc.call_count == 2
@@ -325,7 +314,6 @@ def test_do_sync_generic_refresh_token_when_client_returns_pair(
 def test_do_sync_generic_no_refresh_when_client_returns_none(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
-    mock_settings: MagicMock,
 ) -> None:
     conn = _make_connection("steam", "76561198000000000")
     mock_session.scalar.return_value = conn
@@ -335,7 +323,7 @@ def test_do_sync_generic_no_refresh_when_client_returns_none(
         patch("syncup.api.routes.sync.get_client", return_value=client),
         patch("syncup.api.routes.sync.encrypt_token") as mock_enc,
     ):
-        _do_sync_generic(mock_db_factory, mock_settings, uuid.uuid4(), "steam")
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam")
 
     mock_enc.assert_not_called()
     mock_session.flush.assert_not_called()
@@ -349,7 +337,6 @@ def test_do_sync_generic_no_refresh_when_client_returns_none(
 def test_do_sync_generic_upstream_error_sets_error_status(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
-    mock_settings: MagicMock,
 ) -> None:
     conn = _make_connection("steam", "76561198000000000")
     mock_session.scalar.return_value = conn
@@ -358,7 +345,7 @@ def test_do_sync_generic_upstream_error_sets_error_status(
     client.fetch_items.side_effect = httpx.RequestError("timeout")
 
     with patch("syncup.api.routes.sync.get_client", return_value=client):
-        _do_sync_generic(mock_db_factory, mock_settings, uuid.uuid4(), "steam")
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam")
 
     mock_session.rollback.assert_called_once()
     mock_session.execute.assert_called()  # _set_sync_error UPDATE
@@ -368,7 +355,6 @@ def test_do_sync_generic_upstream_error_sets_error_status(
 def test_do_sync_generic_set_sync_error_self_failure_is_handled(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
-    mock_settings: MagicMock,
 ) -> None:
     """If _set_sync_error's own UPDATE fails, it rolls back and logs without raising."""
     conn = _make_connection("steam", "76561198000000000")
@@ -379,11 +365,48 @@ def test_do_sync_generic_set_sync_error_self_failure_is_handled(
     client.fetch_items.side_effect = httpx.RequestError("timeout")
 
     with patch("syncup.api.routes.sync.get_client", return_value=client):
-        _do_sync_generic(mock_db_factory, mock_settings, uuid.uuid4(), "steam")
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam")
 
     # rollback called twice: once for main failure, once inside _set_sync_error
     assert mock_session.rollback.call_count == 2
     mock_session.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# raw_type passthrough
+# ---------------------------------------------------------------------------
+
+
+def test_do_sync_generic_passes_raw_type_rating_to_upsert(
+    mock_db_factory: MagicMock,
+    mock_session: MagicMock,
+) -> None:
+    """raw_type='rating' from RawItem must reach _upsert_user_item unchanged."""
+    conn = _make_connection("letterboxd", "user123")
+    mock_session.scalar.return_value = conn
+
+    rating_item = RawItem(
+        external_id="disco-elysium",
+        name="Disco Elysium",
+        item_type="film",
+        engagement_score=1.0,
+        raw_value=5.0,
+        raw_type="rating",
+        metadata={"title_normalized": "disco elysium", "release_year": 2019},
+        last_engaged_at=None,
+    )
+    client = _mock_client([rating_item])
+
+    with (
+        patch("syncup.api.routes.sync.get_client", return_value=client),
+        patch("syncup.api.routes.sync._upsert_user_item") as mock_upsert,
+        patch("syncup.api.routes.sync._upsert_item", return_value=uuid.uuid4()),
+    ):
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "letterboxd")
+
+    mock_upsert.assert_called_once()
+    # Positional order: db, user_id, item_id, engagement_score, raw_value, raw_type
+    assert mock_upsert.call_args.args[5] == "rating"
 
 
 # ---------------------------------------------------------------------------
