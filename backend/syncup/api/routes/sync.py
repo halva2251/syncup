@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
 
 from syncup.auth.router import RequireAuth
-from syncup.config import Settings
 from syncup.db.models import Item, ServiceConnection, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
@@ -142,7 +141,6 @@ def _set_sync_error(
 
 def _do_sync_generic(
     db_factory: sessionmaker[DbSession],
-    settings: Settings,
     user_id: uuid.UUID,
     service: str,
 ) -> None:
@@ -247,7 +245,6 @@ def trigger_sync(
     db.commit()
 
     db_factory: sessionmaker[DbSession] = request.app.state.db
-    settings: Settings = request.app.state.settings
-    background_tasks.add_task(_do_sync_generic, db_factory, settings, user.id, service)
+    background_tasks.add_task(_do_sync_generic, db_factory, user.id, service)
 
     return SyncTriggeredOut(status="syncing", service=service)
