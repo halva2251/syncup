@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from syncup.ingest.lastfm import LastfmClient
-from syncup.ingest.protocol import ServiceClient
+from syncup.ingest.protocol import ServiceClient, SyncClientError
 from syncup.ingest.spotify import SpotifyClient
 from syncup.ingest.steam import SteamClient
 
@@ -247,7 +247,7 @@ def test_spotify_refresh_token_calls_api_when_token_expired() -> None:
     assert result.expires_at is not None
 
 
-def test_spotify_refresh_token_raises_when_refresh_token_missing() -> None:
+def test_spotify_refresh_token_raises_sync_client_error_when_refresh_token_missing() -> None:
     from datetime import UTC, datetime, timedelta
 
     client = SpotifyClient(client_id="id", redirect_uri="http://localhost/cb")
@@ -255,14 +255,14 @@ def test_spotify_refresh_token_raises_when_refresh_token_missing() -> None:
     conn.token_expires_at = datetime.now(UTC) - timedelta(minutes=5)
     conn.refresh_token_encrypted = None
 
-    with pytest.raises(ValueError, match="Missing refresh token"):
+    with pytest.raises(SyncClientError, match="Missing refresh token"):
         client.refresh_token(conn)
 
 
-def test_spotify_fetch_items_raises_when_access_token_missing() -> None:
+def test_spotify_fetch_items_raises_sync_client_error_when_access_token_missing() -> None:
     client = SpotifyClient(client_id="id", redirect_uri="http://localhost/cb")
     conn = MagicMock()
     conn.access_token_encrypted = None
 
-    with pytest.raises(ValueError, match="Missing access token"):
+    with pytest.raises(SyncClientError, match="Missing access token"):
         client.fetch_items(conn)

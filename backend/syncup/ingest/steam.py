@@ -8,7 +8,7 @@ from typing import ClassVar
 import httpx
 
 from syncup.db.models import ServiceConnection
-from syncup.ingest.protocol import RawItem, TokenPair
+from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 _API_BASE = "https://api.steampowered.com"
 
@@ -34,7 +34,7 @@ class SteamClient:
     def resolve_vanity_url(self, vanity: str) -> str:
         """Resolve a Steam vanity URL to a 64-bit Steam ID.
 
-        Raises ValueError if the vanity URL is not found.
+        Raises SyncClientError if the vanity URL is not found.
         """
         resp = self.http.get(
             f"{_API_BASE}/ISteamUser/ResolveVanityURL/v1/",
@@ -43,7 +43,8 @@ class SteamClient:
         resp.raise_for_status()
         body = resp.json()["response"]
         if body.get("success") != 1:
-            raise ValueError(f"Vanity URL {vanity!r} not found: {body.get('message', 'unknown')}")
+            msg = body.get("message", "unknown")
+            raise SyncClientError(f"Vanity URL {vanity!r} not found: {msg}")
         return str(body["steamid"])
 
     def get_owned_games(self, steam_id: str) -> list[dict]:  # type: ignore[type-arg]
@@ -52,7 +53,7 @@ class SteamClient:
         Each dict has at minimum: appid, name, playtime_forever (minutes).
         """
         if not steam_id:
-            raise ValueError("steam_id must be a non-empty string")
+            raise SyncClientError("steam_id must be a non-empty string")
         resp = self.http.get(
             f"{_API_BASE}/IPlayerService/GetOwnedGames/v1/",
             params={
@@ -71,7 +72,7 @@ class SteamClient:
         Raises ValueError for an empty steam_id.
         """
         if not steam_id:
-            raise ValueError("steam_id must be a non-empty string")
+            raise SyncClientError("steam_id must be a non-empty string")
         resp = self.http.get(
             f"{_API_BASE}/ISteamUser/GetPlayerSummaries/v2/",
             params={"key": self.api_key, "steamids": steam_id},
@@ -79,7 +80,7 @@ class SteamClient:
         resp.raise_for_status()
         players = resp.json()["response"]["players"]
         if not players:
-            raise ValueError(f"No Steam profile found for steam_id {steam_id!r}")
+            raise SyncClientError(f"No Steam profile found for steam_id {steam_id!r}")
         return players[0]  # type: ignore[no-any-return]
 
     # ------------------------------------------------------------------

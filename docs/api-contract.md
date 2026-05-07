@@ -119,7 +119,7 @@ Hard-delete; cascades to all user data.
 
 ### `POST /connect/steam` and `POST /connect/lastfm` are **Live ✅** (at `/api/connect/steam`, `/api/connect/lastfm`).
 
-### `POST /connect/letterboxd/import` — Sketch (Phase 1.10)
+### `POST /connect/letterboxd/import` — Live ✅
 Multipart file upload. Accepts Letterboxd diary CSV export.
 ```
 Content-Type: multipart/form-data

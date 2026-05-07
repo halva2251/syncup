@@ -68,19 +68,21 @@ The rest of the planned API surface is in [api-contract.md](api-contract.md).
 Every service client satisfies the `ServiceClient` Protocol defined in `protocol.py`. The `ServiceRegistry` in `registry.py` maps service name strings to client instances. The sync route calls `get_client(service).fetch_items(connection)` without knowing which service it is.
 
 ```
-protocol.py        → ServiceClient Protocol, RawItem TypedDict, TokenPair
+protocol.py        → ServiceClient Protocol, RawItem TypedDict, TokenPair, SyncClientError
 registry.py        → ServiceRegistry: dict[str, ServiceClient] + get_client()
 _text.py           → normalize_title() — shared title normalisation for cross-service dedup
-steam.py           → SteamClient (API key, no OAuth)
-spotify.py         → SpotifyClient (OAuth PKCE)
-lastfm.py          → LastfmClient (API key, no OAuth)
-letterboxd.py      → LetterboxdClient (CSV import, no auth)
-anilist.py         → AniListClient (GraphQL OAuth)
-trakt.py           → TraktClient (REST OAuth)
-reddit.py          → RedditClient (OAuth, subreddit membership)
-rateyourmusic.py   → RateYourMusicClient (CSV import, no auth)
+steam.py           → SteamClient (API key, no OAuth)             ← Live ✅
+spotify.py         → SpotifyClient (OAuth PKCE)                  ← Live ✅
+lastfm.py          → LastfmClient (API key, no OAuth)            ← Live ✅
+letterboxd.py      → LetterboxdClient (CSV import, no auth)      ← Live ✅
+anilist.py         → AniListClient (GraphQL OAuth)               ← Planned S2
+trakt.py           → TraktClient (REST OAuth)                    ← Planned S3
+reddit.py          → RedditClient (OAuth, subreddit membership)  ← Planned S4
+rateyourmusic.py   → RateYourMusicClient (CSV import, no auth)   ← Planned S5
 crypto.py          → Token encryption (AES-GCM)
 ```
+
+**`SyncClientError`** is the exception class service clients must raise for expected, user-safe failures (missing token, user not found, bad CSV data). The sync task's `_safe_error_message` trusts `SyncClientError` messages and converts all other exceptions to a generic "Sync failed — please retry" to avoid leaking internal details. Never raise plain `ValueError` from `fetch_items()` or `refresh_token()`.
 
 **`RawItem`** is the common output type every client returns. Fields:
 - `external_id`: service-native ID (Steam appid, AniList media ID, subreddit name, etc.)
@@ -363,10 +365,11 @@ Ingest client tests use `httpx`'s mock transport — no live API calls. Auth rou
 
 See **[roadmap.md](roadmap.md)** for the full phased build order, current status, and open UX decisions. That document is the single source of truth for implementation priority.
 
-**Phase 1.10 Foundation is complete.** The `ServiceClient` Protocol, `ServiceRegistry`, migrations 0006–0007, and retrofitted clients (Steam, Spotify, Last.fm) are all live. 384 tests passing.
+**Phase 1.10 Foundation is complete.** The `ServiceClient` Protocol, `ServiceRegistry`, migrations 0006–0007, and retrofitted clients (Steam, Spotify, Last.fm) are all live.
 
-**Next: S1–S5 individual services** — each ships as its own PR on top of the Foundation:
-- S1: Letterboxd (CSV import)
+**S1 (Letterboxd CSV import) is complete.** `SyncClientError`, `LetterboxdClient`, and `POST /api/connect/letterboxd/import` are live. 417 tests passing.
+
+**Next: S2–S5 individual services** — each ships as its own PR:
 - S2: AniList (GraphQL OAuth)
 - S3: Trakt.tv (REST OAuth)
 - S4: Reddit (OAuth)

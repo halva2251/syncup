@@ -45,6 +45,12 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | AniList, Trakt, Reddit OAuth env vars | `syncup/config.py` |
 | `normalize_title()` utility for cross-service film dedup | `syncup/ingest/_text.py` |
 | 384 passing tests | `backend/tests/` |
+| `SyncClientError` — user-safe exception class; sync task trusts its message | `syncup/ingest/protocol.py` |
+| `SteamClient`, `SpotifyClient`, `LastfmClient` — raise `SyncClientError` in sync path | `syncup/ingest/{steam,spotify,lastfm}.py` |
+| `LetterboxdClient` — CSV import, `parse_csv()`, Protocol conformance | `syncup/ingest/letterboxd.py` |
+| `POST /api/connect/letterboxd/import` — multipart CSV, wipe-and-replace, 10 MB cap | `syncup/api/routes/connect.py` |
+| `python-multipart` dependency added | `backend/pyproject.toml` |
+| 417 passing tests | `backend/tests/` |
 
 ---
 
@@ -52,7 +58,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 
 **Goal:** Add Letterboxd, AniList, Trakt, Reddit, and RateYourMusic to the ingest pipeline. Introduce a `ServiceClient` Protocol so every future service slots in without touching the sync route.
 
-> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). Services S1–S5 are next — each ships as an independent PR.
+> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). S1 complete ✅ (2026-05-07). S2–S5 are next — each ships as an independent PR.
 
 ### F1–F7 Foundation (single PR)
 

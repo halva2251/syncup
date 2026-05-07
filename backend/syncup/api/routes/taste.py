@@ -67,12 +67,21 @@ class SpotifyServiceOut(BaseModel):
     top_tracks: list[SpotifyTrackOut]
 
 
+class LetterboxdFilmOut(TasteItemOut):
+    release_year: int
+
+
+class LetterboxdServiceOut(BaseModel):
+    top_films: list[LetterboxdFilmOut]
+
+
 class ServicesOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     steam: SteamServiceOut | None = None
     lastfm: LastfmServiceOut | None = None
     spotify: SpotifyServiceOut | None = None
+    letterboxd: LetterboxdServiceOut | None = None
 
 
 class ManualObsessionOut(BaseModel):
@@ -148,12 +157,22 @@ def _to_spotify_track(row: Any) -> SpotifyTrackOut:
     )
 
 
+def _to_letterboxd_film(row: Any) -> LetterboxdFilmOut:
+    return LetterboxdFilmOut(
+        id=row.external_id,
+        name=row.name,
+        score=row.engagement_score,
+        release_year=row.meta.get("release_year", 0),
+    )
+
+
 _CONVERTERS: dict[tuple[str, str], Any] = {
     ("steam", "game"): _to_steam_game,
     ("lastfm", "artist"): _to_lastfm_artist,
     ("lastfm", "track"): _to_lastfm_track,
     ("spotify", "artist"): _to_spotify_artist,
     ("spotify", "track"): _to_spotify_track,
+    ("letterboxd", "film"): _to_letterboxd_film,
 }
 
 
@@ -203,6 +222,7 @@ def get_taste(
     lastfm_tracks = _build("lastfm", "track")
     spotify_artists = _build("spotify", "artist")
     spotify_tracks = _build("spotify", "track")
+    letterboxd_films = _build("letterboxd", "film")
 
     steam = SteamServiceOut(top_games=steam_games) if steam_games else None
     lastfm = (
@@ -215,6 +235,7 @@ def get_taste(
         if spotify_artists or spotify_tracks
         else None
     )
+    letterboxd = LetterboxdServiceOut(top_films=letterboxd_films) if letterboxd_films else None
 
     obsessions = db.scalars(
         select(ManualObsession)
@@ -234,7 +255,7 @@ def get_taste(
     ).all()
 
     return TasteOut(
-        services=ServicesOut(steam=steam, lastfm=lastfm, spotify=spotify),
+        services=ServicesOut(steam=steam, lastfm=lastfm, spotify=spotify, letterboxd=letterboxd),
         manual_obsessions=[
             ManualObsessionOut(
                 id=o.id,

@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from syncup.ingest.lastfm import LastfmClient
+from syncup.ingest.protocol import SyncClientError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -97,13 +98,13 @@ def test_get_top_artists_raises_on_limit_over_max() -> None:
 def test_get_top_artists_raises_on_lastfm_error_envelope() -> None:
     error_body = {"error": 6, "message": "User not found"}
     c = _client([_json_response(error_body)])
-    with pytest.raises(ValueError, match="Last.fm API error 6"):
+    with pytest.raises(SyncClientError, match="Last.fm API error 6"):
         c.get_top_artists("nonexistent_user_xyz")
 
 
 def test_get_top_artists_raises_on_empty_username() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="username"):
+    with pytest.raises(SyncClientError, match="username"):
         c.get_top_artists("")
 
 
