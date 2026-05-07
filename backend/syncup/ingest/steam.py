@@ -34,7 +34,7 @@ class SteamClient:
     def resolve_vanity_url(self, vanity: str) -> str:
         """Resolve a Steam vanity URL to a 64-bit Steam ID.
 
-        Raises ValueError if the vanity URL is not found.
+        Raises SyncClientError if the vanity URL is not found.
         """
         resp = self.http.get(
             f"{_API_BASE}/ISteamUser/ResolveVanityURL/v1/",
