@@ -109,3 +109,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## 5. Update Docs After Every Feature
+
+After implementing any feature, always update the relevant docs before committing:
+
+- `docs/roadmap.md` — mark completed items ✅, update test counts, update "Status" lines
+- `docs/dev-guide.md` — update architecture overviews, "What to build next", and any changed patterns
+- `docs/api-contract.md` — move endpoints from "Sketch" to "Live ✅", update response shapes
+
+This is non-negotiable. Stale docs are worse than no docs — they mislead the next session.

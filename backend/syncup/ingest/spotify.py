@@ -12,7 +12,7 @@ from typing import ClassVar
 import httpx
 
 from syncup.db.models import ServiceConnection
-from syncup.ingest.protocol import RawItem, TokenPair
+from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 _AUTH_URL = "https://accounts.spotify.com/authorize"
 _TOKEN_URL = "https://accounts.spotify.com/api/token"  # nosec B105
@@ -161,7 +161,7 @@ class SpotifyClient:
 
         token_bytes: bytes | None = connection.access_token_encrypted
         if token_bytes is None:
-            raise ValueError("Missing access token — reconnect Spotify via OAuth")
+            raise SyncClientError("Missing access token — reconnect Spotify via OAuth")
         access_token = decrypt_token(token_bytes)
 
         top_artists = self.fetch_top_artists(
@@ -237,7 +237,7 @@ class SpotifyClient:
 
         refresh_bytes: bytes | None = connection.refresh_token_encrypted
         if refresh_bytes is None:
-            raise ValueError("Missing refresh token — reconnect Spotify via OAuth")
+            raise SyncClientError("Missing refresh token — reconnect Spotify via OAuth")
 
         old_refresh = decrypt_token(refresh_bytes)
         new_tokens = self.refresh_access_token(old_refresh)

@@ -19,6 +19,7 @@ from syncup.db.models import Item, ServiceConnection, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.ingest.crypto import encrypt_token
+from syncup.ingest.protocol import SyncClientError
 from syncup.ingest.registry import get_client
 from syncup.limiter import limiter
 
@@ -104,7 +105,7 @@ def _upsert_user_item(
 
 def _safe_error_message(exc: Exception) -> str:
     """Return a user-safe error string — never exposes raw upstream responses."""
-    if isinstance(exc, ValueError):
+    if isinstance(exc, SyncClientError):
         return str(exc)
     if isinstance(exc, httpx.HTTPStatusError):
         return f"Upstream API returned {exc.response.status_code}"
