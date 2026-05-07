@@ -72,6 +72,10 @@ class LetterboxdClient:
             try:
                 release_year = int(year_str) if year_str else 0
             except ValueError:
+                # Degrade gracefully — year is optional metadata. A year of 0
+                # means "unknown" and produces external_id "title:0". Two films
+                # with the same normalised title and no year share an items row,
+                # which is the correct dedup behaviour (they're likely the same film).
                 release_year = 0
 
             title_norm = normalize_title(name)

@@ -190,3 +190,12 @@ def test_parse_csv_zero_rating_clamps_to_zero_score() -> None:
     items = LetterboxdClient().parse_csv(csv)
     assert len(items) == 1
     assert items[0]["engagement_score"] == pytest.approx(0.0)
+
+
+def test_parse_csv_empty_name_row_is_silently_skipped() -> None:
+    # A row with no Name but a valid Rating is dropped — the film can't be
+    # identified, so storing it would pollute the catalog with empty-name items.
+    csv = "Date,Name,Year,Rating\n2024-01-01,,2024,4.0\n2024-01-02,Stalker,1979,5.0\n"
+    items = LetterboxdClient().parse_csv(csv)
+    assert len(items) == 1
+    assert items[0]["name"] == "Stalker"

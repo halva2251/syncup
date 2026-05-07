@@ -358,6 +358,30 @@ def test_letterboxd_import_updates_existing_connection(
     assert existing.sync_error is None
 
 
+def test_letterboxd_import_non_utf8_file_returns_422(
+    connect_client: TestClient,
+) -> None:
+    # latin-1 encoded bytes that are invalid UTF-8
+    latin1_bytes = "Nausicaä of the Valley of the Wind".encode("latin-1")
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", latin1_bytes, "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_CSV"
+
+
+def test_letterboxd_import_wrong_content_type_returns_422(
+    connect_client: TestClient,
+) -> None:
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("malware.exe", b"MZ\x90\x00", "application/x-msdownload")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_FILE_TYPE"
+
+
 def test_letterboxd_import_skips_unrated_rows(
     connect_client: TestClient, mock_db: MagicMock
 ) -> None:

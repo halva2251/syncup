@@ -192,6 +192,17 @@ def import_letterboxd(
     user: RequireAuth,
 ) -> LetterboxdImportOut:
     """Import a Letterboxd diary CSV export — wipe-and-replace transaction."""
+    # content_type is client-supplied and easily spoofed, so this is a UX
+    # signal for catching wrong file types by accident, not a security gate.
+    # We include octet-stream because many browsers send it for .csv files.
+    allowed_content_types = {"text/csv", "text/plain", "application/octet-stream"}
+    if file.content_type and file.content_type not in allowed_content_types:
+        raise SyncUpError(
+            "INVALID_FILE_TYPE",
+            f"Expected a CSV file, got {file.content_type!r}",
+            422,
+        )
+
     data = file.file.read(_LETTERBOXD_MAX_BYTES + 1)
     if len(data) > _LETTERBOXD_MAX_BYTES:
         raise SyncUpError("FILE_TOO_LARGE", "File must be 10 MB or smaller", 413)
