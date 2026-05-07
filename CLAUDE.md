@@ -119,3 +119,31 @@ After implementing any feature, always update the relevant docs before committin
 - `docs/api-contract.md` — move endpoints from "Sketch" to "Live ✅", update response shapes
 
 This is non-negotiable. Stale docs are worse than no docs — they mislead the next session.
+
+## 6. Session Quality Standard
+
+Every session should follow this shape. The user confirmed on 2026-05-07 this is the standard.
+
+**Start:**
+- Run `/resume-session` and read all `docs/` files before touching code
+- Invoke relevant skills upfront — don't skip this step
+- Read the actual files that will be changed before writing anything
+
+**Implementation:**
+- TDD: RED → GREEN with explicit test runs at each stage
+- Full suite after GREEN to catch regressions
+- Lint only touched files
+- Dispatch code-reviewer Agent after implementation — fix all HIGH issues before moving on
+
+**External reviews (Kimi etc.):**
+- Triage carefully: explain what's worth fixing, what's intentional, what's irrelevant
+- Don't blindly implement everything — push back where the suggestion is wrong for this codebase
+
+**End of feature:**
+- Docs in the same PR (roadmap, dev-guide, api-contract)
+- Write a manual test plan with concrete curl commands: startup → auth → happy path → error case → read-back verification
+- Fix any bugs found by the manual test immediately
+
+**End of session:**
+- `/save-session`
+- Update memory with anything learned
