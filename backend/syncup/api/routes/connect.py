@@ -1,24 +1,28 @@
-"""Service connect routes: POST /api/connect/steam, POST /api/connect/lastfm."""
+"""Service connect routes: POST /api/connect/steam, POST /api/connect/lastfm,
+POST /api/connect/letterboxd/import."""
 from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated, Self
 
 import httpx
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, UploadFile
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.api.schemas import ServiceConnectionOut
 from syncup.auth.router import RequireAuth
 from syncup.config import Settings
-from syncup.db.models import ServiceConnection
+from syncup.db.models import Item, ServiceConnection, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.ingest.lastfm import LastfmClient
+from syncup.ingest.protocol import SyncClientError
 from syncup.ingest.steam import SteamClient
 from syncup.limiter import limiter
 
@@ -88,10 +92,16 @@ def _upsert_connection(
     except IntegrityError:
         db.rollback()
         # Race condition: two requests for the same user+service committed
-        # simultaneously. The first one won; the connection already exists.
+        # simultaneously. The first one won; re-query to return a live object.
         logger.warning("Upsert race on %s for user %s", service, user_id)
+        conn = db.scalar(
+            select(ServiceConnection).where(
+                ServiceConnection.user_id == user_id,
+                ServiceConnection.service == service,
+            )
+        )
 
-    return conn
+    return conn  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +127,7 @@ def connect_steam(
             else:
                 steam_id = body.steam_id  # type: ignore[assignment]
             steam.get_player_summary(steam_id)
-    except ValueError as exc:
+    except (SyncClientError, ValueError) as exc:
         raise SyncUpError("STEAM_USER_NOT_FOUND", str(exc), 404) from exc
     except httpx.HTTPStatusError as exc:
         raise SyncUpError(
@@ -145,7 +155,7 @@ def connect_lastfm(
     try:
         with LastfmClient(api_key=settings.lastfm_api_key) as lastfm:
             lastfm.get_top_artists(body.username, limit=1)
-    except ValueError as exc:
+    except (SyncClientError, ValueError) as exc:
         raise SyncUpError("LASTFM_USER_NOT_FOUND", str(exc), 404) from exc
     except httpx.HTTPStatusError as exc:
         raise SyncUpError(
@@ -157,3 +167,133 @@ def connect_lastfm(
     conn = _upsert_connection(db, user.id, "lastfm", body.username)
     logger.info("User %s connected Last.fm (username=%s)", user.id, body.username)
     return ServiceConnectionOut.model_validate(conn)
+
+
+# ---------------------------------------------------------------------------
+# Letterboxd — CSV diary import
+# ---------------------------------------------------------------------------
+
+_LETTERBOXD_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+_ITEMS_TABLE = Item.__table__
+_USER_ITEMS_TABLE = UserItem.__table__
+
+
+class LetterboxdImportOut(BaseModel):
+    imported: int
+
+
+@router.post("/letterboxd/import", response_model=LetterboxdImportOut, status_code=201)
+@limiter.limit("10/minute")
+def import_letterboxd(
+    request: Request,
+    file: UploadFile,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+) -> LetterboxdImportOut:
+    """Import a Letterboxd diary CSV export — wipe-and-replace transaction."""
+    data = file.file.read(_LETTERBOXD_MAX_BYTES + 1)
+    if len(data) > _LETTERBOXD_MAX_BYTES:
+        raise SyncUpError("FILE_TOO_LARGE", "File must be 10 MB or smaller", 413)
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SyncUpError("INVALID_CSV", "File must be UTF-8 encoded", 422) from exc
+
+    from syncup.ingest.letterboxd import LetterboxdClient
+
+    client = LetterboxdClient()
+    try:
+        raw_items = client.parse_csv(text)
+    except SyncClientError as exc:
+        raise SyncUpError("INVALID_CSV", str(exc), 422) from exc
+
+    # Wipe-and-replace in a single transaction:
+    # 1. Delete existing letterboxd user_items for this user.
+    # 2. Upsert each item into the canonical catalog and user_items.
+    # 3. Upsert the service_connections row with sync_status="ok".
+    # 4. Commit — rollback on any failure preserves the old data.
+
+    db.execute(
+        delete(_USER_ITEMS_TABLE)
+        .where(_USER_ITEMS_TABLE.c.user_id == user.id)
+        .where(
+            _USER_ITEMS_TABLE.c.item_id.in_(
+                select(_ITEMS_TABLE.c.id).where(_ITEMS_TABLE.c.service == "letterboxd")
+            )
+        )
+    )
+
+    now = datetime.now(UTC)
+    for raw_item in raw_items:
+        ins_item = pg_insert(_ITEMS_TABLE).values(
+            id=uuid.uuid4(),
+            service="letterboxd",
+            item_type=raw_item["item_type"],
+            external_id=raw_item["external_id"],
+            name=raw_item["name"],
+            metadata=raw_item["metadata"],
+        )
+        item_id: uuid.UUID = db.execute(
+            ins_item.on_conflict_do_update(
+                index_elements=["service", "item_type", "external_id"],
+                set_={
+                    "name": ins_item.excluded.name,
+                    "metadata": ins_item.excluded.metadata,
+                },
+            ).returning(_ITEMS_TABLE.c.id)
+        ).scalar_one()
+
+        ins_ui = pg_insert(_USER_ITEMS_TABLE).values(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            item_id=item_id,
+            engagement_score=raw_item["engagement_score"],
+            raw_value=raw_item["raw_value"],
+            raw_type=raw_item["raw_type"],
+            last_engaged_at=raw_item["last_engaged_at"],
+            fetched_at=now,
+        )
+        db.execute(
+            ins_ui.on_conflict_do_update(
+                index_elements=["user_id", "item_id"],
+                set_={
+                    "engagement_score": ins_ui.excluded.engagement_score,
+                    "raw_value": ins_ui.excluded.raw_value,
+                    "raw_type": ins_ui.excluded.raw_type,
+                    "last_engaged_at": ins_ui.excluded.last_engaged_at,
+                    "fetched_at": ins_ui.excluded.fetched_at,
+                },
+            )
+        )
+
+    # Upsert connection row — set directly to "ok" (no intermediate sync step).
+    existing_conn = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == "letterboxd",
+        )
+    )
+    if existing_conn is not None:
+        existing_conn.sync_status = "ok"
+        existing_conn.sync_error = None
+    else:
+        db.add(
+            ServiceConnection(
+                user_id=user.id,
+                service="letterboxd",
+                external_user_id=str(user.id),
+                sync_status="ok",
+            )
+        )
+
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Letterboxd import failed for user %s", user.id)
+        raise SyncUpError("IMPORT_FAILED", "Import failed — please retry", 500) from exc
+
+    logger.info("User %s imported %d Letterboxd films", user.id, len(raw_items))
+    return LetterboxdImportOut(imported=len(raw_items))

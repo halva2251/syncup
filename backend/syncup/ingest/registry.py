@@ -45,6 +45,7 @@ def register_default_clients(settings: Settings) -> None:
     Safe to call multiple times — registering overwrites the previous entry.
     """
     from syncup.ingest.lastfm import LastfmClient
+    from syncup.ingest.letterboxd import LetterboxdClient
     from syncup.ingest.spotify import SpotifyClient
     from syncup.ingest.steam import SteamClient
 
@@ -57,3 +58,4 @@ def register_default_clients(settings: Settings) -> None:
             client_secret=settings.spotify_client_secret,
         )
     )
+    register(LetterboxdClient())

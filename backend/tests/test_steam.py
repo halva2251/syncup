@@ -4,6 +4,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from syncup.ingest.protocol import SyncClientError
 from syncup.ingest.steam import SteamClient
 
 # ---------------------------------------------------------------------------
@@ -60,9 +61,9 @@ def test_resolve_vanity_url_returns_steam_id() -> None:
     assert steam_id == "76561198000000001"
 
 
-def test_resolve_vanity_url_raises_value_error_when_not_found() -> None:
+def test_resolve_vanity_url_raises_sync_client_error_when_not_found() -> None:
     c = _client([_json_response(_VANITY_NOT_FOUND_BODY)])
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(SyncClientError, match="not found"):
         c.resolve_vanity_url("unknownvanity")
 
 
@@ -121,9 +122,9 @@ def test_get_player_summary_returns_player_dict() -> None:
     assert player["steamid"] == "76561198000000001"
 
 
-def test_get_player_summary_raises_on_empty_steam_id() -> None:
+def test_get_player_summary_raises_sync_client_error_on_empty_steam_id() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="steam_id"):
+    with pytest.raises(SyncClientError, match="steam_id"):
         c.get_player_summary("")
 
 

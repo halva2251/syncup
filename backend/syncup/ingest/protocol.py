@@ -11,6 +11,17 @@ if TYPE_CHECKING:
     from syncup.db.models import ServiceConnection
 
 
+class SyncClientError(Exception):
+    """Expected, user-safe error raised by a service client.
+
+    Raise this instead of ValueError for any expected failure whose message is
+    safe to show to the user (e.g. missing token, user not found, bad CSV).
+    The sync task's _safe_error_message trusts SyncClientError messages and
+    treats all other exceptions as generic failures to avoid leaking internal
+    state.
+    """
+
+
 class RawItem(TypedDict):
     """Normalised output from any service client's fetch_items call.
 

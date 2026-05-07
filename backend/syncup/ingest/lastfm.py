@@ -7,7 +7,7 @@ from typing import ClassVar
 import httpx
 
 from syncup.db.models import ServiceConnection
-from syncup.ingest.protocol import RawItem, TokenPair
+from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
 
@@ -45,13 +45,13 @@ class LastfmClient:
 
     def _validate_username(self, username: str) -> None:
         if not username:
-            raise ValueError("username must be a non-empty string")
+            raise SyncClientError("username must be a non-empty string")
 
     def _check_api_error(self, body: dict) -> None:  # type: ignore[type-arg]
         if "error" in body:
             code = body["error"]
             message = body.get("message", "")
-            raise ValueError(f"Last.fm API error {code}: {message}")
+            raise SyncClientError(f"Last.fm API error {code}: {message}")
 
     def get_top_artists(
         self,
