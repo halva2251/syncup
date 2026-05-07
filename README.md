@@ -87,8 +87,8 @@ SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/api/auth/spotify/callback
 
-# PostgreSQL (matches docker-compose.yml defaults)
-DATABASE_URL=postgresql://syncup:syncup@localhost:5432/syncup
+# PostgreSQL — use postgresql+psycopg:// (psycopg3), not postgresql:// (psycopg2)
+DATABASE_URL=postgresql+psycopg://syncup:syncup@localhost:5432/syncup
 
 # Session secret — any random string
 SESSION_SECRET=change-me-in-prod
@@ -198,7 +198,7 @@ syncup/
 | `STEAM_API_KEY` | for Steam | from steamcommunity.com/dev/apikey |
 | `LASTFM_API_KEY` | for Last.fm | from last.fm/api/account/create |
 | `LASTFM_SHARED_SECRET` | for Last.fm | same registration |
-| `DATABASE_URL` | yes | `postgresql://user:pass@host:port/dbname` |
+| `DATABASE_URL` | yes | `postgresql+psycopg://user:pass@host:port/dbname` (psycopg3 scheme) |
 | `SESSION_SECRET` | yes | random string, keep secret |
 | `SYNCUP_TOKEN_ENCRYPTION_KEY` | yes (non-debug) | base64-encoded 16/24/32-byte AES key |
 
