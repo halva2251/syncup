@@ -6,7 +6,7 @@ from typing import ClassVar
 
 import pytest
 
-from syncup.ingest.protocol import RawItem, ServiceClient, TokenPair
+from syncup.ingest.protocol import RawItem, ServiceClient, SyncClientError, TokenPair
 
 # ---------------------------------------------------------------------------
 # Minimal conforming client for Protocol tests
@@ -150,3 +150,22 @@ def test_service_name_accessible_on_class() -> None:
 
 def test_service_name_accessible_on_instance() -> None:
     assert _ConformingClient().service_name == "dummy"
+
+
+# ---------------------------------------------------------------------------
+# SyncClientError
+# ---------------------------------------------------------------------------
+
+
+def test_sync_client_error_is_exception() -> None:
+    assert issubclass(SyncClientError, Exception)
+
+
+def test_sync_client_error_message() -> None:
+    exc = SyncClientError("token expired — reconnect the service")
+    assert str(exc) == "token expired — reconnect the service"
+
+
+def test_sync_client_error_is_catchable_as_exception() -> None:
+    with pytest.raises(Exception):
+        raise SyncClientError("oops")

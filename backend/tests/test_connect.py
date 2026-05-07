@@ -6,6 +6,8 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+from syncup.ingest.protocol import SyncClientError
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -138,7 +140,7 @@ def test_steam_connect_vanity_not_found_returns_404(
 ) -> None:
     with patch("syncup.api.routes.connect.SteamClient") as mock_steam_cls:
         instance = mock_steam_cls.return_value.__enter__.return_value
-        instance.resolve_vanity_url.side_effect = ValueError("Vanity URL 'nobody' not found")
+        instance.resolve_vanity_url.side_effect = SyncClientError("Vanity URL 'nobody' not found")
 
         resp = connect_client.post("/api/connect/steam", json={"vanity_url": "nobody"})
 
@@ -151,7 +153,7 @@ def test_steam_connect_steam_id_no_profile_returns_404(
 ) -> None:
     with patch("syncup.api.routes.connect.SteamClient") as mock_steam_cls:
         instance = mock_steam_cls.return_value.__enter__.return_value
-        instance.get_player_summary.side_effect = ValueError("No Steam profile found")
+        instance.get_player_summary.side_effect = SyncClientError("No Steam profile found")
 
         resp = connect_client.post("/api/connect/steam", json={"steam_id": "99999"})
 
@@ -234,7 +236,7 @@ def test_lastfm_connect_valid_username(connect_client: TestClient, mock_db: Magi
 def test_lastfm_connect_user_not_found_returns_404(connect_client: TestClient) -> None:
     with patch("syncup.api.routes.connect.LastfmClient") as mock_lastfm_cls:
         instance = mock_lastfm_cls.return_value.__enter__.return_value
-        instance.get_top_artists.side_effect = ValueError("Last.fm API error 6: User not found")
+        instance.get_top_artists.side_effect = SyncClientError("Last.fm API error 6: User not found")
 
         resp = connect_client.post("/api/connect/lastfm", json={"username": "nobody_here_xyz"})
 
@@ -272,3 +274,131 @@ def test_lastfm_connect_updates_existing_connection(
     assert resp.status_code == 200
     assert existing.external_user_id == "halva"
     assert existing.sync_status == "pending"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/connect/letterboxd/import
+# ---------------------------------------------------------------------------
+
+_LETTERBOXD_CSV = (
+    "Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date\n"
+    "2024-01-15,The Substance,2024,https://letterboxd.com/film/the-substance/,4.5,No,,2024-01-15\n"
+    "2024-01-10,Stalker,1979,https://letterboxd.com/film/stalker/,5.0,Yes,,2024-01-10\n"
+)
+
+
+def test_letterboxd_import_requires_auth(unauthed_client: TestClient) -> None:
+    resp = unauthed_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", _LETTERBOXD_CSV, "text/csv")},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_letterboxd_import_success(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    mock_db.scalar.return_value = None  # no existing connection
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", _LETTERBOXD_CSV, "text/csv")},
+    )
+
+    assert resp.status_code == 201
+    assert resp.json() == {"imported": 2}
+    mock_db.commit.assert_called()
+
+
+def test_letterboxd_import_file_too_large(
+    connect_client: TestClient,
+) -> None:
+    oversized = "x" * (10 * 1024 * 1024 + 1)
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", oversized, "text/csv")},
+    )
+    assert resp.status_code == 413
+    assert resp.json()["error"]["code"] == "FILE_TOO_LARGE"
+
+
+def test_letterboxd_import_malformed_csv_returns_422(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    bad_csv = "wrong,headers,here\n1,2,3\n"
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", bad_csv, "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_CSV"
+
+
+def test_letterboxd_import_updates_existing_connection(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    existing = _make_connection("letterboxd", f"csv:{uuid.uuid4()}")
+    existing.sync_status = "error"  # starts in error state; route must set it to "ok"
+    mock_db.scalar.return_value = existing
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", _LETTERBOXD_CSV, "text/csv")},
+    )
+
+    assert resp.status_code == 201
+    assert existing.sync_status == "ok"
+    assert existing.sync_error is None
+
+
+def test_letterboxd_import_non_utf8_file_returns_422(
+    connect_client: TestClient,
+) -> None:
+    # latin-1 encoded bytes that are invalid UTF-8
+    latin1_bytes = "Nausicaä of the Valley of the Wind".encode("latin-1")
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", latin1_bytes, "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_CSV"
+
+
+def test_letterboxd_import_wrong_content_type_returns_422(
+    connect_client: TestClient,
+) -> None:
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("malware.exe", b"MZ\x90\x00", "application/x-msdownload")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_FILE_TYPE"
+
+
+def test_letterboxd_import_skips_unrated_rows(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    csv_with_unrated = (
+        "Date,Name,Year,Letterboxd URI,Rating,Rewatch,Tags,Watched Date\n"
+        "2024-01-15,The Substance,2024,,4.5,No,,2024-01-15\n"
+        "2024-01-10,Stalker,1979,,,No,,2024-01-10\n"  # no rating — skipped
+    )
+    mock_db.scalar.return_value = None
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", csv_with_unrated, "text/csv")},
+    )
+
+    assert resp.status_code == 201
+    assert resp.json() == {"imported": 1}

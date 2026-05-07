@@ -17,7 +17,7 @@ from syncup.api.routes.sync import (  # noqa: PLC2701
     _safe_error_message,
 )
 from syncup.db.models import ServiceConnection, User
-from syncup.ingest.protocol import RawItem, TokenPair
+from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -423,8 +423,11 @@ def test_safe_error_message_sanitises_upstream_responses() -> None:
     net_err = httpx.RequestError("connection refused")
     assert _safe_error_message(net_err) == "Network error reaching upstream service"
 
-    val_err = ValueError("Missing refresh token — reconnect Spotify via OAuth")
-    assert _safe_error_message(val_err) == str(val_err)
+    client_err = SyncClientError("Missing refresh token — reconnect Spotify via OAuth")
+    assert _safe_error_message(client_err) == str(client_err)
+
+    val_err = ValueError("internal detail that must not leak")
+    assert _safe_error_message(val_err) == "Sync failed — please retry"
 
     generic = RuntimeError("internal traceback with /home/halva/secrets")
     assert _safe_error_message(generic) == "Sync failed — please retry"
