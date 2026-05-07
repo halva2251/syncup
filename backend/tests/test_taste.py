@@ -369,14 +369,33 @@ def test_taste_ignores_unknown_service_item_type_combinations(
     taste_client: TestClient, mock_db: MagicMock
 ) -> None:
     known_row = _taste_row("steam", "game", "Half-Life 2", engagement_score=0.9)
-    unknown_row = _taste_row("letterboxd", "film", "Stalker", engagement_score=0.8)
+    # "anilist" has no converter yet — should be silently omitted
+    unknown_row = _taste_row("anilist", "anime", "Lain", engagement_score=0.8)
     _set_execute_results(mock_db, [known_row, unknown_row])
 
     resp = taste_client.get("/api/me/taste")
     assert resp.status_code == 200
     services = resp.json()["services"]
     assert "steam" in services
-    assert "letterboxd" not in services
+    assert "anilist" not in services
+
+
+def test_taste_returns_letterboxd_films(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    row = _taste_row("letterboxd", "film", "Stalker", engagement_score=1.0)
+    row.meta = {"title_normalized": "stalker", "release_year": 1979}
+    _set_execute_results(mock_db, [row])
+
+    resp = taste_client.get("/api/me/taste")
+    assert resp.status_code == 200
+    services = resp.json()["services"]
+    assert "letterboxd" in services
+    films = services["letterboxd"]["top_films"]
+    assert len(films) == 1
+    assert films[0]["name"] == "Stalker"
+    assert films[0]["release_year"] == 1979
+    assert films[0]["score"] == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------------------
