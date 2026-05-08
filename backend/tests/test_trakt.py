@@ -10,7 +10,6 @@ import pytest
 
 from syncup.ingest.protocol import ServiceClient, SyncClientError
 
-
 # ---------------------------------------------------------------------------
 # httpx mock transport helpers
 # ---------------------------------------------------------------------------
@@ -95,7 +94,12 @@ _MOVIES_BODY = [
         "movie": {
             "title": "Blade Runner 2049",
             "year": 2017,
-            "ids": {"trakt": 235, "slug": "blade-runner-2049-2017", "imdb": "tt1856101", "tmdb": 335984},
+            "ids": {
+                "trakt": 235,
+                "slug": "blade-runner-2049-2017",
+                "imdb": "tt1856101",
+                "tmdb": 335984,
+            },
         },
     },
 ]
@@ -249,6 +253,12 @@ def test_exchange_code_raises_on_request_error() -> None:
         client.exchange_code("code")
 
 
+def test_exchange_code_non_json_response_raises_sync_client_error() -> None:
+    client = _client([httpx.Response(200, content=b"<html>Service Unavailable</html>")])
+    with pytest.raises(SyncClientError, match="invalid token response"):
+        client.exchange_code("code")
+
+
 # ---------------------------------------------------------------------------
 # fetch_me
 # ---------------------------------------------------------------------------
@@ -276,6 +286,12 @@ def test_fetch_me_raises_on_request_error() -> None:
     http = httpx.Client(transport=_FailTransport())
     client = TraktClient(client_id="x", client_secret="y", redirect_uri="z", http=http)
     with pytest.raises(SyncClientError, match="Could not reach Trakt"):
+        client.fetch_me("token")
+
+
+def test_fetch_me_non_json_response_raises_sync_client_error() -> None:
+    client = _client([httpx.Response(200, content=b"<html>Service Unavailable</html>")])
+    with pytest.raises(SyncClientError, match="invalid profile response"):
         client.fetch_me("token")
 
 
@@ -511,6 +527,15 @@ def test_refresh_token_raises_on_http_error(monkeypatch: pytest.MonkeyPatch) -> 
         client.refresh_token(_make_connection())
 
 
+def test_refresh_token_non_json_response_raises_sync_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _client([httpx.Response(200, content=b"<html>Service Unavailable</html>")])
+    monkeypatch.setattr("syncup.ingest.trakt.decrypt_token", lambda _: "refresh-token")
+    with pytest.raises(SyncClientError, match="invalid token response"):
+        client.refresh_token(_make_connection())
+
+
 # ---------------------------------------------------------------------------
 # Context manager
 # ---------------------------------------------------------------------------
@@ -525,3 +550,26 @@ def test_context_manager_closes_http() -> None:
     with client:
         pass
     http.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _parse_ts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "ts_input,expected",
+    [
+        (
+            "2024-01-15T10:30:00.000Z",
+            datetime(2024, 1, 15, 10, 30, 0, tzinfo=UTC),
+        ),
+        ("not-a-date", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_parse_ts(ts_input: str | None, expected: datetime | None) -> None:
+    from syncup.ingest.trakt import _parse_ts
+
+    assert _parse_ts(ts_input) == expected

@@ -4,7 +4,7 @@ from __future__ import annotations
 import urllib.parse
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import httpx
 
@@ -20,7 +20,8 @@ _TOKEN_URL = "https://api.trakt.tv/oauth/token"  # nosec B105
 _API_BASE = "https://api.trakt.tv"
 
 # Trakt tokens expire in 90 days (7 776 000 seconds).
-_TOKEN_LIFETIME_SECONDS = 7_776_000
+# Trakt tokens expire in 90 days per https://trakt.docs.apiary.io/#reference/authentication-oauth
+_TOKEN_LIFETIME_SECONDS = 7_776_000  # 90 * 24 * 60 * 60
 
 
 @dataclass
@@ -137,7 +138,7 @@ class TraktClient:
         except httpx.RequestError as exc:
             raise SyncClientError(f"Could not reach Trakt: {exc}") from exc
         try:
-            return resp.json()
+            return cast(dict[str, Any], resp.json())
         except ValueError as exc:
             raise SyncClientError(
                 "Trakt returned an invalid profile response — please retry"
@@ -235,7 +236,12 @@ class TraktClient:
             ) from exc
         except httpx.RequestError as exc:
             raise SyncClientError(f"Could not reach Trakt: {exc}") from exc
-        return resp.json()
+        try:
+            return cast(list[dict[str, Any]], resp.json())
+        except ValueError as exc:
+            raise SyncClientError(
+                "Trakt returned an invalid response — please retry"
+            ) from exc
 
     def _parse_movies(self, entries: list[dict[str, Any]]) -> list[RawItem]:
         valid = [e for e in entries if (e.get("plays") or 0) > 0]
