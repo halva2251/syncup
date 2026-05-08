@@ -1,14 +1,16 @@
 """Service connect routes: POST /api/connect/steam, POST /api/connect/lastfm,
-POST /api/connect/letterboxd/import."""
+POST /api/connect/letterboxd/import, GET /api/connect/anilist/oauth/*."""
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Self
+from typing import Annotated, Any, Self
 
 import httpx
-from fastapi import APIRouter, Depends, Request, UploadFile
+from fastapi import APIRouter, Depends, Query, Request, UploadFile
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -16,11 +18,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.api.schemas import ServiceConnectionOut
-from syncup.auth.router import RequireAuth
+from syncup.auth.router import RequireAuth, require_auth
 from syncup.config import Settings
 from syncup.db.models import Item, ServiceConnection, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
+from syncup.ingest.anilist import AniListClient
+from syncup.ingest.crypto import encrypt_token
 from syncup.ingest.lastfm import LastfmClient
 from syncup.ingest.protocol import SyncClientError
 from syncup.ingest.steam import SteamClient
@@ -308,3 +312,136 @@ def import_letterboxd(
 
     logger.info("User %s imported %d Letterboxd films", user.id, len(raw_items))
     return LetterboxdImportOut(imported=len(raw_items))
+
+
+# ---------------------------------------------------------------------------
+# AniList — OAuth 2.0 authorization code flow
+# ---------------------------------------------------------------------------
+
+_ANILIST_STATE_COOKIE = "anilist_state"
+
+
+def _anilist_client(settings: Settings) -> AniListClient:
+    """Instantiate AniListClient from settings.
+
+    Raises SyncUpError(503) if AniList credentials are not configured.
+    """
+    if not settings.anilist_client_id or not settings.anilist_client_secret:
+        raise SyncUpError(
+            "SERVICE_NOT_CONFIGURED",
+            "AniList OAuth is not configured — set ANILIST_CLIENT_ID and ANILIST_CLIENT_SECRET",
+            503,
+        )
+    return AniListClient(
+        client_id=settings.anilist_client_id,
+        client_secret=settings.anilist_client_secret,
+        redirect_uri=settings.anilist_redirect_uri,
+    )
+
+
+@router.get("/anilist/oauth/start")
+@limiter.limit("10/minute")
+def anilist_oauth_start(
+    request: Request,
+    user: RequireAuth,
+) -> RedirectResponse:
+    """Redirect the user to AniList's authorization page."""
+    settings: Settings = request.app.state.settings
+    client = _anilist_client(settings)
+
+    state = secrets.token_urlsafe(16)
+    url = client.get_authorize_url(state=state)
+
+    _cookie_opts: dict[str, Any] = {
+        "httponly": True,
+        "samesite": "lax",
+        "max_age": 600,
+        "secure": not settings.debug,
+    }
+    response = RedirectResponse(url=url, status_code=302)
+    response.set_cookie(_ANILIST_STATE_COOKIE, state, **_cookie_opts)
+    return response
+
+
+@router.get("/anilist/oauth/callback")
+@limiter.limit("10/minute")
+def anilist_oauth_callback(
+    request: Request,
+    code: Annotated[str, Query(min_length=1)],
+    state: Annotated[str, Query(min_length=1)],
+    db: Annotated[DbSession, Depends(get_db)],
+) -> RedirectResponse:
+    """Complete the AniList OAuth flow.
+
+    State validation runs before auth so a state mismatch returns 400, not 401,
+    matching the Spotify callback pattern.
+    """
+    # State check FIRST — keeps error semantics clean (400 vs 401).
+    cookie_state = request.cookies.get(_ANILIST_STATE_COOKIE)
+    if not cookie_state or cookie_state != state:
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    user = require_auth(request=request, db=db)
+
+    settings: Settings = request.app.state.settings
+    with _anilist_client(settings) as client:
+        try:
+            tokens = client.exchange_code(code)
+            me = client.fetch_me(tokens.access_token)
+        except SyncClientError as exc:
+            raise SyncUpError("ANILIST_TOKEN_ERROR", str(exc), 400) from exc
+        except httpx.HTTPStatusError as exc:
+            raise SyncUpError(
+                "ANILIST_TOKEN_ERROR",
+                f"AniList token exchange failed: {exc.response.text}",
+                exc.response.status_code,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise SyncUpError(
+                "UPSTREAM_UNAVAILABLE", f"Could not reach AniList: {exc}", 502
+            ) from exc
+
+    anilist_user_id = str(me.get("id") or "")
+    if not anilist_user_id:
+        raise SyncUpError("ANILIST_PROFILE_INVALID", "AniList profile missing user id", 502)
+
+    access_enc = encrypt_token(tokens.access_token)
+    refresh_enc = encrypt_token(tokens.refresh_token) if tokens.refresh_token else None
+
+    existing = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == "anilist",
+        )
+    )
+    if existing is not None:
+        existing.external_user_id = anilist_user_id
+        existing.access_token_encrypted = access_enc
+        existing.refresh_token_encrypted = refresh_enc
+        existing.token_expires_at = tokens.expires_at
+        existing.sync_status = "pending"
+        existing.sync_error = None
+    else:
+        db.add(
+            ServiceConnection(
+                user_id=user.id,
+                service="anilist",
+                external_user_id=anilist_user_id,
+                access_token_encrypted=access_enc,
+                refresh_token_encrypted=refresh_enc,
+                token_expires_at=tokens.expires_at,
+                sync_status="pending",
+            )
+        )
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.warning("AniList upsert race on user %s; connection already exists", user.id)
+
+    logger.info("User %s connected AniList (anilist_id=%s)", user.id, anilist_user_id)
+
+    response = RedirectResponse("/", status_code=302)
+    response.delete_cookie(_ANILIST_STATE_COOKIE)
+    return response
