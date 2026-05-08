@@ -1,6 +1,4 @@
-"""Service connect routes: POST /api/connect/steam, POST /api/connect/lastfm,
-POST /api/connect/letterboxd/import, GET /api/connect/anilist/oauth/*,
-GET /api/connect/trakt/oauth/*."""
+"""Service connection routes — OAuth flows and CSV imports for all supported platforms."""
 from __future__ import annotations
 
 import logging
@@ -438,9 +436,12 @@ def anilist_oauth_callback(
 
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
         logger.warning("AniList upsert race on user %s; connection already exists", user.id)
+        raise SyncUpError(
+            "ANILIST_CONNECT_CONFLICT", "Connection already exists — please retry", 409
+        ) from exc
 
     logger.info("User %s connected AniList (anilist_id=%s)", user.id, anilist_user_id)
 
@@ -559,10 +560,12 @@ def trakt_oauth_callback(
 
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
         logger.warning("Trakt upsert race on user %s; connection already exists", user.id)
-        raise SyncUpError("TRAKT_CONNECT_CONFLICT", "Connection already exists — please retry", 409)
+        raise SyncUpError(
+            "TRAKT_CONNECT_CONFLICT", "Connection already exists — please retry", 409
+        ) from exc
 
     logger.info("User %s connected Trakt (trakt_username=%s)", user.id, trakt_username)
 
