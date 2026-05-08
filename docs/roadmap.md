@@ -55,6 +55,10 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `GET /api/connect/anilist/oauth/start` + `GET /api/connect/anilist/oauth/callback` | `syncup/api/routes/connect.py` |
 | `AniListClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
 | 458 passing tests | `backend/tests/` |
+| `TraktClient` — REST OAuth, watched movies + shows, proportion-based engagement_score normalization per type | `syncup/ingest/trakt.py` |
+| `GET /api/connect/trakt/oauth/start` + `GET /api/connect/trakt/oauth/callback` | `syncup/api/routes/connect.py` |
+| `TraktClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
+| 511 passing tests | `backend/tests/` |
 
 ---
 
@@ -62,7 +66,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 
 **Goal:** Add Letterboxd, AniList, Trakt, Reddit, and RateYourMusic to the ingest pipeline. Introduce a `ServiceClient` Protocol so every future service slots in without touching the sync route.
 
-> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). S1 complete ✅ (2026-05-07). S2 complete ✅ (2026-05-08). S3–S5 are next — each ships as an independent PR.
+> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). S1 complete ✅ (2026-05-07). S2 complete ✅ (2026-05-08). S3 complete ✅ (2026-05-08). S4–S5 are next — each ships as an independent PR.
 
 ### F1–F7 Foundation (single PR)
 

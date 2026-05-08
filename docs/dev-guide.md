@@ -76,7 +76,7 @@ spotify.py         → SpotifyClient (OAuth PKCE)                  ← Live ✅
 lastfm.py          → LastfmClient (API key, no OAuth)            ← Live ✅
 letterboxd.py      → LetterboxdClient (CSV import, no auth)      ← Live ✅
 anilist.py         → AniListClient (GraphQL OAuth)               ← Live ✅
-trakt.py           → TraktClient (REST OAuth)                    ← Planned S3
+trakt.py           → TraktClient (REST OAuth)                    ← Live ✅
 reddit.py          → RedditClient (OAuth, subreddit membership)  ← Planned S4
 rateyourmusic.py   → RateYourMusicClient (CSV import, no auth)   ← Planned S5
 crypto.py          → Token encryption (AES-GCM)
@@ -371,8 +371,9 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **S2 (AniList GraphQL OAuth) is complete.** `AniListClient`, `GET /api/connect/anilist/oauth/start`, and `GET /api/connect/anilist/oauth/callback` are live. 458 tests passing.
 
-**Next: S3–S5 individual services** — each ships as its own PR:
-- S3: Trakt.tv (REST OAuth)
+**S3 (Trakt REST OAuth) is complete.** `TraktClient`, `GET /api/connect/trakt/oauth/start`, and `GET /api/connect/trakt/oauth/callback` are live. 511 tests passing.
+
+**Next: S4–S5 individual services** — each ships as its own PR:
 - S4: Reddit (OAuth)
 - S5: RateYourMusic (CSV import)
 
