@@ -44,6 +44,7 @@ def register_default_clients(settings: Settings) -> None:
     Called from the app lifespan with the loaded Settings object.
     Safe to call multiple times — registering overwrites the previous entry.
     """
+    from syncup.ingest.anilist import AniListClient
     from syncup.ingest.lastfm import LastfmClient
     from syncup.ingest.letterboxd import LetterboxdClient
     from syncup.ingest.spotify import SpotifyClient
@@ -59,3 +60,11 @@ def register_default_clients(settings: Settings) -> None:
         )
     )
     register(LetterboxdClient())
+    if settings.anilist_client_id and settings.anilist_client_secret:
+        register(
+            AniListClient(
+                client_id=settings.anilist_client_id,
+                client_secret=settings.anilist_client_secret,
+                redirect_uri=settings.anilist_redirect_uri,
+            )
+        )
