@@ -98,7 +98,7 @@ def _upsert_connection(
         # Race condition: two requests for the same user+service committed
         # simultaneously. The first one won; re-query to return a live object.
         logger.warning("Upsert race on %s for user %s", service, user_id)
-        conn = db.scalar(
+        conn = db.scalar(  # type: ignore[assignment]
             select(ServiceConnection).where(
                 ServiceConnection.user_id == user_id,
                 ServiceConnection.service == service,
@@ -231,7 +231,7 @@ def import_letterboxd(
     # 4. Commit — rollback on any failure preserves the old data.
 
     db.execute(
-        delete(_USER_ITEMS_TABLE)
+        delete(_USER_ITEMS_TABLE)  # type: ignore[arg-type]
         .where(_USER_ITEMS_TABLE.c.user_id == user.id)
         .where(
             _USER_ITEMS_TABLE.c.item_id.in_(
@@ -242,7 +242,7 @@ def import_letterboxd(
 
     now = datetime.now(UTC)
     for raw_item in raw_items:
-        ins_item = pg_insert(_ITEMS_TABLE).values(
+        ins_item = pg_insert(_ITEMS_TABLE).values(  # type: ignore[arg-type]
             id=uuid.uuid4(),
             service="letterboxd",
             item_type=raw_item["item_type"],
@@ -260,7 +260,7 @@ def import_letterboxd(
             ).returning(_ITEMS_TABLE.c.id)
         ).scalar_one()
 
-        ins_ui = pg_insert(_USER_ITEMS_TABLE).values(
+        ins_ui = pg_insert(_USER_ITEMS_TABLE).values(  # type: ignore[arg-type]
             id=uuid.uuid4(),
             user_id=user.id,
             item_id=item_id,
