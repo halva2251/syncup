@@ -58,7 +58,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `TraktClient` — REST OAuth, watched movies + shows, proportion-based engagement_score normalization per type | `syncup/ingest/trakt.py` |
 | `GET /api/connect/trakt/oauth/start` + `GET /api/connect/trakt/oauth/callback` | `syncup/api/routes/connect.py` |
 | `TraktClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
-| 511 passing tests | `backend/tests/` |
+| 518 passing tests | `backend/tests/` |
 
 ---
 
