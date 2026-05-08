@@ -135,9 +135,15 @@ Same pattern as Letterboxd import. Accepts RateYourMusic ratings export CSV.
 - Parses `Title`, `Release_Date` (year), `Rating` columns
 - Same wipe-and-replace, 10 MB cap, 201/413/422 responses
 
+### `GET /connect/anilist/oauth/start` — Live ✅
+Redirects (302) to AniList's authorization page. Sets `anilist_state` cookie (httpOnly, 10 min TTL). Returns 503 if `ANILIST_CLIENT_ID` / `ANILIST_CLIENT_SECRET` are not configured.
+
+### `GET /connect/anilist/oauth/callback?code=...&state=...` — Live ✅
+Validates state cookie, exchanges code for access token, encrypts token, upserts `service_connections` row (`sync_status = 'pending'`), redirects to `/`. Returns 400 on state mismatch.
+
 ### `GET /connect/{service}/oauth/start` — Sketch (Phase 1.10)
-Initiate OAuth for `service` ∈ `anilist`, `trakt`, `reddit`.
-Returns `{"authorize_url": "https://..."}` or redirects directly (TBD per service).
+Initiate OAuth for `service` ∈ `trakt`, `reddit`.
+Returns 302 redirect to the provider's authorization page.
 
 ### `GET /connect/{service}/oauth/callback` — Sketch (Phase 1.10)
 Complete OAuth handshake for the above services.
