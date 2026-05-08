@@ -132,7 +132,12 @@ class AniListClient:
         except httpx.RequestError as exc:
             raise SyncClientError(f"Could not reach AniList: {exc}") from exc
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except ValueError as exc:
+            raise SyncClientError(
+                "AniList returned an invalid response — please retry"
+            ) from exc
         return TokenPair(
             access_token=data["access_token"],
             refresh_token=data.get("refresh_token"),
@@ -170,6 +175,15 @@ class AniListClient:
         """AniList tokens do not expire — no refresh needed."""
         return None
 
+    def fetch_me(self, access_token: str) -> dict[str, Any]:
+        """Return the authenticated viewer's profile dict (contains at least 'id').
+
+        Used during the OAuth callback to store the real AniList user ID.
+        Raises SyncClientError on failure.
+        """
+        data = self._graphql("query { Viewer { id } }", {}, access_token)
+        return data.get("Viewer") or {}
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -193,6 +207,10 @@ class AniListClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                raise SyncClientError(
+                    "AniList token rejected — please reconnect your AniList account"
+                ) from exc
             raise SyncClientError(
                 f"AniList API error ({exc.response.status_code}): {exc.response.text}"
             ) from exc

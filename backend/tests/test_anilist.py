@@ -293,6 +293,58 @@ def test_exchange_code_http_error_raises_sync_client_error() -> None:
         c.exchange_code("bad-code")
 
 
+def test_exchange_code_non_json_response_raises_sync_client_error() -> None:
+    # AniList returns an HTML error page during outages — must not leak JSONDecodeError.
+    c = _client([httpx.Response(200, content=b"<html>Internal Server Error</html>")])
+    with pytest.raises(SyncClientError, match="invalid response"):
+        c.exchange_code("any-code")
+
+
+# ---------------------------------------------------------------------------
+# fetch_me
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_me_returns_viewer_dict() -> None:
+    body = {"data": {"Viewer": {"id": 12345}}}
+    c = _client([_json_resp(body)])
+    result = c.fetch_me("access-token")
+    assert result == {"id": 12345}
+
+
+def test_fetch_me_graphql_error_raises_sync_client_error() -> None:
+    error_body = {"errors": [{"message": "Unauthorized.", "status": 401}]}
+    c = _client([_json_resp(error_body)])
+    with pytest.raises(SyncClientError):
+        c.fetch_me("bad-token")
+
+
+# ---------------------------------------------------------------------------
+# _graphql — 401 raises specific error
+# ---------------------------------------------------------------------------
+
+
+def test_graphql_401_raises_reconnect_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
+    c = _client([httpx.Response(401, json={"error": "Unauthorized"})])
+    with pytest.raises(SyncClientError, match="reconnect"):
+        c.fetch_items(_make_connection())
+
+
+# ---------------------------------------------------------------------------
+# context manager
+# ---------------------------------------------------------------------------
+
+
+def test_client_context_manager_closes_http() -> None:
+    from syncup.ingest.anilist import AniListClient
+
+    c = AniListClient(client_id="x", client_secret="y", redirect_uri="z")
+    with c:
+        pass
+    assert c.http.is_closed
+
+
 # ---------------------------------------------------------------------------
 # fetch_items — happy path
 # ---------------------------------------------------------------------------
