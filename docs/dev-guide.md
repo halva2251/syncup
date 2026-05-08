@@ -371,7 +371,7 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **S2 (AniList GraphQL OAuth) is complete.** `AniListClient`, `GET /api/connect/anilist/oauth/start`, and `GET /api/connect/anilist/oauth/callback` are live. 458 tests passing.
 
-**S3 (Trakt REST OAuth) is complete.** `TraktClient`, `GET /api/connect/trakt/oauth/start`, and `GET /api/connect/trakt/oauth/callback` are live. 511 tests passing.
+**S3 (Trakt REST OAuth) is complete.** `TraktClient`, `GET /api/connect/trakt/oauth/start`, and `GET /api/connect/trakt/oauth/callback` are live. 518 tests passing.
 
 **Next: S4–S5 individual services** — each ships as its own PR:
 - S4: Reddit (OAuth)
