@@ -86,7 +86,9 @@ def anilist_client_no_creds(
     """Client fixture with AniList credentials NOT configured."""
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("DEBUG", "true")
-    # Deliberately NOT setting ANILIST_CLIENT_ID / ANILIST_CLIENT_SECRET
+    # Explicitly blank — prevents real .env values leaking into this fixture.
+    monkeypatch.setenv("ANILIST_CLIENT_ID", "")
+    monkeypatch.setenv("ANILIST_CLIENT_SECRET", "")
 
     from syncup.api.app import app
     from syncup.auth.router import require_auth
@@ -145,7 +147,7 @@ def test_anilist_oauth_start_not_configured_returns_error(
     anilist_client_no_creds: TestClient,
 ) -> None:
     resp = anilist_client_no_creds.get("/api/connect/anilist/oauth/start")
-    assert resp.status_code in (400, 503)
+    assert resp.status_code == 503
     assert "error" in resp.json()
 
 
@@ -155,12 +157,27 @@ def test_anilist_oauth_start_not_configured_returns_error(
 
 
 def test_anilist_oauth_callback_requires_auth(unauthed_anilist_client: TestClient) -> None:
+    # State matches, so state check passes — auth check fires next → 401.
     resp = unauthed_anilist_client.get(
         "/api/connect/anilist/oauth/callback",
         params={"code": "some-code", "state": "some-state"},
         cookies={"anilist_state": "some-state"},
     )
     assert resp.status_code == 401
+
+
+def test_anilist_oauth_callback_state_mismatch_returns_400_even_when_unauthenticated(
+    unauthed_anilist_client: TestClient,
+) -> None:
+    # State mismatch must return 400, not 401, even without a session.
+    # This verifies that state validation runs BEFORE the auth check.
+    resp = unauthed_anilist_client.get(
+        "/api/connect/anilist/oauth/callback",
+        params={"code": "some-code", "state": "wrong-state"},
+        cookies={"anilist_state": "correct-state"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "OAUTH_STATE_MISMATCH"
 
 
 def test_anilist_oauth_callback_state_mismatch_returns_400(
@@ -194,6 +211,9 @@ def test_anilist_oauth_callback_success_redirects_home(
 ) -> None:
     from syncup.ingest.protocol import TokenPair
 
+    fake_user = _make_user()
+    # require_auth is called directly (not via DI) after state check — must patch the fn.
+    monkeypatch.setattr("syncup.api.routes.connect.require_auth", lambda **_: fake_user)
     monkeypatch.setattr(
         "syncup.api.routes.connect.AniListClient.exchange_code",
         lambda self, code: TokenPair(
@@ -201,6 +221,10 @@ def test_anilist_oauth_callback_success_redirects_home(
             refresh_token="refresh-tok",
             expires_at=None,
         ),
+    )
+    monkeypatch.setattr(
+        "syncup.api.routes.connect.AniListClient.fetch_me",
+        lambda self, access_token: {"id": 12345},
     )
     monkeypatch.setattr("syncup.api.routes.connect.encrypt_token", lambda _: b"encrypted")
     mock_db.scalar.return_value = None  # no existing connection
@@ -212,3 +236,37 @@ def test_anilist_oauth_callback_success_redirects_home(
     )
     assert resp.status_code == 302
     assert resp.headers["location"] == "/"
+
+
+def test_anilist_oauth_callback_stores_anilist_user_id(
+    monkeypatch: pytest.MonkeyPatch,
+    mock_db: MagicMock,
+    anilist_client: TestClient,
+) -> None:
+    """external_user_id must be the AniList viewer ID, not the SyncUp user UUID."""
+    from syncup.ingest.protocol import TokenPair
+
+    fake_user = _make_user()
+    monkeypatch.setattr("syncup.api.routes.connect.require_auth", lambda **_: fake_user)
+    monkeypatch.setattr(
+        "syncup.api.routes.connect.AniListClient.exchange_code",
+        lambda self, code: TokenPair(
+            access_token="access-tok", refresh_token=None, expires_at=None
+        ),
+    )
+    monkeypatch.setattr(
+        "syncup.api.routes.connect.AniListClient.fetch_me",
+        lambda self, access_token: {"id": 99999},
+    )
+    monkeypatch.setattr("syncup.api.routes.connect.encrypt_token", lambda _: b"enc")
+    mock_db.scalar.return_value = None
+
+    anilist_client.get(
+        "/api/connect/anilist/oauth/callback",
+        params={"code": "code", "state": "st"},
+        cookies={"anilist_state": "st"},
+    )
+
+    # The ServiceConnection added to DB must have external_user_id = "99999".
+    added_conn: ServiceConnection = mock_db.add.call_args[0][0]
+    assert added_conn.external_user_id == "99999"

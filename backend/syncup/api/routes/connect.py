@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.api.schemas import ServiceConnectionOut
-from syncup.auth.router import RequireAuth
+from syncup.auth.router import RequireAuth, require_auth
 from syncup.config import Settings
 from syncup.db.models import Item, ServiceConnection, UserItem
 from syncup.db.session import get_db
@@ -370,21 +370,24 @@ def anilist_oauth_callback(
     code: Annotated[str, Query(min_length=1)],
     state: Annotated[str, Query(min_length=1)],
     db: Annotated[DbSession, Depends(get_db)],
-    user: RequireAuth,
 ) -> RedirectResponse:
     """Complete the AniList OAuth flow.
 
-    Validates state, exchanges code for token, encrypts and stores it,
-    upserts service_connections, and redirects to the frontend.
+    State validation runs before auth so a state mismatch returns 400, not 401,
+    matching the Spotify callback pattern.
     """
+    # State check FIRST — keeps error semantics clean (400 vs 401).
     cookie_state = request.cookies.get(_ANILIST_STATE_COOKIE)
     if not cookie_state or cookie_state != state:
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    user = require_auth(request=request, db=db)
 
     settings: Settings = request.app.state.settings
     with _anilist_client(settings) as client:
         try:
             tokens = client.exchange_code(code)
+            me = client.fetch_me(tokens.access_token)
         except SyncClientError as exc:
             raise SyncUpError("ANILIST_TOKEN_ERROR", str(exc), 400) from exc
         except httpx.HTTPStatusError as exc:
@@ -398,6 +401,10 @@ def anilist_oauth_callback(
                 "UPSTREAM_UNAVAILABLE", f"Could not reach AniList: {exc}", 502
             ) from exc
 
+    anilist_user_id = str(me.get("id") or "")
+    if not anilist_user_id:
+        raise SyncUpError("ANILIST_PROFILE_INVALID", "AniList profile missing user id", 502)
+
     access_enc = encrypt_token(tokens.access_token)
     refresh_enc = encrypt_token(tokens.refresh_token) if tokens.refresh_token else None
 
@@ -408,6 +415,7 @@ def anilist_oauth_callback(
         )
     )
     if existing is not None:
+        existing.external_user_id = anilist_user_id
         existing.access_token_encrypted = access_enc
         existing.refresh_token_encrypted = refresh_enc
         existing.token_expires_at = tokens.expires_at
@@ -418,7 +426,7 @@ def anilist_oauth_callback(
             ServiceConnection(
                 user_id=user.id,
                 service="anilist",
-                external_user_id=str(user.id),
+                external_user_id=anilist_user_id,
                 access_token_encrypted=access_enc,
                 refresh_token_encrypted=refresh_enc,
                 token_expires_at=tokens.expires_at,
@@ -432,7 +440,7 @@ def anilist_oauth_callback(
         db.rollback()
         logger.warning("AniList upsert race on user %s; connection already exists", user.id)
 
-    logger.info("User %s connected AniList", user.id)
+    logger.info("User %s connected AniList (anilist_id=%s)", user.id, anilist_user_id)
 
     response = RedirectResponse("/", status_code=302)
     response.delete_cookie(_ANILIST_STATE_COOKIE)
