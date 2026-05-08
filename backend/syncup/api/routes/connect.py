@@ -1,5 +1,6 @@
 """Service connect routes: POST /api/connect/steam, POST /api/connect/lastfm,
-POST /api/connect/letterboxd/import, GET /api/connect/anilist/oauth/*."""
+POST /api/connect/letterboxd/import, GET /api/connect/anilist/oauth/*,
+GET /api/connect/trakt/oauth/*."""
 from __future__ import annotations
 
 import logging
@@ -28,6 +29,7 @@ from syncup.ingest.crypto import encrypt_token
 from syncup.ingest.lastfm import LastfmClient
 from syncup.ingest.protocol import SyncClientError
 from syncup.ingest.steam import SteamClient
+from syncup.ingest.trakt import TraktClient
 from syncup.limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -444,4 +446,126 @@ def anilist_oauth_callback(
 
     response = RedirectResponse("/", status_code=302)
     response.delete_cookie(_ANILIST_STATE_COOKIE)
+    return response
+
+
+# ===========================================================================
+# Trakt OAuth
+# ===========================================================================
+
+_TRAKT_STATE_COOKIE = "trakt_state"
+
+
+def _trakt_client(settings: Settings) -> TraktClient:
+    """Instantiate TraktClient from settings.
+
+    Raises SyncUpError(503) if Trakt credentials are not configured.
+    """
+    if not settings.trakt_client_id or not settings.trakt_client_secret:
+        raise SyncUpError(
+            "SERVICE_NOT_CONFIGURED",
+            "Trakt OAuth is not configured — set TRAKT_CLIENT_ID and TRAKT_CLIENT_SECRET",
+            503,
+        )
+    return TraktClient(
+        client_id=settings.trakt_client_id,
+        client_secret=settings.trakt_client_secret,
+        redirect_uri=settings.trakt_redirect_uri,
+    )
+
+
+@router.get("/trakt/oauth/start")
+@limiter.limit("10/minute")
+def trakt_oauth_start(
+    request: Request,
+    user: RequireAuth,
+) -> RedirectResponse:
+    """Redirect the user to Trakt's authorization page."""
+    settings: Settings = request.app.state.settings
+    client = _trakt_client(settings)
+
+    state = secrets.token_urlsafe(16)
+    url = client.get_authorize_url(state=state)
+
+    _cookie_opts: dict[str, Any] = {
+        "httponly": True,
+        "samesite": "lax",
+        "max_age": 600,
+        "secure": not settings.debug,
+    }
+    response = RedirectResponse(url=url, status_code=302)
+    response.set_cookie(_TRAKT_STATE_COOKIE, state, **_cookie_opts)
+    return response
+
+
+@router.get("/trakt/oauth/callback")
+@limiter.limit("10/minute")
+def trakt_oauth_callback(
+    request: Request,
+    code: Annotated[str, Query(min_length=1)],
+    state: Annotated[str, Query(min_length=1)],
+    db: Annotated[DbSession, Depends(get_db)],
+) -> RedirectResponse:
+    """Complete the Trakt OAuth flow.
+
+    State validation runs before auth so a state mismatch returns 400, not 401.
+    """
+    cookie_state = request.cookies.get(_TRAKT_STATE_COOKIE)
+    if not cookie_state or cookie_state != state:
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    user = require_auth(request=request, db=db)
+
+    settings: Settings = request.app.state.settings
+    with _trakt_client(settings) as client:
+        try:
+            tokens = client.exchange_code(code)
+            me = client.fetch_me(tokens.access_token)
+        except SyncClientError as exc:
+            raise SyncUpError("TRAKT_TOKEN_ERROR", str(exc), 400) from exc
+
+    trakt_username = me.get("username") or ""
+    if not trakt_username:
+        raise SyncUpError("TRAKT_PROFILE_INVALID", "Trakt profile missing username", 502)
+
+    access_enc = encrypt_token(tokens.access_token)
+    refresh_enc = encrypt_token(tokens.refresh_token) if tokens.refresh_token else None
+
+    existing = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == "trakt",
+        )
+    )
+    if existing is not None:
+        existing.external_user_id = trakt_username
+        existing.access_token_encrypted = access_enc
+        existing.refresh_token_encrypted = refresh_enc
+        existing.token_expires_at = tokens.expires_at
+        existing.sync_status = "pending"
+        existing.sync_error = None
+    else:
+        db.add(
+            ServiceConnection(
+                user_id=user.id,
+                service="trakt",
+                external_user_id=trakt_username,
+                access_token_encrypted=access_enc,
+                refresh_token_encrypted=refresh_enc,
+                token_expires_at=tokens.expires_at,
+                sync_status="pending",
+            )
+        )
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.warning("Trakt upsert race on user %s; connection already exists", user.id)
+        raise SyncUpError("TRAKT_CONNECT_CONFLICT", "Connection already exists — please retry", 409)
+
+    logger.info("User %s connected Trakt (trakt_username=%s)", user.id, trakt_username)
+
+    response = RedirectResponse("/", status_code=302)
+    response.delete_cookie(_TRAKT_STATE_COOKIE)
     return response

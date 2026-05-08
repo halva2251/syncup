@@ -68,3 +68,13 @@ def register_default_clients(settings: Settings) -> None:
                 redirect_uri=settings.anilist_redirect_uri,
             )
         )
+    if settings.trakt_client_id and settings.trakt_client_secret:
+        from syncup.ingest.trakt import TraktClient
+
+        register(
+            TraktClient(
+                client_id=settings.trakt_client_id,
+                client_secret=settings.trakt_client_secret,
+                redirect_uri=settings.trakt_redirect_uri,
+            )
+        )
