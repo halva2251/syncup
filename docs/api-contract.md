@@ -141,8 +141,14 @@ Redirects (302) to AniList's authorization page. Sets `anilist_state` cookie (ht
 ### `GET /connect/anilist/oauth/callback?code=...&state=...` — Live ✅
 Validates state cookie, exchanges code for access token, encrypts token, upserts `service_connections` row (`sync_status = 'pending'`), redirects to `/`. Returns 400 on state mismatch.
 
+### `GET /connect/trakt/oauth/start` — Live ✅
+Redirects (302) to Trakt's authorization page. Sets `trakt_state` cookie (httpOnly, 10 min TTL). Returns 503 if `TRAKT_CLIENT_ID` / `TRAKT_CLIENT_SECRET` are not configured.
+
+### `GET /connect/trakt/oauth/callback?code=...&state=...` — Live ✅
+Validates state cookie, exchanges code for access + refresh token, encrypts tokens, upserts `service_connections` row (`sync_status = 'pending'`, `token_expires_at` set 90 days out), redirects to `/`. Returns 400 on state mismatch.
+
 ### `GET /connect/{service}/oauth/start` — Sketch (Phase 1.10)
-Initiate OAuth for `service` ∈ `trakt`, `reddit`.
+Initiate OAuth for `service` ∈ `reddit`.
 Returns 302 redirect to the provider's authorization page.
 
 ### `GET /connect/{service}/oauth/callback` — Sketch (Phase 1.10)
