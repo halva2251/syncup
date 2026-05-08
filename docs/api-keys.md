@@ -110,6 +110,44 @@ SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/api/auth/spotify/callback
 
 ---
 
+## 4. AniList
+
+AniList uses **OAuth 2.0** (Authorization Code flow). Tokens do not expire, so no refresh flow is needed.
+
+### Steps
+
+1. Sign in at [anilist.co](https://anilist.co).
+2. Go to **[anilist.co/settings/developer](https://anilist.co/settings/developer)**.
+3. Click **Create New Client**.
+4. Fill in:
+   - **Name**: `SyncUp (dev - your_name)`
+   - **Redirect URL**: `http://127.0.0.1:3000/api/connect/anilist/oauth/callback`
+   - (The description field is optional)
+5. Submit. You'll see a **Client ID** (an integer) and **Client Secret** immediately.
+
+### What you can fetch
+
+- `MediaListCollection` — full ANIME and MANGA list with scores and timestamps
+
+### Env
+
+```
+ANILIST_CLIENT_ID=123456
+ANILIST_CLIENT_SECRET=your_secret_here
+# ANILIST_REDIRECT_URI is optional — default is correct for local dev
+```
+
+> **Note on the Client ID:** AniList issues integer IDs, not UUID strings. Paste it as-is.
+
+> **Without credentials configured:** the `/api/connect/anilist/oauth/start` endpoint returns `503 SERVICE_NOT_CONFIGURED`. The rest of the app (Steam, Spotify, Last.fm, Letterboxd) continues to work normally.
+
+### Docs
+
+- [AniList API documentation](https://docs.anilist.co)
+- [OAuth guide](https://docs.anilist.co/guide/auth)
+
+---
+
 ## .env Template
 
 Create `backend/.env` from this template (add to `.gitignore` if not already):
@@ -127,6 +165,11 @@ SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
 SPOTIFY_REDIRECT_URI=http://127.0.0.1:3000/api/auth/spotify/callback
 
+# AniList
+ANILIST_CLIENT_ID=
+ANILIST_CLIENT_SECRET=
+# ANILIST_REDIRECT_URI=http://127.0.0.1:3000/api/connect/anilist/oauth/callback  ← default, only set if overriding
+
 # App
 DATABASE_URL=postgresql://syncup:syncup@localhost:5432/syncup
 SESSION_SECRET=
@@ -141,5 +184,6 @@ SESSION_SECRET=
 | Steam | 100k req/day per key | generous; cache anyway |
 | Last.fm | 5 req/sec | be polite, batch where possible |
 | Spotify | ~180 req/min per token | app-level limits also apply |
+| AniList | 90 req/min | tokens never expire; GraphQL — we fetch everything in one request |
 
 **Golden rule for demo day**: never hit a live API during the presentation. Everything must be pre-fetched and cached in the database.
