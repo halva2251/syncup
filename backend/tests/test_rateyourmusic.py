@@ -87,11 +87,26 @@ def test_parse_csv_metadata_has_title_normalized_and_release_year() -> None:
     assert dummy["metadata"]["release_year"] == 1994
 
 
-def test_parse_csv_external_id_is_stable() -> None:
+def test_parse_csv_metadata_includes_artist_normalized() -> None:
+    items = RateYourMusicClient().parse_csv(_VALID_CSV)
+    dummy = next(i for i in items if i["name"] == "Dummy")
+    assert dummy["metadata"]["artist_normalized"] == "portishead"
+
+
+def test_parse_csv_external_id_includes_artist_when_present() -> None:
     items = RateYourMusicClient().parse_csv(_VALID_CSV)
     ok_computer = next(i for i in items if i["name"] == "OK Computer")
-    # external_id is deterministic so repeated imports produce the same item row
-    assert ok_computer["external_id"] == "ok computer:1997"
+    # artist prevents collisions between albums with the same normalized title
+    assert ok_computer["external_id"] == "radiohead:ok computer:1997"
+
+
+def test_parse_csv_external_id_is_stable() -> None:
+    # Same import twice must produce the same external_id (idempotent re-import)
+    items1 = RateYourMusicClient().parse_csv(_VALID_CSV)
+    items2 = RateYourMusicClient().parse_csv(_VALID_CSV)
+    ids1 = {i["external_id"] for i in items1}
+    ids2 = {i["external_id"] for i in items2}
+    assert ids1 == ids2
 
 
 def test_parse_csv_last_engaged_at_is_none() -> None:
@@ -115,6 +130,27 @@ def test_parse_csv_extracts_year_from_year_month() -> None:
     csv = "Title,Release_Date,Rating\nDummy,1994-08,4.5\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert items[0]["metadata"]["release_year"] == 1994
+
+
+def test_parse_csv_negative_release_date_stored_as_zero() -> None:
+    # Malformed strings like "-197-05" must not produce negative years
+    csv = "Title,Release_Date,Rating\nSome Album,-197-05,4.0\n"
+    items = RateYourMusicClient().parse_csv(csv)
+    assert items[0]["metadata"]["release_year"] == 0
+
+
+def test_parse_csv_without_artist_columns_falls_back_to_title_only_external_id() -> None:
+    # Minimal CSV (no First Name / Last Name columns) still works
+    csv = "Title,Release_Date,Rating\nOK Computer,1997,5.0\n"
+    items = RateYourMusicClient().parse_csv(csv)
+    assert items[0]["external_id"] == "ok computer:1997"
+    assert items[0]["metadata"]["artist_normalized"] == ""
+
+
+def test_parse_csv_without_artist_metadata_artist_normalized_is_empty_string() -> None:
+    csv = "Title,Release_Date,Rating\nDummy,1994,4.5\n"
+    items = RateYourMusicClient().parse_csv(csv)
+    assert items[0]["metadata"]["artist_normalized"] == ""
 
 
 # ---------------------------------------------------------------------------

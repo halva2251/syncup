@@ -18,12 +18,14 @@ def _extract_year(date_str: str) -> int:
     """Return the 4-digit year from a release date string, or 0 if unparseable.
 
     Handles plain years ("1997"), year-month ("1997-05"), and full dates
-    ("1997-05-21") by taking the first four characters.
+    ("1997-05-21") by taking the first four characters. Returns 0 for empty,
+    non-numeric, or negative values (0 is the sentinel for "unknown year").
     """
     if not date_str or len(date_str) < 4:
         return 0
     try:
-        return int(date_str[:4])
+        year = int(date_str[:4])
+        return year if year > 0 else 0
     except ValueError:
         return 0
 
@@ -52,9 +54,14 @@ class RateYourMusicClient:
     def parse_csv(self, content: str) -> list[RawItem]:
         """Parse a RateYourMusic ratings CSV export and return RawItems.
 
-        Skips rows with an empty Rating column or empty Title.  Raises
-        SyncClientError if required columns (Title, Release_Date, Rating) are
-        missing or a rating value cannot be parsed as a float.
+        Required columns: Title, Release_Date, Rating.
+        Optional columns: First Name, Last Name (artist) — included in the
+        external_id and metadata when present to prevent title collisions
+        across albums with identical names by different artists.
+
+        Skips rows with an empty Rating or empty Title.  Ratings outside the
+        [0.5, 5.0] range are clamped silently.  Raises SyncClientError if
+        required columns are missing or a rating cannot be parsed as a float.
         """
         if not content.strip():
             return []
@@ -83,14 +90,27 @@ class RateYourMusicClient:
             except ValueError:
                 raise SyncClientError(f"Invalid rating value: {rating_str!r}") from None
 
+            # Artist is optional — present in full RYM exports but absent in
+            # minimal CSV formats. Including it in external_id prevents
+            # collision between e.g. "Greatest Hits" by different artists.
+            first_name = (row.get("First Name") or "").strip()
+            last_name = (row.get("Last Name") or "").strip()
+            artist_raw = f"{first_name} {last_name}".strip()
+            artist_norm = normalize_title(artist_raw) if artist_raw else ""
+
             release_year = _extract_year(date_str)
             title_norm = normalize_title(title)
             engagement_score = (rating - 0.5) / 4.5
             engagement_score = max(0.0, min(1.0, engagement_score))
 
+            if artist_norm:
+                external_id = f"{artist_norm}:{title_norm}:{release_year}"
+            else:
+                external_id = f"{title_norm}:{release_year}"
+
             result.append(
                 RawItem(
-                    external_id=f"{title_norm}:{release_year}",
+                    external_id=external_id,
                     name=title,
                     item_type="album",
                     engagement_score=engagement_score,
@@ -99,6 +119,7 @@ class RateYourMusicClient:
                     metadata={
                         "title_normalized": title_norm,
                         "release_year": release_year,
+                        "artist_normalized": artist_norm,
                     },
                     last_engaged_at=None,
                 )
