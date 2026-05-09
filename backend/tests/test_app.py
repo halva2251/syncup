@@ -234,3 +234,76 @@ def test_syncup_error_uses_envelope_format(client: TestClient) -> None:
     assert "error" in body
     assert "code" in body["error"]
     assert "message" in body["error"]
+
+
+# ---------------------------------------------------------------------------
+# S1 — OAuth state comparison must use secrets.compare_digest (timing-safe)
+# ---------------------------------------------------------------------------
+
+
+def test_spotify_callback_uses_compare_digest_for_state_validation(
+    authed_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """State comparison in the Spotify callback must use secrets.compare_digest."""
+    import secrets as _secrets
+
+    called: list[tuple[str, str]] = []
+    original = _secrets.compare_digest
+
+    def spy(a: str, b: str) -> bool:
+        called.append((a, b))
+        return original(a, b)
+
+    monkeypatch.setattr("syncup.api.app.secrets.compare_digest", spy)
+    authed_client.get("/api/auth/spotify", follow_redirects=False)
+    state = authed_client.cookies.get("spotify_state")
+    authed_client.get(f"/api/auth/spotify/callback?code=c&state={state}")
+    assert called, "secrets.compare_digest was not called for Spotify state validation"
+
+
+# ---------------------------------------------------------------------------
+# S2 — Crypto key guard must fire even in debug mode
+# ---------------------------------------------------------------------------
+
+
+def test_startup_requires_encryption_key_in_debug_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing SYNCUP_TOKEN_ENCRYPTION_KEY must raise RuntimeError even when DEBUG=true."""
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test")
+    monkeypatch.setenv("DEBUG", "true")
+    monkeypatch.setenv("SYNCUP_TOKEN_ENCRYPTION_KEY", "")  # explicitly blank
+
+    from syncup.api.app import app
+
+    with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
+        with pytest.raises(RuntimeError, match="SYNCUP_TOKEN_ENCRYPTION_KEY"):
+            with TestClient(app):
+                pass
+
+
+# ---------------------------------------------------------------------------
+# S3 — Spotify token error must not leak upstream response body to client
+# ---------------------------------------------------------------------------
+
+
+def test_spotify_token_error_does_not_leak_upstream_body(
+    authed_client: TestClient,
+) -> None:
+    """httpx.HTTPStatusError body from Spotify must not appear in the API response."""
+    import httpx as _httpx
+
+    sensitive = "secret_internal_spotify_details_XYZ"
+    with patch(
+        "syncup.ingest.spotify.SpotifyClient.exchange_code",
+        side_effect=_httpx.HTTPStatusError(
+            "400",
+            request=_httpx.Request("POST", "https://accounts.spotify.com/api/token"),
+            response=_httpx.Response(400, text=sensitive),
+        ),
+    ):
+        authed_client.get("/api/auth/spotify", follow_redirects=False)
+        state = authed_client.cookies.get("spotify_state")
+        resp = authed_client.get(f"/api/auth/spotify/callback?code=authcode&state={state}")
+
+    assert sensitive not in resp.text, "Upstream error body must not be returned to client"

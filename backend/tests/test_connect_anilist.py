@@ -270,3 +270,62 @@ def test_anilist_oauth_callback_stores_anilist_user_id(
     # The ServiceConnection added to DB must have external_user_id = "99999".
     added_conn: ServiceConnection = mock_db.add.call_args[0][0]
     assert added_conn.external_user_id == "99999"
+
+
+# ---------------------------------------------------------------------------
+# S1 — AniList callback must use secrets.compare_digest for state validation
+# ---------------------------------------------------------------------------
+
+
+def test_anilist_callback_uses_compare_digest_for_state_validation(
+    anilist_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """State comparison in the AniList callback must use secrets.compare_digest."""
+    import secrets as _secrets
+
+    called: list[tuple[str, str]] = []
+    original = _secrets.compare_digest
+
+    def spy(a: str, b: str) -> bool:
+        called.append((a, b))
+        return original(a, b)
+
+    monkeypatch.setattr("syncup.api.routes.connect.secrets.compare_digest", spy)
+    anilist_client.get(
+        "/api/connect/anilist/oauth/callback",
+        params={"code": "c", "state": "st"},
+        cookies={"anilist_state": "st"},
+    )
+    assert called, "secrets.compare_digest was not called for AniList state validation"
+
+
+# ---------------------------------------------------------------------------
+# S3 — AniList token exchange must not leak upstream response body
+# ---------------------------------------------------------------------------
+
+
+def test_anilist_callback_token_error_does_not_leak_upstream_body(
+    anilist_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """httpx.HTTPStatusError body from AniList must not appear in the API response."""
+    import httpx as _httpx
+
+    sensitive = "secret_anilist_internal_XYZ"
+    fake_user = _make_user()
+    monkeypatch.setattr("syncup.api.routes.connect.require_auth", lambda **_: fake_user)
+
+    def _raise_http_error(self: object, code: str) -> None:
+        raise _httpx.HTTPStatusError(
+            "400",
+            request=_httpx.Request("POST", "https://anilist.co/api/v2/oauth/token"),
+            response=_httpx.Response(400, text=sensitive),
+        )
+
+    monkeypatch.setattr("syncup.api.routes.connect.AniListClient.exchange_code", _raise_http_error)
+
+    resp = anilist_client.get(
+        "/api/connect/anilist/oauth/callback",
+        params={"code": "c", "state": "st"},
+        cookies={"anilist_state": "st"},
+    )
+    assert sensitive not in resp.text, "Upstream error body must not be returned to client"

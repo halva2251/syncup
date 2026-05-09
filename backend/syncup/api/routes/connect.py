@@ -135,9 +135,8 @@ def connect_steam(
     except (SyncClientError, ValueError) as exc:
         raise SyncUpError("STEAM_USER_NOT_FOUND", str(exc), 404) from exc
     except httpx.HTTPStatusError as exc:
-        raise SyncUpError(
-            "UPSTREAM_UNAVAILABLE", f"Steam API error: {exc.response.text}", 502
-        ) from exc
+        logger.warning("Steam API error (status=%s): %s", exc.response.status_code, exc.response.text)
+        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Steam returned an error — please retry", 502) from exc
     except httpx.RequestError as exc:
         raise SyncUpError("UPSTREAM_UNAVAILABLE", f"Could not reach Steam: {exc}", 502) from exc
 
@@ -163,9 +162,8 @@ def connect_lastfm(
     except (SyncClientError, ValueError) as exc:
         raise SyncUpError("LASTFM_USER_NOT_FOUND", str(exc), 404) from exc
     except httpx.HTTPStatusError as exc:
-        raise SyncUpError(
-            "UPSTREAM_UNAVAILABLE", f"Last.fm API error: {exc.response.text}", 502
-        ) from exc
+        logger.warning("Last.fm API error (status=%s): %s", exc.response.status_code, exc.response.text)
+        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Last.fm returned an error — please retry", 502) from exc
     except httpx.RequestError as exc:
         raise SyncUpError("UPSTREAM_UNAVAILABLE", f"Could not reach Last.fm: {exc}", 502) from exc
 
@@ -379,7 +377,7 @@ def anilist_oauth_callback(
     """
     # State check FIRST — keeps error semantics clean (400 vs 401).
     cookie_state = request.cookies.get(_ANILIST_STATE_COOKIE)
-    if not cookie_state or cookie_state != state:
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
 
     user = require_auth(request=request, db=db)
@@ -392,9 +390,10 @@ def anilist_oauth_callback(
         except SyncClientError as exc:
             raise SyncUpError("ANILIST_TOKEN_ERROR", str(exc), 400) from exc
         except httpx.HTTPStatusError as exc:
+            logger.warning("AniList token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
             raise SyncUpError(
                 "ANILIST_TOKEN_ERROR",
-                f"AniList token exchange failed: {exc.response.text}",
+                "AniList token exchange failed — please reconnect",
                 exc.response.status_code,
             ) from exc
         except httpx.RequestError as exc:
@@ -513,7 +512,7 @@ def trakt_oauth_callback(
     State validation runs before auth so a state mismatch returns 400, not 401.
     """
     cookie_state = request.cookies.get(_TRAKT_STATE_COOKIE)
-    if not cookie_state or cookie_state != state:
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
 
     user = require_auth(request=request, db=db)
@@ -639,7 +638,7 @@ def reddit_oauth_callback(
     Reddit sends error=access_denied when the user denies the authorization prompt.
     """
     cookie_state = request.cookies.get(_REDDIT_STATE_COOKIE)
-    if not cookie_state or cookie_state != state:
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
 
     if error:

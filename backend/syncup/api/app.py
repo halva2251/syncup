@@ -92,7 +92,7 @@ def _error_json(code: str, message: str, status_code: int) -> JSONResponse:
 async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
     settings = Settings()  # type: ignore[call-arg]
 
-    if not settings.debug and not settings.syncup_token_encryption_key:
+    if not settings.syncup_token_encryption_key:
         raise RuntimeError(
             "SYNCUP_TOKEN_ENCRYPTION_KEY is not set. "
             "Generate one: python -c \"import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())\""
@@ -217,7 +217,7 @@ def spotify_callback(
     cookie_state = request.cookies.get("spotify_state")
     verifier = request.cookies.get("spotify_verifier")
 
-    if not cookie_state or cookie_state != state:
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch")
     if not verifier:
         raise SyncUpError("MISSING_PKCE_VERIFIER", "Missing PKCE verifier")
@@ -229,10 +229,10 @@ def spotify_callback(
         tokens = client.exchange_code(code=code, code_verifier=verifier)
         spotify_profile = client.fetch_me(tokens.access_token)
     except httpx.HTTPStatusError as exc:
-        logger.warning("Spotify token exchange failed: %s", exc.response.text)
+        logger.warning("Spotify token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
         raise SyncUpError(
             "SPOTIFY_TOKEN_ERROR",
-            f"Spotify token exchange failed: {exc.response.text}",
+            "Spotify token exchange failed — please reconnect",
             exc.response.status_code,
         ) from exc
     except httpx.RequestError as exc:
