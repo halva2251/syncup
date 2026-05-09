@@ -182,6 +182,32 @@ def test_reddit_oauth_callback_missing_state_cookie_returns_400(
     assert resp.json()["error"]["code"] == "OAUTH_STATE_MISMATCH"
 
 
+def test_reddit_oauth_callback_user_denied_returns_400(
+    reddit_client: TestClient,
+) -> None:
+    """Reddit sends error=access_denied when the user denies the prompt."""
+    resp = reddit_client.get(
+        "/api/connect/reddit/oauth/callback",
+        params={"state": "matching-state", "error": "access_denied"},
+        cookies={"reddit_state": "matching-state"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "REDDIT_OAUTH_DENIED"
+
+
+def test_reddit_oauth_callback_missing_code_returns_400(
+    reddit_client: TestClient,
+) -> None:
+    """Callback with matching state but no code and no error returns 400."""
+    resp = reddit_client.get(
+        "/api/connect/reddit/oauth/callback",
+        params={"state": "matching-state"},
+        cookies={"reddit_state": "matching-state"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "REDDIT_OAUTH_MISSING_CODE"
+
+
 def test_reddit_oauth_callback_success_redirects_home(
     monkeypatch: pytest.MonkeyPatch,
     mock_db: MagicMock,
