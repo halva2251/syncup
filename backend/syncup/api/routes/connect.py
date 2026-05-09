@@ -628,17 +628,24 @@ def reddit_oauth_start(
 @limiter.limit("10/minute")
 def reddit_oauth_callback(
     request: Request,
-    code: Annotated[str, Query(min_length=1)],
     state: Annotated[str, Query(min_length=1)],
     db: Annotated[DbSession, Depends(get_db)],
+    code: Annotated[str | None, Query()] = None,
+    error: Annotated[str | None, Query()] = None,
 ) -> RedirectResponse:
     """Complete the Reddit OAuth flow.
 
     State validation runs before auth so a state mismatch returns 400, not 401.
+    Reddit sends error=access_denied when the user denies the authorization prompt.
     """
     cookie_state = request.cookies.get(_REDDIT_STATE_COOKIE)
     if not cookie_state or cookie_state != state:
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    if error:
+        raise SyncUpError("REDDIT_OAUTH_DENIED", f"Reddit authorization denied: {error}", 400)
+    if not code:
+        raise SyncUpError("REDDIT_OAUTH_MISSING_CODE", "Missing authorization code", 400)
 
     user = require_auth(request=request, db=db)
 

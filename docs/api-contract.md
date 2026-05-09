@@ -147,12 +147,11 @@ Redirects (302) to Trakt's authorization page. Sets `trakt_state` cookie (httpOn
 ### `GET /connect/trakt/oauth/callback?code=...&state=...` — Live ✅
 Validates state cookie, exchanges code for access + refresh token, encrypts tokens, upserts `service_connections` row (`sync_status = 'pending'`, `token_expires_at` set 90 days out), redirects to `/`. Returns 400 on state mismatch.
 
-### `GET /connect/{service}/oauth/start` — Sketch (Phase 1.10)
-Initiate OAuth for `service` ∈ `reddit`.
-Returns 302 redirect to the provider's authorization page.
+### `GET /connect/reddit/oauth/start` — Live ✅
+Redirects (302) to Reddit's authorization page. Sets `reddit_state` cookie (httpOnly, 10 min TTL). Requests scopes `identity mysubreddits` with `duration=permanent`. Returns 503 if `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` are not configured.
 
-### `GET /connect/{service}/oauth/callback` — Sketch (Phase 1.10)
-Complete OAuth handshake for the above services.
+### `GET /connect/reddit/oauth/callback?code=...&state=...` — Live ✅
+Validates state cookie, exchanges code for access + refresh token, encrypts tokens, upserts `service_connections` row (`sync_status = 'pending'`, `token_expires_at` set 1 hour out), redirects to `/`. Returns 400 on state mismatch, 400 on user denial (`error=access_denied`), 400 on missing code.
 
 ### The `/me/connections/*` sub-routes below are planned.
 

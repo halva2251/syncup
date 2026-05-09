@@ -555,6 +555,43 @@ def test_fetch_items_empty_subscriptions(monkeypatch: pytest.MonkeyPatch) -> Non
     assert items == []
 
 
+def test_fetch_items_zero_subscriber_subreddit_excluded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Subreddits with 0 subscribers (private/banned) carry no taste signal."""
+    zero_sub_page = {
+        "data": {
+            "children": [
+                {
+                    "kind": "t5",
+                    "data": {
+                        "id": "abc",
+                        "display_name": "private_sub",
+                        "subscribers": 0,
+                        "public_description": "Private community",
+                    },
+                },
+                {
+                    "kind": "t5",
+                    "data": {
+                        "id": "def",
+                        "display_name": "haskell",
+                        "subscribers": 80_000,
+                        "public_description": "Haskell",
+                    },
+                },
+            ],
+            "after": None,
+            "before": None,
+        }
+    }
+    client = _client([_json_resp(zero_sub_page)])
+    monkeypatch.setattr("syncup.ingest.reddit.decrypt_token", lambda _: "access-token")
+
+    items = client.fetch_items(_make_connection())
+    names = {i["name"] for i in items}
+    assert "private_sub" not in names
+    assert "haskell" in names
+
+
 def test_fetch_items_all_mainstream_returns_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     all_big = {
         "data": {

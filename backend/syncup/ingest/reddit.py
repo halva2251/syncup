@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 _AUTHORIZE_URL = "https://www.reddit.com/api/v1/authorize"
 _TOKEN_URL = "https://www.reddit.com/api/v1/access_token"  # nosec B105
 _API_BASE = "https://oauth.reddit.com"
+# Reddit requires a descriptive User-Agent per their API rules. The /u/ portion
+# must identify the responsible developer — update if project ownership changes.
 _USER_AGENT = "web:syncup:0.1.0 (by /u/halva2251)"
 
 # Reddit access tokens expire in 1 hour.
@@ -25,6 +27,13 @@ _TOKEN_LIFETIME_SECONDS = 3600
 
 # Subreddits with more than this many subscribers are excluded (mainstream noise).
 _MAX_SUBSCRIBERS = 1_000_000
+
+# Reddit's hard limit is ~10,500 subscriptions per account; 110 pages * 100 = 11,000.
+# This cap guards against an infinite loop if Reddit returns a stuck cursor.
+_MAX_PAGINATION_PAGES = 110
+
+# Exclude private/banned subreddits with no subscribers — they carry no taste signal.
+_MIN_SUBSCRIBERS = 1
 
 _SCOPES = "identity mysubreddits"
 
@@ -222,7 +231,7 @@ class RedditClient:
         results: list[dict[str, Any]] = []
         after: str | None = None
 
-        while True:
+        for _ in range(_MAX_PAGINATION_PAGES):
             params: dict[str, Any] = {"limit": 100}
             if after:
                 params["after"] = after
@@ -270,7 +279,7 @@ class RedditClient:
         """
         filtered = [
             e for e in entries
-            if (e.get("subscribers") or 0) <= _MAX_SUBSCRIBERS
+            if _MIN_SUBSCRIBERS <= (e.get("subscribers") or 0) <= _MAX_SUBSCRIBERS
             and e.get("display_name")
         ]
         if not filtered:
