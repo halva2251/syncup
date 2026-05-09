@@ -78,3 +78,13 @@ def register_default_clients(settings: Settings) -> None:
                 redirect_uri=settings.trakt_redirect_uri,
             )
         )
+    if settings.reddit_client_id and settings.reddit_client_secret:
+        from syncup.ingest.reddit import RedditClient
+
+        register(
+            RedditClient(
+                client_id=settings.reddit_client_id,
+                client_secret=settings.reddit_client_secret,
+                redirect_uri=settings.reddit_redirect_uri,
+            )
+        )

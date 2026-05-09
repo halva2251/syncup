@@ -26,6 +26,7 @@ from syncup.ingest.anilist import AniListClient
 from syncup.ingest.crypto import encrypt_token
 from syncup.ingest.lastfm import LastfmClient
 from syncup.ingest.protocol import SyncClientError
+from syncup.ingest.reddit import RedditClient
 from syncup.ingest.steam import SteamClient
 from syncup.ingest.trakt import TraktClient
 from syncup.limiter import limiter
@@ -571,4 +572,135 @@ def trakt_oauth_callback(
 
     response = RedirectResponse("/", status_code=302)
     response.delete_cookie(_TRAKT_STATE_COOKIE)
+    return response
+
+
+# ===========================================================================
+# Reddit OAuth
+# ===========================================================================
+
+_REDDIT_STATE_COOKIE = "reddit_state"
+
+
+def _reddit_client(settings: Settings) -> RedditClient:
+    """Instantiate RedditClient from settings.
+
+    Raises SyncUpError(503) if Reddit credentials are not configured.
+    """
+    if not settings.reddit_client_id or not settings.reddit_client_secret:
+        raise SyncUpError(
+            "SERVICE_NOT_CONFIGURED",
+            "Reddit OAuth is not configured — set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET",
+            503,
+        )
+    return RedditClient(
+        client_id=settings.reddit_client_id,
+        client_secret=settings.reddit_client_secret,
+        redirect_uri=settings.reddit_redirect_uri,
+    )
+
+
+@router.get("/reddit/oauth/start")
+@limiter.limit("10/minute")
+def reddit_oauth_start(
+    request: Request,
+    user: RequireAuth,
+) -> RedirectResponse:
+    """Redirect the user to Reddit's authorization page."""
+    settings: Settings = request.app.state.settings
+    client = _reddit_client(settings)
+
+    state = secrets.token_urlsafe(16)
+    url = client.get_authorize_url(state=state)
+
+    _cookie_opts: dict[str, Any] = {
+        "httponly": True,
+        "samesite": "lax",
+        "max_age": 600,
+        "secure": not settings.debug,
+    }
+    response = RedirectResponse(url=url, status_code=302)
+    response.set_cookie(_REDDIT_STATE_COOKIE, state, **_cookie_opts)
+    return response
+
+
+@router.get("/reddit/oauth/callback")
+@limiter.limit("10/minute")
+def reddit_oauth_callback(
+    request: Request,
+    state: Annotated[str, Query(min_length=1)],
+    db: Annotated[DbSession, Depends(get_db)],
+    code: Annotated[str | None, Query()] = None,
+    error: Annotated[str | None, Query()] = None,
+) -> RedirectResponse:
+    """Complete the Reddit OAuth flow.
+
+    State validation runs before auth so a state mismatch returns 400, not 401.
+    Reddit sends error=access_denied when the user denies the authorization prompt.
+    """
+    cookie_state = request.cookies.get(_REDDIT_STATE_COOKIE)
+    if not cookie_state or cookie_state != state:
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    if error:
+        raise SyncUpError("REDDIT_OAUTH_DENIED", f"Reddit authorization denied: {error}", 400)
+    if not code:
+        raise SyncUpError("REDDIT_OAUTH_MISSING_CODE", "Missing authorization code", 400)
+
+    user = require_auth(request=request, db=db)
+
+    settings: Settings = request.app.state.settings
+    with _reddit_client(settings) as client:
+        try:
+            tokens = client.exchange_code(code)
+            me = client.fetch_me(tokens.access_token)
+        except SyncClientError as exc:
+            raise SyncUpError("REDDIT_TOKEN_ERROR", str(exc), 400) from exc
+
+    reddit_username = me.get("name") or ""
+    if not reddit_username:
+        raise SyncUpError("REDDIT_PROFILE_INVALID", "Reddit profile missing username", 502)
+
+    access_enc = encrypt_token(tokens.access_token)
+    refresh_enc = encrypt_token(tokens.refresh_token) if tokens.refresh_token else None
+
+    existing = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == "reddit",
+        )
+    )
+    if existing is not None:
+        existing.external_user_id = reddit_username
+        existing.access_token_encrypted = access_enc
+        existing.refresh_token_encrypted = refresh_enc
+        existing.token_expires_at = tokens.expires_at
+        existing.sync_status = "pending"
+        existing.sync_error = None
+    else:
+        db.add(
+            ServiceConnection(
+                user_id=user.id,
+                service="reddit",
+                external_user_id=reddit_username,
+                access_token_encrypted=access_enc,
+                refresh_token_encrypted=refresh_enc,
+                token_expires_at=tokens.expires_at,
+                sync_status="pending",
+            )
+        )
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        logger.warning("Reddit upsert race on user %s; connection already exists", user.id)
+        raise SyncUpError(
+            "REDDIT_CONNECT_CONFLICT", "Connection already exists — please retry", 409
+        ) from exc
+
+    logger.info("User %s connected Reddit (reddit_username=%s)", user.id, reddit_username)
+
+    response = RedirectResponse("/", status_code=302)
+    response.delete_cookie(_REDDIT_STATE_COOKIE)
     return response
