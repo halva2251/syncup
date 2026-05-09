@@ -5,6 +5,14 @@ When something solidifies into a real decision, it moves to roadmap.md or produc
 
 ---
 
+## Onboarding / UX ideas
+
+- **In-app export tutorial**: each CSV service (Letterboxd, RateYourMusic) needs a "here's exactly where to click" walkthrough inside the connect flow. Screenshots or a short animated GIF per service. The export paths are non-obvious and differ per site — without a guide, users will export the wrong file (e.g. Letterboxd has `diary.csv`, `ratings.csv`, `reviews.csv` — we want `diary.csv`). See `docs/export-guide.md` for the current developer-facing version; this needs to become UI copy.
+- **Rating scale note for RateYourMusic**: RYM shows 0.5–5.0 stars in the UI but exports as integers 1–10. Worth surfacing this in the connect flow so users aren't confused why their "4.5 star" album shows `score: 0.89` in the API.
+- **"What will SyncUp see?" preview**: before confirming the OAuth or CSV upload, show the user what data SyncUp is about to read (e.g. "We'll read your 342 subreddit subscriptions and filter to niche communities"). Builds trust.
+
+---
+
 ## The core vibe
 
 find your people based on actual taste, not demographics. not dating. not "add me on discord because we're both in this server". more like — i want to meet the person who also has 300 hours in disco elysium AND listens to arca AND rated stalker 5 stars. that specific intersection is a person. find that person.
