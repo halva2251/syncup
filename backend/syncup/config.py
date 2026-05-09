@@ -51,5 +51,6 @@ class Settings(BaseSettings):
     reddit_client_id: str | None = None
     reddit_client_secret: str | None = None
     reddit_redirect_uri: str = "http://127.0.0.1:3000/api/connect/reddit/oauth/callback"
+    reddit_user_agent: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
