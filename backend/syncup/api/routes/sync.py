@@ -241,6 +241,9 @@ def trigger_sync(
     if conn.sync_status == "syncing":
         raise SyncUpError("ALREADY_SYNCING", "A sync is already in progress.", 409)
 
+    # request.app.state.db is the sessionmaker factory passed to the background
+    # task — distinct from the route-scoped `db` session injected via Depends(get_db).
+    # Guard against it being absent (e.g. during testing with partial app state).
     if not hasattr(request.app.state, "db"):
         raise SyncUpError("INTERNAL_ERROR", "Database not initialised", 500)
 
