@@ -1,12 +1,15 @@
 """AniList GraphQL OAuth client."""
 from __future__ import annotations
 
+import logging
 import urllib.parse
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from syncup.ingest._text import normalize_title
 from syncup.ingest.crypto import decrypt_token
@@ -126,11 +129,11 @@ class AniListClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise SyncClientError(
-                f"AniList token exchange failed: {exc.response.text}"
-            ) from exc
+            logger.warning("AniList token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            raise SyncClientError("AniList token exchange failed — please reconnect") from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach AniList: {exc}") from exc
+            logger.warning("AniList token exchange network error: %s", exc)
+            raise SyncClientError("Could not reach AniList — please retry") from exc
 
         try:
             data = resp.json()
@@ -207,15 +210,17 @@ class AniListClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            logger.warning("AniList API error (status=%s): %s", exc.response.status_code, exc.response.text)
             if exc.response.status_code == 401:
                 raise SyncClientError(
                     "AniList token rejected — please reconnect your AniList account"
                 ) from exc
             raise SyncClientError(
-                f"AniList API error ({exc.response.status_code}): {exc.response.text}"
+                f"AniList returned an error ({exc.response.status_code}) — please retry"
             ) from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach AniList: {exc}") from exc
+            logger.warning("AniList network error: %s", exc)
+            raise SyncClientError("Could not reach AniList — please retry") from exc
 
         body = resp.json()
         if "errors" in body:

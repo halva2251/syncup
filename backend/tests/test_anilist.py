@@ -578,3 +578,61 @@ def test_fetch_items_http_error_raises_sync_client_error(
     c = _client([httpx.Response(429, json={"error": "too many requests"})])
     with pytest.raises(SyncClientError):
         c.fetch_items(_make_connection())
+
+
+# ---------------------------------------------------------------------------
+# I1 — SyncClientError messages must not leak exc.response.text or exc repr
+# ---------------------------------------------------------------------------
+
+
+def test_graphql_http_error_message_does_not_leak_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_graphql HTTPStatusError must not forward upstream body in SyncClientError."""
+    sensitive = "secret_anilist_body_XYZ"
+    monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
+    c = _client([httpx.Response(500, text=sensitive)])
+    with pytest.raises(SyncClientError) as exc_info:
+        c.fetch_items(_make_connection())
+    assert sensitive not in str(exc_info.value), "Upstream body must not appear in SyncClientError"
+
+
+def test_exchange_code_http_error_message_does_not_leak_response_body() -> None:
+    """exchange_code HTTPStatusError must not forward upstream body in SyncClientError."""
+    sensitive = "secret_token_body_XYZ"
+    from syncup.ingest.anilist import AniListClient
+
+    c = AniListClient(
+        client_id="x",
+        client_secret="y",
+        redirect_uri="z",
+        http=httpx.Client(transport=_SequenceTransport([httpx.Response(400, text=sensitive)])),
+    )
+    with pytest.raises(SyncClientError) as exc_info:
+        c.exchange_code("code")
+    assert sensitive not in str(exc_info.value), "Upstream body must not appear in SyncClientError"
+
+
+def test_graphql_request_error_message_does_not_leak_exception_repr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_graphql RequestError must not forward internal exc repr in SyncClientError."""
+    monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
+
+    class _ErrorTransport(httpx.BaseTransport):
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("internal-host-xyz:5432 connection refused")
+
+    from syncup.ingest.anilist import AniListClient
+
+    c = AniListClient(
+        client_id="x",
+        client_secret="y",
+        redirect_uri="z",
+        http=httpx.Client(transport=_ErrorTransport()),
+    )
+    with pytest.raises(SyncClientError) as exc_info:
+        c.fetch_items(_make_connection())
+    assert "internal-host-xyz" not in str(exc_info.value), (
+        "Internal hostname must not appear in SyncClientError"
+    )

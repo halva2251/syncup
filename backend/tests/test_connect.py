@@ -558,7 +558,7 @@ def test_steam_http_error_does_not_leak_upstream_body(connect_client: TestClient
         )
         resp = connect_client.post("/api/connect/steam", json={"steam_id": "76561198000000000"})
 
-    assert sensitive not in resp.text, "Upstream error body must not be returned to client"
+    assert sensitive not in resp.text, "Upstream error body must not be returned to client (steam)"
 
 
 def test_lastfm_http_error_does_not_leak_upstream_body(connect_client: TestClient) -> None:
@@ -575,4 +575,66 @@ def test_lastfm_http_error_does_not_leak_upstream_body(connect_client: TestClien
         )
         resp = connect_client.post("/api/connect/lastfm", json={"username": "testuser"})
 
-    assert sensitive not in resp.text, "Upstream error body must not be returned to client"
+    assert sensitive not in resp.text, "Upstream error body must not be returned to client (lastfm)"
+
+
+# ---------------------------------------------------------------------------
+# M2 — RequestError paths must not leak internal exception repr to client
+# ---------------------------------------------------------------------------
+
+
+def test_steam_request_error_does_not_leak_hostname(connect_client: TestClient) -> None:
+    """httpx.RequestError from Steam must not expose internal hostnames in the response."""
+    with patch("syncup.api.routes.connect.SteamClient") as mock_cls:
+        instance = mock_cls.return_value.__enter__.return_value
+        instance.get_player_summary.side_effect = httpx.RequestError(
+            "internal-steam-proxy:9999 connection refused"
+        )
+        resp = connect_client.post("/api/connect/steam", json={"steam_id": "76561198000000000"})
+    assert "internal-steam-proxy" not in resp.text
+
+
+def test_lastfm_request_error_does_not_leak_hostname(connect_client: TestClient) -> None:
+    """httpx.RequestError from Last.fm must not expose internal hostnames in the response."""
+    with patch("syncup.api.routes.connect.LastfmClient") as mock_cls:
+        instance = mock_cls.return_value.__enter__.return_value
+        instance.get_top_artists.side_effect = httpx.RequestError(
+            "internal-lastfm-proxy:9999 connection refused"
+        )
+        resp = connect_client.post("/api/connect/lastfm", json={"username": "testuser"})
+    assert "internal-lastfm-proxy" not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# I9 — CSV import must reject files with more than 50,000 rows
+# ---------------------------------------------------------------------------
+
+
+def test_letterboxd_import_too_many_rows_returns_422(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    """CSV imports with more than 50,000 data rows must return 422 FILE_TOO_LARGE."""
+    header = "Date,Name,Year,Letterboxd URI,Rating\n"
+    rows = "2024-01-01,Movie,2024,https://x.com/y,4\n" * 50_001
+    csv_content = header + rows
+    resp = connect_client.post(
+        "/api/connect/letterboxd/import",
+        files={"file": ("diary.csv", csv_content, "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "FILE_TOO_LARGE"
+
+
+def test_rym_import_too_many_rows_returns_422(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    """RYM CSV imports with more than 50,000 data rows must return 422 FILE_TOO_LARGE."""
+    header = "Title,Rating,Release_Date\n"
+    rows = "Album,8,2024\n" * 50_001
+    csv_content = header + rows
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", csv_content, "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "FILE_TOO_LARGE"

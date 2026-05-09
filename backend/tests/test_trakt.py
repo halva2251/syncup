@@ -48,10 +48,12 @@ def _client(responses: list[httpx.Response]):  # type: ignore[return]
 def _make_connection(
     access_token_bytes: bytes | None = b"fake-encrypted-token",
     refresh_token_bytes: bytes | None = b"fake-encrypted-refresh",
+    token_expires_at: object = None,
 ) -> MagicMock:
     conn = MagicMock()
     conn.access_token_encrypted = access_token_bytes
     conn.refresh_token_encrypted = refresh_token_bytes
+    conn.token_expires_at = token_expires_at
     conn.external_user_id = "testuser"
     return conn
 
@@ -573,3 +575,101 @@ def test_parse_ts(ts_input: str | None, expected: datetime | None) -> None:
     from syncup.ingest.trakt import _parse_ts
 
     assert _parse_ts(ts_input) == expected
+
+
+# ---------------------------------------------------------------------------
+# I1 — SyncClientError messages must not leak exc.response.text or exc repr
+# ---------------------------------------------------------------------------
+
+
+def test_exchange_code_http_error_does_not_leak_response_body() -> None:
+    """exchange_code HTTPStatusError must not forward upstream body in SyncClientError."""
+    sensitive = "secret_trakt_token_body_XYZ"
+    from syncup.ingest.trakt import TraktClient
+
+    c = TraktClient(
+        client_id="x",
+        client_secret="y",
+        redirect_uri="z",
+        http=httpx.Client(transport=_SequenceTransport([httpx.Response(400, text=sensitive)])),
+    )
+    with pytest.raises(SyncClientError) as exc_info:
+        c.exchange_code("bad-code")
+    assert sensitive not in str(exc_info.value)
+
+
+def test_fetch_watched_http_error_does_not_leak_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_fetch_watched HTTPStatusError must not forward upstream body in SyncClientError."""
+    sensitive = "secret_trakt_watched_body_XYZ"
+    monkeypatch.setattr("syncup.ingest.trakt.decrypt_token", lambda _: "tok")
+    c = _client([httpx.Response(500, text=sensitive)])
+    with pytest.raises(SyncClientError) as exc_info:
+        c.fetch_items(_make_connection())
+    assert sensitive not in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# I3 — refresh_token must skip the network call when token is still valid
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_token_returns_none_when_token_is_still_valid() -> None:
+    """refresh_token must return None without a network call when token has not expired."""
+    from syncup.ingest.trakt import TraktClient
+
+    conn = _make_connection()
+    conn.token_expires_at = datetime(2099, 1, 1, tzinfo=UTC)
+    c = TraktClient(client_id="x", client_secret="y", redirect_uri="z")
+    result = c.refresh_token(conn)
+    assert result is None, "refresh_token must return None for a token with future expiry"
+
+
+def test_refresh_token_proceeds_when_token_is_expired(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """refresh_token must attempt refresh when token_expires_at is in the past."""
+    from datetime import timedelta
+
+    monkeypatch.setattr("syncup.ingest.trakt.decrypt_token", lambda _: "old-refresh")
+    conn = _make_connection()
+    conn.token_expires_at = datetime.now(UTC) - timedelta(hours=1)
+    c = _client([_json_resp({"access_token": "new-tok", "refresh_token": "new-ref", "expires_in": 7776000})])
+    result = c.refresh_token(conn)
+    assert result is not None, "refresh_token must return a new TokenPair when token is expired"
+
+
+def test_refresh_token_http_error_does_not_leak_response_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """refresh_token HTTPStatusError must not forward upstream body in SyncClientError."""
+    sensitive = "secret_trakt_refresh_body_XYZ"
+    monkeypatch.setattr("syncup.ingest.trakt.decrypt_token", lambda _: "refresh-tok")
+    c = _client([httpx.Response(401, text=sensitive)])
+    with pytest.raises(SyncClientError) as exc_info:
+        c.refresh_token(_make_connection())
+    assert sensitive not in str(exc_info.value)
+
+
+def test_fetch_watched_request_error_does_not_leak_hostname(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_fetch_watched RequestError must not forward internal hostname in SyncClientError."""
+    monkeypatch.setattr("syncup.ingest.trakt.decrypt_token", lambda _: "tok")
+
+    class _ErrorTransport(httpx.BaseTransport):
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("internal-trakt-proxy:9090 refused")
+
+    from syncup.ingest.trakt import TraktClient
+
+    c = TraktClient(
+        client_id="x",
+        client_secret="y",
+        redirect_uri="z",
+        http=httpx.Client(transport=_ErrorTransport()),
+    )
+    with pytest.raises(SyncClientError) as exc_info:
+        c.fetch_items(_make_connection())
+    assert "internal-trakt-proxy" not in str(exc_info.value)

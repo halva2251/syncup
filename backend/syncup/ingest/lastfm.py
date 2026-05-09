@@ -7,6 +7,7 @@ from typing import ClassVar
 import httpx
 
 from syncup.db.models import ServiceConnection
+from syncup.ingest._text import normalize_title
 from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
@@ -37,11 +38,11 @@ class LastfmClient:
     def _validate_period(self, period: str) -> None:
         if period not in _VALID_PERIODS:
             valid = sorted(_VALID_PERIODS)
-            raise ValueError(f"period must be one of {valid}, got {period!r}")
+            raise SyncClientError(f"period must be one of {valid}, got {period!r}")
 
     def _validate_limit(self, limit: int) -> None:
         if not _MIN_LIMIT <= limit <= _MAX_LIMIT:
-            raise ValueError(f"limit must be {_MIN_LIMIT}–{_MAX_LIMIT}, got {limit}")
+            raise SyncClientError(f"limit must be {_MIN_LIMIT}–{_MAX_LIMIT}, got {limit}")
 
     def _validate_username(self, username: str) -> None:
         if not username:
@@ -142,7 +143,7 @@ class LastfmClient:
                 max((float(a.get("playcount", 0)) for a in top_artists), default=1.0) or 1.0
             )
             for artist in top_artists:
-                external_id = artist.get("mbid") or artist["name"]
+                external_id = artist.get("mbid") or normalize_title(artist["name"])
                 playcount = float(artist.get("playcount", 0))
                 result.append(
                     RawItem(

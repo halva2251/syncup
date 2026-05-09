@@ -6,8 +6,12 @@ get_client() and registered_services() for service-agnostic dispatch.
 """
 from __future__ import annotations
 
+import logging
+
 from syncup.config import Settings
 from syncup.ingest.protocol import ServiceClient
+
+logger = logging.getLogger(__name__)
 
 _REGISTRY: dict[str, ServiceClient] = {}
 
@@ -31,6 +35,22 @@ def get_client(service: str) -> ServiceClient:
 def registered_services() -> set[str]:
     """Return a copy of all currently registered service names."""
     return set(_REGISTRY)
+
+
+def close_all() -> None:
+    """Close every registered client that exposes a .close() method.
+
+    Called from the app lifespan shutdown section to release httpx connections.
+    Exceptions from individual clients are logged and suppressed so all clients
+    are attempted even if one fails.
+    """
+    for name, client in _REGISTRY.items():
+        close = getattr(client, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.warning("Error closing client %r during shutdown", name, exc_info=True)
 
 
 def _clear() -> None:

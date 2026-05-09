@@ -130,6 +130,27 @@ def test_sync_requires_auth(unauthed_client: TestClient) -> None:
     assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
 
+def test_sync_returns_500_when_db_factory_missing(
+    sync_client: TestClient, mock_db: MagicMock
+) -> None:
+    """I8: trigger_sync must return 500 synchronously if app.state.db is absent."""
+    from syncup.api.app import app
+    from syncup.db.models import ServiceConnection
+
+    conn = MagicMock(spec=ServiceConnection)
+    conn.sync_status = "ok"
+    mock_db.scalar.return_value = conn
+
+    del app.state.db  # simulate missing factory
+
+    try:
+        resp = sync_client.post("/api/sync/spotify")
+        assert resp.status_code == 500
+        assert resp.json()["error"]["code"] == "INTERNAL_ERROR"
+    finally:
+        app.state.db = MagicMock()  # restore so teardown works
+
+
 def test_sync_invalid_service_returns_404(sync_client: TestClient) -> None:
     resp = sync_client.post("/api/sync/tiktok")
     assert resp.status_code == 404
@@ -431,3 +452,71 @@ def test_safe_error_message_sanitises_upstream_responses() -> None:
 
     generic = RuntimeError("internal traceback with /home/halva/secrets")
     assert _safe_error_message(generic) == "Sync failed — please retry"
+
+
+# ---------------------------------------------------------------------------
+# I8 — trigger_sync must validate app.state.db before adding background task
+# I10 — engagement_score clamp in _do_sync_generic
+# ---------------------------------------------------------------------------
+
+
+def test_do_sync_generic_clamps_engagement_score_above_1(
+    mock_db_factory: MagicMock,
+    mock_session: MagicMock,
+) -> None:
+    """engagement_score > 1.0 must be clamped to 1.0 before upsert."""
+    conn = _make_connection("steam", "76561198000000000")
+    mock_session.scalar.return_value = conn
+
+    item_over = RawItem(
+        external_id="test-game",
+        name="Test Game",
+        item_type="game",
+        engagement_score=1.5,  # over max
+        raw_value=999.0,
+        raw_type="consumption",
+        metadata={},
+        last_engaged_at=None,
+    )
+    client = _mock_client([item_over])
+
+    with (
+        patch("syncup.api.routes.sync.get_client", return_value=client),
+        patch("syncup.api.routes.sync._upsert_user_item") as mock_upsert,
+        patch("syncup.api.routes.sync._upsert_item", return_value=uuid.uuid4()),
+    ):
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam")
+
+    engagement_score_arg = mock_upsert.call_args.args[3]
+    assert engagement_score_arg <= 1.0, f"engagement_score must be clamped, got {engagement_score_arg}"
+
+
+def test_do_sync_generic_clamps_engagement_score_below_0(
+    mock_db_factory: MagicMock,
+    mock_session: MagicMock,
+) -> None:
+    """engagement_score < 0.0 must be clamped to 0.0 before upsert."""
+    conn = _make_connection("steam", "76561198000000000")
+    mock_session.scalar.return_value = conn
+
+    item_under = RawItem(
+        external_id="test-game",
+        name="Test Game",
+        item_type="game",
+        engagement_score=-0.5,  # below min
+        raw_value=0.0,
+        raw_type="consumption",
+        metadata={},
+        last_engaged_at=None,
+    )
+    client = _mock_client([item_under])
+
+    with (
+        patch("syncup.api.routes.sync.get_client", return_value=client),
+        patch("syncup.api.routes.sync._upsert_user_item") as mock_upsert,
+        patch("syncup.api.routes.sync._upsert_item", return_value=uuid.uuid4()),
+    ):
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam")
+
+    engagement_score_arg = mock_upsert.call_args.args[3]
+    assert engagement_score_arg >= 0.0, f"engagement_score must be clamped, got {engagement_score_arg}"

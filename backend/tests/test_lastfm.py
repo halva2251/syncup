@@ -79,19 +79,19 @@ def test_get_top_artists_returns_list_of_dicts() -> None:
 
 def test_get_top_artists_raises_on_invalid_period() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="period"):
+    with pytest.raises(SyncClientError, match="period"):
         c.get_top_artists("rj", period="badperiod")
 
 
 def test_get_top_artists_raises_on_limit_zero() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(SyncClientError, match="limit"):
         c.get_top_artists("rj", limit=0)
 
 
 def test_get_top_artists_raises_on_limit_over_max() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(SyncClientError, match="limit"):
         c.get_top_artists("rj", limit=1001)
 
 
@@ -125,3 +125,46 @@ def test_get_top_tracks_raises_on_5xx() -> None:
     c = _client([httpx.Response(503, text="Service Unavailable")])
     with pytest.raises(httpx.HTTPStatusError):
         c.get_top_tracks("rj")
+
+
+# ---------------------------------------------------------------------------
+# I5 — validators reachable from fetch_items must raise SyncClientError
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_period_raises_sync_client_error_not_value_error() -> None:
+    """_validate_period must raise SyncClientError so the sync task handles it correctly."""
+    c = _client([])
+    with pytest.raises(SyncClientError):
+        c.get_top_artists("rj", period="badperiod")
+
+
+def test_invalid_limit_raises_sync_client_error_not_value_error() -> None:
+    """_validate_limit must raise SyncClientError so the sync task handles it correctly."""
+    c = _client([])
+    with pytest.raises(SyncClientError):
+        c.get_top_artists("rj", limit=0)
+
+
+# ---------------------------------------------------------------------------
+# I6 — Last.fm external_id fallback must use normalize_title, not raw name
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_items_artist_external_id_falls_back_to_normalized_name() -> None:
+    """When MBID is absent, external_id must use normalize_title(name), not raw name."""
+    artist_no_mbid = {"name": "Sigur Rós", "playcount": "100", "mbid": ""}
+    artists_body = {"topartists": {"artist": [artist_no_mbid]}}
+    tracks_body = {"toptracks": {"track": []}}
+    c = _client([_json_response(artists_body), _json_response(tracks_body)])
+
+    from unittest.mock import MagicMock
+
+    conn = MagicMock()
+    conn.external_user_id = "rj"
+    items = c.fetch_items(conn)
+
+    assert len(items) == 1
+    assert items[0]["external_id"] == "sigur ros", (
+        f"external_id should be normalized name, got {items[0]['external_id']!r}"
+    )

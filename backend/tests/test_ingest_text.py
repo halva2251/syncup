@@ -61,3 +61,25 @@ def test_normalize_title_cross_service_dedup_with_accent() -> None:
 
 def test_normalize_title_returns_str() -> None:
     assert isinstance(normalize_title("test"), str)
+
+
+# ---------------------------------------------------------------------------
+# I7 — normalize_title must expand ligatures before accent-stripping
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("Œuvre", "oeuvre"),
+        ("œil", "oeil"),
+        ("Æon", "aeon"),
+        ("æther", "aether"),
+        ("Straße", "strasse"),
+        # Combined: ligature + regular accent
+        ("Œdipe à Colone", "oedipe a colone"),
+    ],
+)
+def test_normalize_title_expands_ligatures(raw: str, expected: str) -> None:
+    """normalize_title must expand ligatures (Œ→OE, Æ→AE, ß→SS) before accent stripping."""
+    assert normalize_title(raw) == expected
