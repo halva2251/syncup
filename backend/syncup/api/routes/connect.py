@@ -446,7 +446,7 @@ def anilist_oauth_callback(
     logger.info("User %s connected AniList (anilist_id=%s)", user.id, anilist_user_id)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(_ANILIST_STATE_COOKIE)
+    response.delete_cookie(_ANILIST_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/")
     return response
 
 
@@ -570,7 +570,7 @@ def trakt_oauth_callback(
     logger.info("User %s connected Trakt (trakt_username=%s)", user.id, trakt_username)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(_TRAKT_STATE_COOKIE)
+    response.delete_cookie(_TRAKT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/")
     return response
 
 
@@ -701,7 +701,7 @@ def reddit_oauth_callback(
     logger.info("User %s connected Reddit (reddit_username=%s)", user.id, reddit_username)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(_REDDIT_STATE_COOKIE)
+    response.delete_cookie(_REDDIT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/")
     return response
 
 

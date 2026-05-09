@@ -307,3 +307,68 @@ def test_spotify_token_error_does_not_leak_upstream_body(
         resp = authed_client.get(f"/api/auth/spotify/callback?code=authcode&state={state}")
 
     assert sensitive not in resp.text, "Upstream error body must not be returned to client"
+
+
+# ---------------------------------------------------------------------------
+# S4 — Rate limiter must use get_ipaddr (honours X-Forwarded-For via proxy)
+# ---------------------------------------------------------------------------
+
+
+def test_limiter_uses_get_ipaddr_key_func() -> None:
+    """Limiter key_func must be get_ipaddr so X-Forwarded-For is trusted when behind a proxy."""
+    from slowapi.util import get_ipaddr
+
+    from syncup.limiter import limiter
+
+    assert limiter._key_func is get_ipaddr, (
+        "limiter key_func must be get_ipaddr, not get_remote_address"
+    )
+
+
+# ---------------------------------------------------------------------------
+# S6 — All responses must include security headers
+# ---------------------------------------------------------------------------
+
+
+def test_response_includes_x_content_type_options(client: TestClient) -> None:
+    resp = client.get("/api/health")
+    assert resp.headers.get("x-content-type-options") == "nosniff"
+
+
+def test_response_includes_x_frame_options(client: TestClient) -> None:
+    resp = client.get("/api/health")
+    assert resp.headers.get("x-frame-options") == "DENY"
+
+
+def test_response_includes_referrer_policy(client: TestClient) -> None:
+    resp = client.get("/api/health")
+    assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
+
+def test_response_includes_content_security_policy(client: TestClient) -> None:
+    resp = client.get("/api/health")
+    csp = resp.headers.get("content-security-policy", "")
+    assert "default-src 'none'" in csp
+
+
+def test_response_includes_permissions_policy(client: TestClient) -> None:
+    resp = client.get("/api/health")
+    assert "permissions-policy" in resp.headers
+
+
+# ---------------------------------------------------------------------------
+# S7 — DATABASE_URL must be required (no hardcoded default)
+# ---------------------------------------------------------------------------
+
+
+def test_settings_database_url_has_no_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings must raise ValidationError when DATABASE_URL is not in the environment."""
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    from syncup.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]

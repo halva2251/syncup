@@ -123,6 +123,11 @@ async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
 
 app = FastAPI(title="SyncUp API", version="0.1.0", lifespan=lifespan)
 
+# Trust one hop of X-Forwarded-For so the rate limiter sees the real client IP
+# when running behind nginx / Caddy. trusted_hosts="*" is safe for single-hop setups.
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware  # noqa: E402
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -130,6 +135,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next: Any) -> Any:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +232,7 @@ def spotify_callback(
     a state mismatch returns 400 rather than 401.
     """
     client: SpotifyClient = request.app.state.spotify
+    settings: Settings = request.app.state.settings
     cookie_state = request.cookies.get("spotify_state")
     verifier = request.cookies.get("spotify_verifier")
 
@@ -281,9 +300,15 @@ def spotify_callback(
 
     logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
 
+    _state_cookie_del_opts = {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": not settings.debug,
+        "path": "/",
+    }
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie("spotify_state")
-    response.delete_cookie("spotify_verifier")
+    response.delete_cookie("spotify_state", **_state_cookie_del_opts)
+    response.delete_cookie("spotify_verifier", **_state_cookie_del_opts)
     return response
 
 

@@ -316,6 +316,43 @@ def test_logout_clears_cookie(auth_client: TestClient, mock_db: MagicMock) -> No
 
 
 # ---------------------------------------------------------------------------
+# S5 — delete_cookie must include matching security attributes
+# ---------------------------------------------------------------------------
+
+
+def test_logout_delete_cookie_includes_httponly(
+    auth_client: TestClient, mock_db: MagicMock
+) -> None:
+    """Logout delete_cookie must include HttpOnly so browsers honour the deletion."""
+    resp = auth_client.post("/api/auth/logout")
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert "httponly" in set_cookie.lower(), f"HttpOnly missing from Set-Cookie: {set_cookie}"
+
+
+def test_logout_delete_cookie_includes_samesite_lax(
+    auth_client: TestClient, mock_db: MagicMock
+) -> None:
+    """Logout delete_cookie must include SameSite=lax to match the original set_cookie."""
+    resp = auth_client.post("/api/auth/logout")
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert "samesite=lax" in set_cookie.lower(), f"SameSite=lax missing: {set_cookie}"
+
+
+# ---------------------------------------------------------------------------
+# S8 — logout must be rate-limited
+# ---------------------------------------------------------------------------
+
+
+def test_logout_route_has_rate_limit(auth_client: TestClient, mock_db: MagicMock) -> None:
+    """POST /api/auth/logout must be rate-limited (decorated with @limiter.limit)."""
+    from syncup.auth.router import logout as logout_fn
+
+    assert hasattr(logout_fn, "__wrapped__"), (
+        "logout route must be decorated with @limiter.limit(...)"
+    )
+
+
+# ---------------------------------------------------------------------------
 # require_auth dependency
 # ---------------------------------------------------------------------------
 
