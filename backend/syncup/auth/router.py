@@ -20,6 +20,7 @@ from syncup.auth.hashing import (
     verify_password,
     verify_password_dummy,
 )
+from syncup.config import Settings
 from syncup.db.models import Session as SessionRow
 from syncup.db.models import User
 from syncup.db.session import get_db
@@ -188,6 +189,7 @@ def login(
 
 
 @router.post("/logout", status_code=204)
+@limiter.limit("30/minute")
 def logout(
     request: Request,
     db: Annotated[DbSession, Depends(get_db)],
@@ -200,8 +202,15 @@ def logout(
             db.delete(session)
             db.commit()
 
+    settings: Settings = request.app.state.settings
     response = Response(status_code=204)
-    response.delete_cookie(_SESSION_COOKIE)
+    response.delete_cookie(
+        _SESSION_COOKIE,
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        path="/",
+    )
     return response
 
 

@@ -88,5 +88,6 @@ def register_default_clients(settings: Settings) -> None:
                 client_id=settings.reddit_client_id,
                 client_secret=settings.reddit_client_secret,
                 redirect_uri=settings.reddit_redirect_uri,
+                user_agent=settings.reddit_user_agent,
             )
         )

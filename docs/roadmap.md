@@ -191,6 +191,45 @@ Proportion-based normalization is applied by each client in `fetch_items()`. Log
 
 ---
 
+## Phase 1.11 — Backend Hardening Sprint
+
+**Goal:** address 8 CRITICAL and 18 HIGH security/reliability issues found during audit. Gate for Phase 2.1 (ML training).
+
+> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). 646 tests passing. Branches 2–4 pending.
+
+### Branch 1: fix/security-hardening
+
+Security-critical OAuth and config hardening. All 12 items merged.
+
+| Item | What | Status |
+|------|------|--------|
+| S1 | Timing-safe OAuth state validation with `secrets.compare_digest()` in all 4 OAuth callbacks | ✅ |
+| S2 | Unconditional encryption key guard at startup (remove debug mode bypass) | ✅ |
+| S3 | Strip upstream error response bodies from `SyncUpError` messages; log server-side only | ✅ |
+| S4 | Switch rate limiter to trust `X-Forwarded-For` via `ProxyHeadersMiddleware` | ✅ |
+| S5 | All `delete_cookie()` calls use matching attributes (`httponly`, `samesite`, `secure`, `path`) | ✅ |
+| S6 | Add security headers middleware: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy | ✅ |
+| S7 | Database URL required at startup; no hardcoded default | ✅ |
+| S8 | Rate limit on `POST /api/auth/logout` (30/min) to prevent session enumeration | ✅ |
+| S9 | CORS origin parsing raises hard error if misconfigured (not in debug mode) | ✅ |
+| S10 | Prevent error message injection: replace dynamic Reddit error string with static message | ✅ |
+| S11 | Session secret default changed from `""` to `None` to distinguish unset from intentionally blank | ✅ |
+| S12 | Remove version string from `GET /api/health` to prevent backend fingerprinting | ✅ |
+
+### Branch 2: fix/ingest-hardening (pending)
+
+Client error handling and token lifecycle.
+
+### Branch 3: fix/db-hardening (pending)
+
+Background cleanup jobs, unbounded queries, atomicity, index maintenance.
+
+### Branch 4: fix/api-quality (pending)
+
+Sync visibility, response schemas, cursor pagination, input validation, onboarding fixes.
+
+---
+
 ## Phase 1 — Sync & Taste Profile
 
 **Goal:** users connect their services, data gets pulled into the database, and they can see their taste profile. Matching not yet required.

@@ -744,3 +744,57 @@ def test_context_manager_closes_http() -> None:
     with client:
         pass
     http.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# User-Agent configuration (pre-work: move from hardcoded to settings)
+# ---------------------------------------------------------------------------
+
+
+def test_reddit_client_accepts_user_agent_field() -> None:
+    from syncup.ingest.reddit import RedditClient
+
+    client = RedditClient(
+        client_id="x",
+        client_secret="y",
+        redirect_uri="z",
+        user_agent="web:syncup:0.1.0 (by /u/test-user)",
+    )
+    assert client.user_agent == "web:syncup:0.1.0 (by /u/test-user)"
+
+
+def test_reddit_headers_use_custom_user_agent() -> None:
+    captured: list[httpx.Headers] = []
+
+    class _CapturingTransport(httpx.BaseTransport):
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            captured.append(request.headers)
+            return httpx.Response(200, json={"name": "u", "id": "t2_abc"})
+
+    from syncup.ingest.reddit import RedditClient
+
+    http = httpx.Client(transport=_CapturingTransport())
+    client = RedditClient(
+        client_id="x",
+        client_secret="y",
+        redirect_uri="z",
+        user_agent="web:syncup:0.1.0 (by /u/my-user)",
+        http=http,
+    )
+    client.fetch_me("test-access-token")
+
+    assert len(captured) == 1
+    assert captured[0]["User-Agent"] == "web:syncup:0.1.0 (by /u/my-user)"
+
+
+def test_settings_has_reddit_user_agent_field() -> None:
+    import os
+
+    from syncup.config import Settings
+
+    settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        spotify_client_id="test",
+        reddit_user_agent="web:syncup:0.1.0 (by /u/test-user)",
+    )
+    assert settings.reddit_user_agent == "web:syncup:0.1.0 (by /u/test-user)"

@@ -248,3 +248,30 @@ def test_trakt_oauth_callback_stores_trakt_username(
 
     added_conn: ServiceConnection = mock_db.add.call_args[0][0]
     assert added_conn.external_user_id == "trakt_user_123"
+
+
+# ---------------------------------------------------------------------------
+# S1 — Trakt callback must use secrets.compare_digest for state validation
+# ---------------------------------------------------------------------------
+
+
+def test_trakt_callback_uses_compare_digest_for_state_validation(
+    trakt_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """State comparison in the Trakt callback must use secrets.compare_digest."""
+    import secrets as _secrets
+
+    called: list[tuple[str, str]] = []
+    original = _secrets.compare_digest
+
+    def spy(a: str, b: str) -> bool:
+        called.append((a, b))
+        return original(a, b)
+
+    monkeypatch.setattr("syncup.api.routes.connect.secrets.compare_digest", spy)
+    trakt_client.get(
+        "/api/connect/trakt/oauth/callback",
+        params={"code": "c", "state": "st"},
+        cookies={"trakt_state": "st"},
+    )
+    assert called, "secrets.compare_digest was not called for Trakt state validation"

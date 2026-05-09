@@ -379,9 +379,11 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **S5 (RateYourMusic CSV import) is complete.** `RateYourMusicClient`, `POST /api/connect/rateyourmusic/import`, and RateYourMusic taste rendering are live. 620 tests passing.
 
-**Next: Phase 2.1** — Item2Vec training on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset).
+**Phase 1.11 — Backend Hardening Sprint:**
 
-After S1–S5, **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow.
+**Branch 1 (fix/security-hardening) is complete.** All 12 security items (S1–S12) merged: timing-safe OAuth, encryption key guard, error body stripping, proxy rate limiter, cookie attributes, security headers, required env vars, logout rate limit, CORS validation, error message injection prevention, session secret default, health fingerprint removal. 646 tests passing.
+
+**Next: Branch 2 (fix/ingest-hardening)** — client error message sanitization, OAuth token refresh expiry checks, httpx cleanup, ValueError→SyncClientError conversions.
 
 ---
 

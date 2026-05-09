@@ -274,3 +274,47 @@ def test_reddit_oauth_callback_stores_reddit_username(
 
     added_conn: ServiceConnection = mock_db.add.call_args[0][0]
     assert added_conn.external_user_id == "reddit_user_xyz"
+
+
+# ---------------------------------------------------------------------------
+# S1 — Reddit callback must use secrets.compare_digest for state validation
+# ---------------------------------------------------------------------------
+
+
+def test_reddit_callback_uses_compare_digest_for_state_validation(
+    reddit_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """State comparison in the Reddit callback must use secrets.compare_digest."""
+    import secrets as _secrets
+
+    called: list[tuple[str, str]] = []
+    original = _secrets.compare_digest
+
+    def spy(a: str, b: str) -> bool:
+        called.append((a, b))
+        return original(a, b)
+
+    monkeypatch.setattr("syncup.api.routes.connect.secrets.compare_digest", spy)
+    reddit_client.get(
+        "/api/connect/reddit/oauth/callback",
+        params={"code": "c", "state": "st"},
+        cookies={"reddit_state": "st"},
+    )
+    assert called, "secrets.compare_digest was not called for Reddit state validation"
+
+
+# ---------------------------------------------------------------------------
+# S10 — Reddit error query param must not be echoed in the response message
+# ---------------------------------------------------------------------------
+
+
+def test_reddit_callback_error_param_not_echoed(reddit_client: TestClient) -> None:
+    """The error= query param from Reddit must not appear verbatim in the response body."""
+    injected = "injected_malicious_content_XYZ"
+    resp = reddit_client.get(
+        "/api/connect/reddit/oauth/callback",
+        params={"state": "matching-state", "error": injected},
+        cookies={"reddit_state": "matching-state"},
+    )
+    assert resp.status_code == 400
+    assert injected not in resp.text, "Reddit error param must not be echoed to client"

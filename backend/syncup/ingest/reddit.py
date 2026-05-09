@@ -53,6 +53,7 @@ class RedditClient:
     client_id: str
     client_secret: str
     redirect_uri: str
+    user_agent: str = ""
     http: httpx.Client = field(
         default_factory=lambda: httpx.Client(timeout=httpx.Timeout(15.0)), repr=False
     )
@@ -71,7 +72,7 @@ class RedditClient:
     # ------------------------------------------------------------------
 
     def _reddit_headers(self, access_token: str | None = None) -> dict[str, str]:
-        headers: dict[str, str] = {"User-Agent": _USER_AGENT}
+        headers: dict[str, str] = {"User-Agent": self.user_agent or _USER_AGENT}
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
         return headers

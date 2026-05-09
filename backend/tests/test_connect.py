@@ -537,3 +537,42 @@ def test_rym_import_db_failure_returns_500(
 
     assert resp.status_code == 500
     assert resp.json()["error"]["code"] == "IMPORT_FAILED"
+
+
+# ---------------------------------------------------------------------------
+# S3 — HTTP errors from upstream must not leak response body to client
+# ---------------------------------------------------------------------------
+
+
+def test_steam_http_error_does_not_leak_upstream_body(connect_client: TestClient) -> None:
+    """httpx.HTTPStatusError body from Steam API must not appear in the API response."""
+    import httpx as _httpx
+
+    sensitive = "secret_steam_internal_XYZ"
+    with patch("syncup.api.routes.connect.SteamClient") as mock_cls:
+        instance = mock_cls.return_value.__enter__.return_value
+        instance.get_player_summary.side_effect = _httpx.HTTPStatusError(
+            "503",
+            request=_httpx.Request("GET", "https://api.steampowered.com/"),
+            response=_httpx.Response(503, text=sensitive),
+        )
+        resp = connect_client.post("/api/connect/steam", json={"steam_id": "76561198000000000"})
+
+    assert sensitive not in resp.text, "Upstream error body must not be returned to client"
+
+
+def test_lastfm_http_error_does_not_leak_upstream_body(connect_client: TestClient) -> None:
+    """httpx.HTTPStatusError body from Last.fm API must not appear in the API response."""
+    import httpx as _httpx
+
+    sensitive = "secret_lastfm_internal_XYZ"
+    with patch("syncup.api.routes.connect.LastfmClient") as mock_cls:
+        instance = mock_cls.return_value.__enter__.return_value
+        instance.get_top_artists.side_effect = _httpx.HTTPStatusError(
+            "503",
+            request=_httpx.Request("GET", "https://ws.audioscrobbler.com/"),
+            response=_httpx.Response(503, text=sensitive),
+        )
+        resp = connect_client.post("/api/connect/lastfm", json={"username": "testuser"})
+
+    assert sensitive not in resp.text, "Upstream error body must not be returned to client"

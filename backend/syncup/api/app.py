@@ -58,7 +58,14 @@ def _cors_origins() -> list[str]:
         try:
             return json.loads(raw)
         except (ValueError, json.JSONDecodeError):
-            logger.warning("Could not parse CORS_ALLOWED_ORIGINS — using defaults")
+            debug = os.environ.get("DEBUG", "false").lower() in ("1", "true", "yes")
+            if debug:
+                logger.error("Could not parse CORS_ALLOWED_ORIGINS — using defaults (debug mode)")
+                return ["http://127.0.0.1:3001", "http://localhost:3001"]
+            raise RuntimeError(
+                "CORS_ALLOWED_ORIGINS is set but could not be parsed as a JSON array. "
+                "Fix the value or remove it to use the default."
+            )
     return ["http://127.0.0.1:3001", "http://localhost:3001"]
 
 
@@ -92,7 +99,7 @@ def _error_json(code: str, message: str, status_code: int) -> JSONResponse:
 async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
     settings = Settings()  # type: ignore[call-arg]
 
-    if not settings.debug and not settings.syncup_token_encryption_key:
+    if not settings.syncup_token_encryption_key:
         raise RuntimeError(
             "SYNCUP_TOKEN_ENCRYPTION_KEY is not set. "
             "Generate one: python -c \"import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())\""
@@ -123,6 +130,11 @@ async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
 
 app = FastAPI(title="SyncUp API", version="0.1.0", lifespan=lifespan)
 
+# Trust one hop of X-Forwarded-For so the rate limiter sees the real client IP
+# when running behind nginx / Caddy. trusted_hosts="*" is safe for single-hop setups.
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware  # noqa: E402
+
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -130,6 +142,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next: Any) -> Any:
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'self'"
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +200,7 @@ router = APIRouter(prefix="/api")
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": app.version}
+    return {"status": "ok"}
 
 
 @router.get("/auth/spotify")
@@ -214,10 +239,11 @@ def spotify_callback(
     a state mismatch returns 400 rather than 401.
     """
     client: SpotifyClient = request.app.state.spotify
+    settings: Settings = request.app.state.settings
     cookie_state = request.cookies.get("spotify_state")
     verifier = request.cookies.get("spotify_verifier")
 
-    if not cookie_state or cookie_state != state:
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch")
     if not verifier:
         raise SyncUpError("MISSING_PKCE_VERIFIER", "Missing PKCE verifier")
@@ -229,10 +255,10 @@ def spotify_callback(
         tokens = client.exchange_code(code=code, code_verifier=verifier)
         spotify_profile = client.fetch_me(tokens.access_token)
     except httpx.HTTPStatusError as exc:
-        logger.warning("Spotify token exchange failed: %s", exc.response.text)
+        logger.warning("Spotify token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
         raise SyncUpError(
             "SPOTIFY_TOKEN_ERROR",
-            f"Spotify token exchange failed: {exc.response.text}",
+            "Spotify token exchange failed — please reconnect",
             exc.response.status_code,
         ) from exc
     except httpx.RequestError as exc:
@@ -281,9 +307,15 @@ def spotify_callback(
 
     logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
 
+    _state_cookie_del_opts = {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": not settings.debug,
+        "path": "/",
+    }
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie("spotify_state")
-    response.delete_cookie("spotify_verifier")
+    response.delete_cookie("spotify_state", **_state_cookie_del_opts)
+    response.delete_cookie("spotify_verifier", **_state_cookie_del_opts)
     return response
 
 
