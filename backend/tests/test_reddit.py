@@ -617,6 +617,35 @@ def test_fetch_items_all_mainstream_returns_empty(monkeypatch: pytest.MonkeyPatc
     assert items == []
 
 
+def test_fetch_items_respects_pagination_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stuck cursor must not loop forever — cap at _MAX_PAGINATION_PAGES (110)."""
+    from syncup.ingest.reddit import _MAX_PAGINATION_PAGES
+
+    stuck_page = {
+        "data": {
+            "children": [
+                {
+                    "kind": "t5",
+                    "data": {
+                        "id": "stuck",
+                        "display_name": "stuck",
+                        "subscribers": 100,
+                        "public_description": "",
+                    },
+                }
+            ],
+            "after": "stuck_cursor",  # always non-null → would loop forever without cap
+        }
+    }
+    # Provide more responses than the cap so transport never runs dry.
+    responses = [_json_resp(stuck_page) for _ in range(_MAX_PAGINATION_PAGES + 10)]
+    client = _client(responses)
+    monkeypatch.setattr("syncup.ingest.reddit.decrypt_token", lambda _: "access-token")
+
+    items = client.fetch_items(_make_connection())
+    assert len(items) == _MAX_PAGINATION_PAGES
+
+
 def test_fetch_items_raises_on_missing_token() -> None:
     from syncup.ingest.reddit import RedditClient
 

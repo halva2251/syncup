@@ -32,7 +32,8 @@ _MAX_SUBSCRIBERS = 1_000_000
 # This cap guards against an infinite loop if Reddit returns a stuck cursor.
 _MAX_PAGINATION_PAGES = 110
 
-# Exclude private/banned subreddits with no subscribers — they carry no taste signal.
+# Exclude private/banned subreddits with 0 subscribers — they carry no taste signal,
+# and the log formula would rank them highest (1/ln(0+2) ≈ 1.44 vs 1/ln(1M+2) ≈ 0.07).
 _MIN_SUBSCRIBERS = 1
 
 _SCOPES = "identity mysubreddits"

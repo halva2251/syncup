@@ -148,6 +148,88 @@ ANILIST_CLIENT_SECRET=your_secret_here
 
 ---
 
+## 5. Trakt.tv
+
+Trakt uses **OAuth 2.0** (Authorization Code flow). Tokens expire after 90 days; the client will automatically refresh them.
+
+### Steps
+
+1. Sign in at [trakt.tv](https://trakt.tv).
+2. Go to **[trakt.tv/oauth/applications](https://trakt.tv/oauth/applications)**.
+3. Click **New Application**.
+4. Fill in:
+   - **Name**: `SyncUp (dev - your_name)`
+   - **Redirect uri**: `http://127.0.0.1:3000/api/connect/trakt/oauth/callback`
+   - **Javascript (cors) origins**: leave blank for local dev
+   - Uncheck **Checkin** and **Scrobble** — SyncUp only needs read access
+5. Submit. Copy the **Client ID** and **Client Secret**.
+
+### What you can fetch
+
+- `/users/me/watched/movies` — watched films with play counts
+- `/users/me/watched/shows` — watched shows with episode counts
+
+### Env
+
+```
+TRAKT_CLIENT_ID=your_client_id
+TRAKT_CLIENT_SECRET=your_client_secret
+# TRAKT_REDIRECT_URI=http://127.0.0.1:3000/api/connect/trakt/oauth/callback  ← default, only set if overriding
+```
+
+> **Without credentials configured:** `/api/connect/trakt/oauth/start` returns `503 SERVICE_NOT_CONFIGURED`. All other services continue to work normally.
+
+### Docs
+
+- [Trakt API documentation](https://trakt.docs.apiary.io/)
+- [OAuth guide](https://trakt.docs.apiary.io/#reference/authentication-oauth)
+
+---
+
+## 6. Reddit
+
+Reddit uses **OAuth 2.0** (Authorization Code flow) with `duration=permanent` to receive a long-lived refresh token. Access tokens expire after 1 hour.
+
+> **Reddit requires a `User-Agent` header** identifying the application and developer. The hardcoded value in `reddit.py` is `web:syncup:0.1.0 (by /u/REDDIT_DEV_USERNAME)`. Update it if project ownership changes.
+
+### Steps
+
+1. Sign in at [reddit.com](https://www.reddit.com).
+2. Go to **[reddit.com/prefs/apps](https://www.reddit.com/prefs/apps)**.
+3. Click **Create Another App** (or **Create App** if first time).
+4. Fill in:
+   - **Name**: `SyncUp (dev - your_name)`
+   - **Type**: select **web app**
+   - **Redirect URI**: `http://127.0.0.1:3000/api/connect/reddit/oauth/callback`
+   - Description and about URL are optional
+5. Submit. Copy the **client id** (shown under the app name) and the **secret**.
+
+### Required OAuth scopes
+
+- `identity` — read the authenticated user's username
+- `mysubreddits` — list subscribed subreddits
+
+### What you can fetch
+
+- `/subreddits/mine/subscriber` — paginated list of subscribed communities (up to ~10,500 per account)
+
+### Env
+
+```
+REDDIT_CLIENT_ID=your_client_id
+REDDIT_CLIENT_SECRET=your_client_secret
+# REDDIT_REDIRECT_URI=http://127.0.0.1:3000/api/connect/reddit/oauth/callback  ← default, only set if overriding
+```
+
+> **Without credentials configured:** `/api/connect/reddit/oauth/start` returns `503 SERVICE_NOT_CONFIGURED`. All other services continue to work normally.
+
+### Docs
+
+- [Reddit OAuth2 guide](https://github.com/reddit-archive/reddit/wiki/OAuth2)
+- [Reddit API documentation](https://www.reddit.com/dev/api/)
+
+---
+
 ## .env Template
 
 Create `backend/.env` from this template (add to `.gitignore` if not already):
@@ -170,6 +252,16 @@ ANILIST_CLIENT_ID=
 ANILIST_CLIENT_SECRET=
 # ANILIST_REDIRECT_URI=http://127.0.0.1:3000/api/connect/anilist/oauth/callback  ← default, only set if overriding
 
+# Trakt
+TRAKT_CLIENT_ID=
+TRAKT_CLIENT_SECRET=
+# TRAKT_REDIRECT_URI=http://127.0.0.1:3000/api/connect/trakt/oauth/callback  ← default, only set if overriding
+
+# Reddit
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+# REDDIT_REDIRECT_URI=http://127.0.0.1:3000/api/connect/reddit/oauth/callback  ← default, only set if overriding
+
 # App
 DATABASE_URL=postgresql://syncup:syncup@localhost:5432/syncup
 SESSION_SECRET=
@@ -185,5 +277,7 @@ SESSION_SECRET=
 | Last.fm | 5 req/sec | be polite, batch where possible |
 | Spotify | ~180 req/min per token | app-level limits also apply |
 | AniList | 90 req/min | tokens never expire; GraphQL — we fetch everything in one request |
+| Trakt | 1,000 req/5 min per user | tokens expire after 90 days; refresh handled automatically |
+| Reddit | 100 req/min per OAuth client | tokens expire after 1 hour; refresh handled automatically |
 
 **Golden rule for demo day**: never hit a live API during the presentation. Everything must be pre-fetched and cached in the database.
