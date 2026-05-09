@@ -410,8 +410,8 @@ def test_letterboxd_import_skips_unrated_rows(
 
 _RYM_CSV = (
     "Title,Release_Date,Rating\n"
-    "OK Computer,1997,5.0\n"
-    "Dummy,1994,4.5\n"
+    "OK Computer,1997,10\n"
+    "Dummy,1994,9\n"
 )
 
 
@@ -508,7 +508,7 @@ def test_rym_import_skips_unrated_rows(
 ) -> None:
     import uuid
 
-    csv_with_unrated = "Title,Release_Date,Rating\nOK Computer,1997,5.0\nDummy,1994,\n"
+    csv_with_unrated = "Title,Release_Date,Rating\nOK Computer,1997,10\nDummy,1994,\n"
     mock_db.scalar.return_value = None
     mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
 

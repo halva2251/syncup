@@ -38,9 +38,9 @@ def test_rateyourmusic_fetch_items_raises_sync_client_error() -> None:
 
 _VALID_CSV = """\
 RYM Album,First Name,Last Name,Title,Release_Date,Rating,Ownership
-1234,Radiohead,,OK Computer,1997,5.0,Own
-5678,Portishead,,Dummy,1994,4.5,Own
-9012,Boards of Canada,,Music Has the Right to Children,1998,4.0,Own
+1234,Radiohead,,OK Computer,1997,10,Own
+5678,Portishead,,Dummy,1994,9,Own
+9012,Boards of Canada,,Music Has the Right to Children,1998,8,Own
 """
 
 
@@ -66,15 +66,15 @@ def test_parse_csv_preserves_title() -> None:
 
 
 def test_parse_csv_normalizes_engagement_score() -> None:
-    # 4.5 stars → (4.5 - 0.5) / 4.5 ≈ 0.8889
+    # RYM export: integer 9 (4.5 stars) → (9 - 1) / 9 ≈ 0.8889
     items = RateYourMusicClient().parse_csv(_VALID_CSV)
     dummy = next(i for i in items if i["name"] == "Dummy")
-    assert dummy["engagement_score"] == pytest.approx((4.5 - 0.5) / 4.5)
-    assert dummy["raw_value"] == pytest.approx(4.5)
+    assert dummy["engagement_score"] == pytest.approx((9 - 1) / 9.0)
+    assert dummy["raw_value"] == pytest.approx(9)
 
 
 def test_parse_csv_max_rating_gives_score_one() -> None:
-    # 5.0 stars → (5.0 - 0.5) / 4.5 = 1.0
+    # RYM export: integer 10 (5 stars) → (10 - 1) / 9 = 1.0
     items = RateYourMusicClient().parse_csv(_VALID_CSV)
     ok_computer = next(i for i in items if i["name"] == "OK Computer")
     assert ok_computer["engagement_score"] == pytest.approx(1.0)
@@ -121,13 +121,13 @@ def test_parse_csv_last_engaged_at_is_none() -> None:
 
 def test_parse_csv_extracts_year_from_full_date() -> None:
     # RYM sometimes exports "1997-05-21" — extract just the year
-    csv = "Title,Release_Date,Rating\nOK Computer,1997-05-21,5.0\n"
+    csv = "Title,Release_Date,Rating\nOK Computer,1997-05-21,10\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert items[0]["metadata"]["release_year"] == 1997
 
 
 def test_parse_csv_extracts_year_from_year_month() -> None:
-    csv = "Title,Release_Date,Rating\nDummy,1994-08,4.5\n"
+    csv = "Title,Release_Date,Rating\nDummy,1994-08,9\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert items[0]["metadata"]["release_year"] == 1994
 
@@ -159,7 +159,7 @@ def test_parse_csv_without_artist_metadata_artist_normalized_is_empty_string() -
 
 _CSV_WITH_UNRATED = """\
 Title,Release_Date,Rating
-OK Computer,1997,5.0
+OK Computer,1997,10
 Dummy,1994,
 Music Has the Right to Children,1998,
 """
@@ -216,43 +216,52 @@ def test_parse_csv_invalid_rating_value_raises_sync_client_error() -> None:
 
 
 def test_parse_csv_missing_release_date_stored_as_zero() -> None:
-    csv = "Title,Release_Date,Rating\nUnknown Album,,4.0\n"
+    csv = "Title,Release_Date,Rating\nUnknown Album,,8\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert len(items) == 1
     assert items[0]["metadata"]["release_year"] == 0
 
 
 def test_parse_csv_unparseable_release_date_stored_as_zero() -> None:
-    csv = "Title,Release_Date,Rating\nSome Album,unknown,4.0\n"
+    csv = "Title,Release_Date,Rating\nSome Album,unknown,8\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert len(items) == 1
     assert items[0]["metadata"]["release_year"] == 0
 
 
 def test_parse_csv_out_of_range_rating_is_clamped_not_rejected() -> None:
-    # A manually edited CSV might have rating > 5.0 — clamp silently.
-    csv = "Title,Release_Date,Rating\nWeird Album,2024,6.0\n"
+    # A manually edited CSV might have rating > 10 — clamp silently.
+    csv = "Title,Release_Date,Rating\nWeird Album,2024,11\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert len(items) == 1
     assert items[0]["engagement_score"] == pytest.approx(1.0)
 
 
 def test_parse_csv_zero_rating_clamps_to_zero_score() -> None:
-    csv = "Title,Release_Date,Rating\nBoring Album,2024,0.0\n"
+    # Rating 0 → (0 - 1) / 9 ≈ -0.11 → clamped to 0.0
+    csv = "Title,Release_Date,Rating\nBoring Album,2024,0\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert len(items) == 1
     assert items[0]["engagement_score"] == pytest.approx(0.0)
 
 
 def test_parse_csv_empty_title_row_is_silently_skipped() -> None:
-    csv = "Title,Release_Date,Rating\n,2024,4.0\nDummy,1994,4.5\n"
+    csv = "Title,Release_Date,Rating\n,2024,8\nDummy,1994,9\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert len(items) == 1
     assert items[0]["name"] == "Dummy"
 
 
 def test_parse_csv_title_with_special_chars_normalizes() -> None:
-    csv = "Title,Release_Date,Rating\nNausicaä of the Valley of the Wind,1984,5.0\n"
+    csv = "Title,Release_Date,Rating\nNausicaä of the Valley of the Wind,1984,10\n"
     items = RateYourMusicClient().parse_csv(csv)
     assert len(items) == 1
     assert items[0]["metadata"]["title_normalized"] == "nausicaa of the valley of the wind"
+
+
+def test_parse_csv_leading_space_in_header_handled() -> None:
+    # RYM CSVs have ", First Name" (space after comma) — must still read artist correctly
+    csv = "Title,Release_Date,Rating, First Name,Last Name\nOK Computer,1997,10,Radiohead,\n"
+    items = RateYourMusicClient().parse_csv(csv)
+    assert items[0]["metadata"]["artist_normalized"] == "radiohead"
+    assert items[0]["external_id"] == "radiohead:ok computer:1997"

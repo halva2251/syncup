@@ -67,6 +67,10 @@ class RateYourMusicClient:
             return []
 
         reader = csv.DictReader(io.StringIO(content))
+        # RYM CSVs sometimes have leading spaces in header names (", First Name").
+        # Strip them so lookups like row.get("First Name") work reliably.
+        if reader.fieldnames:
+            reader.fieldnames = [f.strip() for f in reader.fieldnames]
         fieldnames = set(reader.fieldnames or [])
         missing = _REQUIRED_COLUMNS - fieldnames
         if missing:
@@ -100,7 +104,9 @@ class RateYourMusicClient:
 
             release_year = _extract_year(date_str)
             title_norm = normalize_title(title)
-            engagement_score = (rating - 0.5) / 4.5
+            # RYM exports ratings as integers 1–10 (1 = 0.5 stars, 10 = 5 stars).
+            # Normalise to [0, 1]: (rating - 1) / 9.
+            engagement_score = (rating - 1) / 9.0
             engagement_score = max(0.0, min(1.0, engagement_score))
 
             if artist_norm:
