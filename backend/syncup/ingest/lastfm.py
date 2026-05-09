@@ -37,11 +37,11 @@ class LastfmClient:
     def _validate_period(self, period: str) -> None:
         if period not in _VALID_PERIODS:
             valid = sorted(_VALID_PERIODS)
-            raise ValueError(f"period must be one of {valid}, got {period!r}")
+            raise SyncClientError(f"period must be one of {valid}, got {period!r}")
 
     def _validate_limit(self, limit: int) -> None:
         if not _MIN_LIMIT <= limit <= _MAX_LIMIT:
-            raise ValueError(f"limit must be {_MIN_LIMIT}–{_MAX_LIMIT}, got {limit}")
+            raise SyncClientError(f"limit must be {_MIN_LIMIT}–{_MAX_LIMIT}, got {limit}")
 
     def _validate_username(self, username: str) -> None:
         if not username:

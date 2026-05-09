@@ -79,19 +79,19 @@ def test_get_top_artists_returns_list_of_dicts() -> None:
 
 def test_get_top_artists_raises_on_invalid_period() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="period"):
+    with pytest.raises(SyncClientError, match="period"):
         c.get_top_artists("rj", period="badperiod")
 
 
 def test_get_top_artists_raises_on_limit_zero() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(SyncClientError, match="limit"):
         c.get_top_artists("rj", limit=0)
 
 
 def test_get_top_artists_raises_on_limit_over_max() -> None:
     c = _client([])
-    with pytest.raises(ValueError, match="limit"):
+    with pytest.raises(SyncClientError, match="limit"):
         c.get_top_artists("rj", limit=1001)
 
 
@@ -125,3 +125,22 @@ def test_get_top_tracks_raises_on_5xx() -> None:
     c = _client([httpx.Response(503, text="Service Unavailable")])
     with pytest.raises(httpx.HTTPStatusError):
         c.get_top_tracks("rj")
+
+
+# ---------------------------------------------------------------------------
+# I5 — validators reachable from fetch_items must raise SyncClientError
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_period_raises_sync_client_error_not_value_error() -> None:
+    """_validate_period must raise SyncClientError so the sync task handles it correctly."""
+    c = _client([])
+    with pytest.raises(SyncClientError):
+        c.get_top_artists("rj", period="badperiod")
+
+
+def test_invalid_limit_raises_sync_client_error_not_value_error() -> None:
+    """_validate_limit must raise SyncClientError so the sync task handles it correctly."""
+    c = _client([])
+    with pytest.raises(SyncClientError):
+        c.get_top_artists("rj", limit=0)

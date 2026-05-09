@@ -49,10 +49,12 @@ def _client(responses: list[httpx.Response]):  # type: ignore[return]
 def _make_connection(
     access_token_bytes: bytes | None = b"fake-encrypted-token",
     refresh_token_bytes: bytes | None = b"fake-encrypted-refresh",
+    token_expires_at: object = None,
 ) -> MagicMock:
     conn = MagicMock()
     conn.access_token_encrypted = access_token_bytes
     conn.refresh_token_encrypted = refresh_token_bytes
+    conn.token_expires_at = token_expires_at
     conn.external_user_id = "testuser"
     return conn
 
@@ -798,6 +800,43 @@ def test_settings_has_reddit_user_agent_field() -> None:
         reddit_user_agent="web:syncup:0.1.0 (by /u/test-user)",
     )
     assert settings.reddit_user_agent == "web:syncup:0.1.0 (by /u/test-user)"
+
+
+# ---------------------------------------------------------------------------
+# I1 — SyncClientError messages must not leak exc.response.text or exc repr
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# I3 — refresh_token must skip the network call when token is still valid
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_token_returns_none_when_token_not_expired() -> None:
+    """refresh_token must return None without a network call when token has not expired."""
+    from datetime import UTC, datetime
+
+    from syncup.ingest.reddit import RedditClient
+
+    conn = _make_connection()
+    conn.token_expires_at = datetime(2099, 1, 1, tzinfo=UTC)
+    c = RedditClient(client_id="x", client_secret="y", redirect_uri="z")
+    result = c.refresh_token(conn)
+    assert result is None, "refresh_token must return None for a token with future expiry"
+
+
+def test_refresh_token_proceeds_when_token_is_expired(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """refresh_token must attempt refresh when token_expires_at is in the past."""
+    from datetime import UTC, datetime, timedelta
+
+    monkeypatch.setattr("syncup.ingest.reddit.decrypt_token", lambda _: "old-refresh")
+    conn = _make_connection()
+    conn.token_expires_at = datetime.now(UTC) - timedelta(hours=2)
+    c = _client([_json_resp(_TOKEN_BODY)])
+    result = c.refresh_token(conn)
+    assert result is not None, "refresh_token must return a new TokenPair when token is expired"
 
 
 # ---------------------------------------------------------------------------

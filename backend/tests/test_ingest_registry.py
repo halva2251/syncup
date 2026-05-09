@@ -86,3 +86,35 @@ def test_clear_empties_registry() -> None:
     register(_make_client("delta"))
     _clear()
     assert registered_services() == set()
+
+
+# ---------------------------------------------------------------------------
+# I4 — close_all() must call close() on every registered client that has it
+# ---------------------------------------------------------------------------
+
+
+def test_close_all_calls_close_on_each_registered_client() -> None:
+    """close_all() must call .close() on every registered client."""
+    from unittest.mock import MagicMock
+
+    from syncup.ingest.registry import close_all
+
+    client_a = MagicMock()
+    client_a.service_name = "svc_a"
+    client_b = MagicMock()
+    client_b.service_name = "svc_b"
+    register(client_a)
+    register(client_b)
+
+    close_all()
+
+    client_a.close.assert_called_once()
+    client_b.close.assert_called_once()
+
+
+def test_close_all_skips_clients_without_close() -> None:
+    """close_all() must not raise if a client has no .close() method."""
+    from syncup.ingest.registry import close_all
+
+    register(_make_client("no_close"))
+    close_all()  # must not raise

@@ -40,6 +40,7 @@ from syncup.db.models import ServiceConnection  # noqa: E402
 from syncup.db.session import get_db, sessionmaker_for  # noqa: E402
 from syncup.exceptions import SyncUpError  # noqa: E402
 from syncup.ingest.crypto import encrypt_token  # noqa: E402
+from syncup.ingest.registry import close_all as close_all_clients  # noqa: E402
 from syncup.ingest.registry import register_default_clients  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
 from syncup.limiter import limiter  # noqa: E402
@@ -121,6 +122,7 @@ async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
     logger.info("SyncUp API started (debug=%s)", settings.debug)
     yield
     app.state.spotify.close()
+    close_all_clients()
     logger.info("SyncUp API shut down")
 
 

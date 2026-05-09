@@ -33,6 +33,17 @@ def registered_services() -> set[str]:
     return set(_REGISTRY)
 
 
+def close_all() -> None:
+    """Close every registered client that exposes a .close() method.
+
+    Called from the app lifespan shutdown section to release httpx connections.
+    """
+    for client in _REGISTRY.values():
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
+
 def _clear() -> None:
     """Remove all registered clients. Use only in tests."""
     _REGISTRY.clear()

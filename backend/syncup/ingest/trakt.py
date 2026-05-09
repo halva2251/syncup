@@ -173,10 +173,13 @@ class TraktClient:
     def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
         """Exchange the stored refresh token for a fresh access token.
 
-        Trakt tokens expire every 90 days; this must be called before sync
-        when token_expires_at is in the past.
+        Returns None if the token is still valid (expires more than 5 minutes from now).
         Raises SyncClientError on failure.
         """
+        expires_at = connection.token_expires_at
+        if expires_at is not None and expires_at > datetime.now(UTC) + timedelta(minutes=5):
+            return None
+
         refresh_bytes: bytes | None = connection.refresh_token_encrypted
         if refresh_bytes is None:
             raise SyncClientError("Missing refresh token — reconnect Trakt via OAuth")
