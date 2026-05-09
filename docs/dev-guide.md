@@ -84,6 +84,8 @@ crypto.py          → Token encryption (AES-GCM)
 
 **`SyncClientError`** is the exception class service clients must raise for expected, user-safe failures (missing token, user not found, bad CSV data). The sync task's `_safe_error_message` trusts `SyncClientError` messages and converts all other exceptions to a generic "Sync failed — please retry" to avoid leaking internal details. Never raise plain `ValueError` from `fetch_items()` or `refresh_token()`.
 
+**CSV-only services (Letterboxd, RateYourMusic):** `fetch_items()` intentionally raises `SyncClientError` directing the user to re-upload. This is not a bug — these services have no API, so re-sync requires a fresh export from the user. The connect route (`/import`) handles data ingestion directly via `parse_csv()`, bypassing the sync route entirely.
+
 **`RawItem`** is the common output type every client returns. Fields:
 - `external_id`: service-native ID (Steam appid, AniList media ID, subreddit name, etc.)
 - `name`: display name
