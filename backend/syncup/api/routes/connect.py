@@ -704,3 +704,137 @@ def reddit_oauth_callback(
     response = RedirectResponse("/", status_code=302)
     response.delete_cookie(_REDDIT_STATE_COOKIE)
     return response
+
+
+# ===========================================================================
+# RateYourMusic — CSV ratings import
+# ===========================================================================
+
+_RYM_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+class RateYourMusicImportOut(BaseModel):
+    imported: int
+
+
+@router.post("/rateyourmusic/import", response_model=RateYourMusicImportOut, status_code=201)
+@limiter.limit("10/minute")
+def import_rateyourmusic(
+    request: Request,
+    file: UploadFile,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+) -> RateYourMusicImportOut:
+    """Import a RateYourMusic ratings CSV export — wipe-and-replace transaction."""
+    allowed_content_types = {"text/csv", "text/plain", "application/octet-stream"}
+    if file.content_type and file.content_type not in allowed_content_types:
+        raise SyncUpError(
+            "INVALID_FILE_TYPE",
+            f"Expected a CSV file, got {file.content_type!r}",
+            422,
+        )
+
+    data = file.file.read(_RYM_MAX_BYTES + 1)
+    if len(data) > _RYM_MAX_BYTES:
+        raise SyncUpError("FILE_TOO_LARGE", "File must be 10 MB or smaller", 413)
+
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise SyncUpError("INVALID_CSV", "File must be UTF-8 encoded", 422) from exc
+
+    from syncup.ingest.rateyourmusic import RateYourMusicClient
+
+    client = RateYourMusicClient()
+    try:
+        raw_items = client.parse_csv(text)
+    except SyncClientError as exc:
+        raise SyncUpError("INVALID_CSV", str(exc), 422) from exc
+
+    # Wipe-and-replace in a single transaction (same pattern as Letterboxd):
+    # 1. Delete existing rateyourmusic user_items for this user.
+    # 2. Upsert each album into the canonical catalog and user_items.
+    # 3. Upsert the service_connections row with sync_status="ok".
+    # 4. Commit — rollback on any failure preserves the old data.
+
+    db.execute(
+        delete(_USER_ITEMS_TABLE)  # type: ignore[arg-type]
+        .where(_USER_ITEMS_TABLE.c.user_id == user.id)
+        .where(
+            _USER_ITEMS_TABLE.c.item_id.in_(
+                select(_ITEMS_TABLE.c.id).where(_ITEMS_TABLE.c.service == "rateyourmusic")
+            )
+        )
+    )
+
+    now = datetime.now(UTC)
+    for raw_item in raw_items:
+        ins_item = pg_insert(_ITEMS_TABLE).values(  # type: ignore[arg-type]
+            id=uuid.uuid4(),
+            service="rateyourmusic",
+            item_type=raw_item["item_type"],
+            external_id=raw_item["external_id"],
+            name=raw_item["name"],
+            metadata=raw_item["metadata"],
+        )
+        item_id: uuid.UUID = db.execute(
+            ins_item.on_conflict_do_update(
+                index_elements=["service", "item_type", "external_id"],
+                set_={
+                    "name": ins_item.excluded.name,
+                    "metadata": ins_item.excluded.metadata,
+                },
+            ).returning(_ITEMS_TABLE.c.id)
+        ).scalar_one()
+
+        ins_ui = pg_insert(_USER_ITEMS_TABLE).values(  # type: ignore[arg-type]
+            id=uuid.uuid4(),
+            user_id=user.id,
+            item_id=item_id,
+            engagement_score=raw_item["engagement_score"],
+            raw_value=raw_item["raw_value"],
+            raw_type=raw_item["raw_type"],
+            last_engaged_at=raw_item["last_engaged_at"],
+            fetched_at=now,
+        )
+        db.execute(
+            ins_ui.on_conflict_do_update(
+                index_elements=["user_id", "item_id"],
+                set_={
+                    "engagement_score": ins_ui.excluded.engagement_score,
+                    "raw_value": ins_ui.excluded.raw_value,
+                    "raw_type": ins_ui.excluded.raw_type,
+                    "last_engaged_at": ins_ui.excluded.last_engaged_at,
+                    "fetched_at": ins_ui.excluded.fetched_at,
+                },
+            )
+        )
+
+    existing_conn = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == "rateyourmusic",
+        )
+    )
+    if existing_conn is not None:
+        existing_conn.sync_status = "ok"
+        existing_conn.sync_error = None
+    else:
+        db.add(
+            ServiceConnection(
+                user_id=user.id,
+                service="rateyourmusic",
+                external_user_id=str(user.id),
+                sync_status="ok",
+            )
+        )
+
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.exception("RateYourMusic import failed for user %s", user.id)
+        raise SyncUpError("IMPORT_FAILED", "Import failed — please retry", 500) from exc
+
+    logger.info("User %s imported %d RateYourMusic albums", user.id, len(raw_items))
+    return RateYourMusicImportOut(imported=len(raw_items))

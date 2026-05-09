@@ -78,11 +78,13 @@ letterboxd.py      → LetterboxdClient (CSV import, no auth)      ← Live ✅
 anilist.py         → AniListClient (GraphQL OAuth)               ← Live ✅
 trakt.py           → TraktClient (REST OAuth)                    ← Live ✅
 reddit.py          → RedditClient (OAuth, subreddit membership)  ← Live ✅
-rateyourmusic.py   → RateYourMusicClient (CSV import, no auth)   ← Planned S5
+rateyourmusic.py   → RateYourMusicClient (CSV import, no auth)   ← Live ✅
 crypto.py          → Token encryption (AES-GCM)
 ```
 
 **`SyncClientError`** is the exception class service clients must raise for expected, user-safe failures (missing token, user not found, bad CSV data). The sync task's `_safe_error_message` trusts `SyncClientError` messages and converts all other exceptions to a generic "Sync failed — please retry" to avoid leaking internal details. Never raise plain `ValueError` from `fetch_items()` or `refresh_token()`.
+
+**CSV-only services (Letterboxd, RateYourMusic):** `fetch_items()` intentionally raises `SyncClientError` directing the user to re-upload. This is not a bug — these services have no API, so re-sync requires a fresh export from the user. The connect route (`/import`) handles data ingestion directly via `parse_csv()`, bypassing the sync route entirely.
 
 **`RawItem`** is the common output type every client returns. Fields:
 - `external_id`: service-native ID (Steam appid, AniList media ID, subreddit name, etc.)
@@ -352,7 +354,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 577 tests
+pytest                        # all 613 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -375,7 +377,9 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **S4 (Reddit OAuth) is complete.** `RedditClient`, `GET /api/connect/reddit/oauth/start`, and `GET /api/connect/reddit/oauth/callback` are live. 577 tests passing.
 
-**Next: S5** — RateYourMusic (CSV import), ships as its own PR.
+**S5 (RateYourMusic CSV import) is complete.** `RateYourMusicClient`, `POST /api/connect/rateyourmusic/import` are live. 613 tests passing.
+
+**Next: Phase 2.1** — Item2Vec training on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset).
 
 After S1–S5, **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow.
 

@@ -402,3 +402,138 @@ def test_letterboxd_import_skips_unrated_rows(
 
     assert resp.status_code == 201
     assert resp.json() == {"imported": 1}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/connect/rateyourmusic/import
+# ---------------------------------------------------------------------------
+
+_RYM_CSV = (
+    "Title,Release_Date,Rating\n"
+    "OK Computer,1997,10\n"
+    "Dummy,1994,9\n"
+)
+
+
+def test_rym_import_requires_auth(unauthed_client: TestClient) -> None:
+    resp = unauthed_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", _RYM_CSV, "text/csv")},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_rym_import_success(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    mock_db.scalar.return_value = None
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", _RYM_CSV, "text/csv")},
+    )
+
+    assert resp.status_code == 201
+    assert resp.json() == {"imported": 2}
+    mock_db.commit.assert_called()
+
+
+def test_rym_import_file_too_large(connect_client: TestClient) -> None:
+    oversized = "x" * (10 * 1024 * 1024 + 1)
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", oversized, "text/csv")},
+    )
+    assert resp.status_code == 413
+    assert resp.json()["error"]["code"] == "FILE_TOO_LARGE"
+
+
+def test_rym_import_malformed_csv_returns_422(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    bad_csv = "wrong,headers,here\n1,2,3\n"
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", bad_csv, "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_CSV"
+
+
+def test_rym_import_updates_existing_connection(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    existing = _make_connection("rateyourmusic", f"csv:{uuid.uuid4()}")
+    existing.sync_status = "error"
+    mock_db.scalar.return_value = existing
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", _RYM_CSV, "text/csv")},
+    )
+
+    assert resp.status_code == 201
+    assert existing.sync_status == "ok"
+    assert existing.sync_error is None
+
+
+def test_rym_import_non_utf8_file_returns_422(connect_client: TestClient) -> None:
+    latin1_bytes = "Björk".encode("latin-1")
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", latin1_bytes, "text/csv")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_CSV"
+
+
+def test_rym_import_wrong_content_type_returns_422(connect_client: TestClient) -> None:
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("malware.exe", b"MZ\x90\x00", "application/x-msdownload")},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["error"]["code"] == "INVALID_FILE_TYPE"
+
+
+def test_rym_import_skips_unrated_rows(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    csv_with_unrated = "Title,Release_Date,Rating\nOK Computer,1997,10\nDummy,1994,\n"
+    mock_db.scalar.return_value = None
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", csv_with_unrated, "text/csv")},
+    )
+
+    assert resp.status_code == 201
+    assert resp.json() == {"imported": 1}
+
+
+def test_rym_import_db_failure_returns_500(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    mock_db.scalar.return_value = None
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+    mock_db.commit.side_effect = Exception("db exploded")
+
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", _RYM_CSV, "text/csv")},
+    )
+
+    assert resp.status_code == 500
+    assert resp.json()["error"]["code"] == "IMPORT_FAILED"

@@ -63,6 +63,10 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `GET /api/connect/reddit/oauth/start` + `GET /api/connect/reddit/oauth/callback` | `syncup/api/routes/connect.py` |
 | `RedditClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
 | 577 passing tests | `backend/tests/` |
+| `RateYourMusicClient` — CSV import, `Title`/`Release_Date`/`Rating` columns, year extraction, `(rating - 0.5) / 4.5` normalization | `syncup/ingest/rateyourmusic.py` |
+| `POST /api/connect/rateyourmusic/import` — multipart CSV, wipe-and-replace, 10 MB cap | `syncup/api/routes/connect.py` |
+| `RateYourMusicClient` registered in `register_default_clients` | `syncup/ingest/registry.py` |
+| 613 passing tests | `backend/tests/` |
 
 ---
 
@@ -70,7 +74,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 
 **Goal:** Add Letterboxd, AniList, Trakt, Reddit, and RateYourMusic to the ingest pipeline. Introduce a `ServiceClient` Protocol so every future service slots in without touching the sync route.
 
-> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). S1 complete ✅ (2026-05-07). S2 complete ✅ (2026-05-08). S3 complete ✅ (2026-05-08). S4 complete ✅ (2026-05-09). S5 is next.
+> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). S1 complete ✅ (2026-05-07). S2 complete ✅ (2026-05-08). S3 complete ✅ (2026-05-08). S4 complete ✅ (2026-05-09). S5 complete ✅ (2026-05-10).
 
 ### F1–F7 Foundation (single PR)
 
@@ -174,7 +178,7 @@ All service ratings are normalized to `engagement_score ∈ [0, 1]`. Raw values 
 | Service | Raw scale | Formula |
 |---------|-----------|---------|
 | Letterboxd | 0.5–5.0 (half-stars) | `(rating - 0.5) / 4.5` |
-| RateYourMusic | 0.5–5.0 (half-stars) | `(rating - 0.5) / 4.5` |
+| RateYourMusic | 1–10 (integers, 10 = 5 stars) | `(rating - 1) / 9.0` |
 | AniList | 0–100 | `rating / 100.0` |
 | Trakt | 1–10 | `(rating - 1) / 9.0` |
 | Steam | minutes played | `playtime / max_playtime` — proportion-based |
