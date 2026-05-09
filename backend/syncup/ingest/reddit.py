@@ -1,6 +1,7 @@
 """Reddit OAuth client — community membership ingest."""
 from __future__ import annotations
 
+import logging
 import math
 import urllib.parse
 from dataclasses import dataclass, field
@@ -8,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from syncup.ingest.crypto import decrypt_token
 from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
@@ -116,11 +119,11 @@ class RedditClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise SyncClientError(
-                f"Reddit token exchange failed: {exc.response.text}"
-            ) from exc
+            logger.warning("Reddit token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            raise SyncClientError("Reddit token exchange failed — please reconnect") from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach Reddit: {exc}") from exc
+            logger.warning("Reddit token exchange network error: %s", exc)
+            raise SyncClientError("Could not reach Reddit — please retry") from exc
 
         try:
             data = resp.json()
@@ -147,11 +150,11 @@ class RedditClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise SyncClientError(
-                f"Reddit profile fetch failed ({exc.response.status_code}): {exc.response.text}"
-            ) from exc
+            logger.warning("Reddit profile fetch failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            raise SyncClientError("Reddit profile fetch failed — please reconnect") from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach Reddit: {exc}") from exc
+            logger.warning("Reddit profile fetch network error: %s", exc)
+            raise SyncClientError("Could not reach Reddit — please retry") from exc
         try:
             return cast(dict[str, Any], resp.json())
         except ValueError as exc:
@@ -203,11 +206,11 @@ class RedditClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise SyncClientError(
-                f"Reddit token refresh failed: {exc.response.text}"
-            ) from exc
+            logger.warning("Reddit token refresh failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            raise SyncClientError("Reddit token refresh failed — please reconnect") from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach Reddit: {exc}") from exc
+            logger.warning("Reddit token refresh network error: %s", exc)
+            raise SyncClientError("Could not reach Reddit — please retry") from exc
 
         try:
             data = resp.json()
@@ -250,11 +253,13 @@ class RedditClient:
                     raise SyncClientError(
                         "Reddit token rejected — please reconnect your Reddit account"
                     ) from exc
+                logger.warning("Reddit API error (status=%s): %s", exc.response.status_code, exc.response.text)
                 raise SyncClientError(
-                    f"Reddit API error ({exc.response.status_code}): {exc.response.text}"
+                    f"Reddit returned an error ({exc.response.status_code}) — please retry"
                 ) from exc
             except httpx.RequestError as exc:
-                raise SyncClientError(f"Could not reach Reddit: {exc}") from exc
+                logger.warning("Reddit API network error: %s", exc)
+                raise SyncClientError("Could not reach Reddit — please retry") from exc
 
             try:
                 data = cast(dict[str, Any], resp.json())

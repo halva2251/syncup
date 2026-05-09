@@ -263,7 +263,7 @@ def spotify_callback(
         ) from exc
     except httpx.RequestError as exc:
         logger.warning("Could not reach Spotify: %s", exc)
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", f"Could not reach Spotify: {exc}", 502) from exc
+        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Spotify — please retry", 502) from exc
 
     spotify_user_id: str | None = spotify_profile.get("id")
     if not spotify_user_id:

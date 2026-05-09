@@ -138,7 +138,8 @@ def connect_steam(
         logger.warning("Steam API error (status=%s): %s", exc.response.status_code, exc.response.text)
         raise SyncUpError("UPSTREAM_UNAVAILABLE", "Steam returned an error — please retry", 502) from exc
     except httpx.RequestError as exc:
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", f"Could not reach Steam: {exc}", 502) from exc
+        logger.warning("Steam network error: %s", exc)
+        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Steam — please retry", 502) from exc
 
     conn = _upsert_connection(db, user.id, "steam", steam_id)
     logger.info("User %s connected Steam (steam_id=%s)", user.id, steam_id)
@@ -165,7 +166,8 @@ def connect_lastfm(
         logger.warning("Last.fm API error (status=%s): %s", exc.response.status_code, exc.response.text)
         raise SyncUpError("UPSTREAM_UNAVAILABLE", "Last.fm returned an error — please retry", 502) from exc
     except httpx.RequestError as exc:
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", f"Could not reach Last.fm: {exc}", 502) from exc
+        logger.warning("Last.fm network error: %s", exc)
+        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Last.fm — please retry", 502) from exc
 
     conn = _upsert_connection(db, user.id, "lastfm", body.username)
     logger.info("User %s connected Last.fm (username=%s)", user.id, body.username)
@@ -398,7 +400,7 @@ def anilist_oauth_callback(
             ) from exc
         except httpx.RequestError as exc:
             raise SyncUpError(
-                "UPSTREAM_UNAVAILABLE", f"Could not reach AniList: {exc}", 502
+                "UPSTREAM_UNAVAILABLE", "Could not reach AniList — please retry", 502
             ) from exc
 
     anilist_user_id = str(me.get("id") or "")

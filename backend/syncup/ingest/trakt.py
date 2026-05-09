@@ -1,12 +1,15 @@
 """Trakt.tv REST OAuth client."""
 from __future__ import annotations
 
+import logging
 import urllib.parse
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from syncup.ingest._text import normalize_title
 from syncup.ingest.crypto import decrypt_token
@@ -101,11 +104,11 @@ class TraktClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise SyncClientError(
-                f"Trakt token exchange failed: {exc.response.text}"
-            ) from exc
+            logger.warning("Trakt token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            raise SyncClientError("Trakt token exchange failed — please reconnect") from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach Trakt: {exc}") from exc
+            logger.warning("Trakt token exchange network error: %s", exc)
+            raise SyncClientError("Could not reach Trakt — please retry") from exc
 
         try:
             data = resp.json()
@@ -132,11 +135,11 @@ class TraktClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise SyncClientError(
-                f"Trakt profile fetch failed ({exc.response.status_code}): {exc.response.text}"
-            ) from exc
+            logger.warning("Trakt profile fetch failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            raise SyncClientError("Trakt profile fetch failed — please reconnect") from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach Trakt: {exc}") from exc
+            logger.warning("Trakt profile fetch network error: %s", exc)
+            raise SyncClientError("Could not reach Trakt — please retry") from exc
         try:
             return cast(dict[str, Any], resp.json())
         except ValueError as exc:
@@ -193,11 +196,11 @@ class TraktClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise SyncClientError(
-                f"Trakt token refresh failed: {exc.response.text}"
-            ) from exc
+            logger.warning("Trakt token refresh failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            raise SyncClientError("Trakt token refresh failed — please reconnect") from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach Trakt: {exc}") from exc
+            logger.warning("Trakt token refresh network error: %s", exc)
+            raise SyncClientError("Could not reach Trakt — please retry") from exc
 
         try:
             data = resp.json()
@@ -231,11 +234,13 @@ class TraktClient:
                 raise SyncClientError(
                     "Trakt token rejected — please reconnect your Trakt account"
                 ) from exc
+            logger.warning("Trakt API error (status=%s): %s", exc.response.status_code, exc.response.text)
             raise SyncClientError(
-                f"Trakt API error ({exc.response.status_code}): {exc.response.text}"
+                f"Trakt returned an error ({exc.response.status_code}) — please retry"
             ) from exc
         except httpx.RequestError as exc:
-            raise SyncClientError(f"Could not reach Trakt: {exc}") from exc
+            logger.warning("Trakt network error: %s", exc)
+            raise SyncClientError("Could not reach Trakt — please retry") from exc
         try:
             return cast(list[dict[str, Any]], resp.json())
         except ValueError as exc:
