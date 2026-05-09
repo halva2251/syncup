@@ -195,7 +195,7 @@ Proportion-based normalization is applied by each client in `fetch_items()`. Log
 
 **Goal:** address 8 CRITICAL and 18 HIGH security/reliability issues found during audit. Gate for Phase 2.1 (ML training).
 
-> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). 646 tests passing. Branches 2–4 pending.
+> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). Branch 2 (fix/ingest-hardening) complete ✅ (2026-05-09). 678 tests passing. Branches 3–4 pending.
 
 ### Branch 1: fix/security-hardening
 
@@ -216,9 +216,21 @@ Security-critical OAuth and config hardening. All 12 items merged.
 | S11 | Session secret default changed from `""` to `None` to distinguish unset from intentionally blank | ✅ |
 | S12 | Remove version string from `GET /api/health` to prevent backend fingerprinting | ✅ |
 
-### Branch 2: fix/ingest-hardening (pending)
+### Branch 2: fix/ingest-hardening (complete ✅ 2026-05-09)
 
-Client error handling and token lifecycle.
+Client error handling, token lifecycle, and ingest robustness.
+
+| Item | What | Status |
+|------|------|--------|
+| I1+M2 | Strip `exc.response.text` and `{exc}` from `SyncClientError`/`SyncUpError` messages in AniList, Trakt, Reddit clients and Steam/Last.fm/AniList connect routes; log details server-side | ✅ |
+| I3 | Add token expiry guard to `TraktClient.refresh_token()` and `RedditClient.refresh_token()` — return `None` if token still valid (expires > 5 min from now); treat `None` expiry as expired | ✅ |
+| I4 | Add `close_all()` to `registry.py`; call from app lifespan shutdown to release httpx connections | ✅ |
+| I5 | `LastfmClient._validate_period()` and `_validate_limit()` now raise `SyncClientError` instead of `ValueError` | ✅ |
+| I6 | Last.fm artist `external_id` fallback uses `normalize_title(name)` instead of raw name | ✅ |
+| I7 | `normalize_title()` expands ligatures (Œ→OE, Æ→AE, ß→ss) before NFD accent-stripping | ✅ |
+| I8 | `trigger_sync` route validates `app.state.db` exists before adding background task | ✅ |
+| I9 | CSV imports (Letterboxd, RateYourMusic) reject >50,000 rows with 422 FILE_TOO_LARGE | ✅ |
+| I10 | `engagement_score` clamped to [0.0, 1.0] in `_do_sync_generic` before upsert | ✅ |
 
 ### Branch 3: fix/db-hardening (pending)
 
