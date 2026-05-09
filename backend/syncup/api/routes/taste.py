@@ -75,6 +75,15 @@ class LetterboxdServiceOut(BaseModel):
     top_films: list[LetterboxdFilmOut]
 
 
+class RateYourMusicAlbumOut(TasteItemOut):
+    release_year: int
+    artist: str
+
+
+class RateYourMusicServiceOut(BaseModel):
+    top_albums: list[RateYourMusicAlbumOut]
+
+
 class ServicesOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -82,6 +91,7 @@ class ServicesOut(BaseModel):
     lastfm: LastfmServiceOut | None = None
     spotify: SpotifyServiceOut | None = None
     letterboxd: LetterboxdServiceOut | None = None
+    rateyourmusic: RateYourMusicServiceOut | None = None
 
 
 class ManualObsessionOut(BaseModel):
@@ -166,6 +176,16 @@ def _to_letterboxd_film(row: Any) -> LetterboxdFilmOut:
     )
 
 
+def _to_rateyourmusic_album(row: Any) -> RateYourMusicAlbumOut:
+    return RateYourMusicAlbumOut(
+        id=row.external_id,
+        name=row.name,
+        score=row.engagement_score,
+        release_year=row.meta.get("release_year", 0),
+        artist=row.meta.get("artist_normalized", ""),
+    )
+
+
 _CONVERTERS: dict[tuple[str, str], Any] = {
     ("steam", "game"): _to_steam_game,
     ("lastfm", "artist"): _to_lastfm_artist,
@@ -173,6 +193,7 @@ _CONVERTERS: dict[tuple[str, str], Any] = {
     ("spotify", "artist"): _to_spotify_artist,
     ("spotify", "track"): _to_spotify_track,
     ("letterboxd", "film"): _to_letterboxd_film,
+    ("rateyourmusic", "album"): _to_rateyourmusic_album,
 }
 
 
@@ -223,6 +244,7 @@ def get_taste(
     spotify_artists = _build("spotify", "artist")
     spotify_tracks = _build("spotify", "track")
     letterboxd_films = _build("letterboxd", "film")
+    rym_albums = _build("rateyourmusic", "album")
 
     steam = SteamServiceOut(top_games=steam_games) if steam_games else None
     lastfm = (
@@ -236,6 +258,7 @@ def get_taste(
         else None
     )
     letterboxd = LetterboxdServiceOut(top_films=letterboxd_films) if letterboxd_films else None
+    rateyourmusic = RateYourMusicServiceOut(top_albums=rym_albums) if rym_albums else None
 
     obsessions = db.scalars(
         select(ManualObsession)
@@ -255,7 +278,7 @@ def get_taste(
     ).all()
 
     return TasteOut(
-        services=ServicesOut(steam=steam, lastfm=lastfm, spotify=spotify, letterboxd=letterboxd),
+        services=ServicesOut(steam=steam, lastfm=lastfm, spotify=spotify, letterboxd=letterboxd, rateyourmusic=rateyourmusic),
         manual_obsessions=[
             ManualObsessionOut(
                 id=o.id,

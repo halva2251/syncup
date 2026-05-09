@@ -178,7 +178,7 @@ All service ratings are normalized to `engagement_score ∈ [0, 1]`. Raw values 
 | Service | Raw scale | Formula |
 |---------|-----------|---------|
 | Letterboxd | 0.5–5.0 (half-stars) | `(rating - 0.5) / 4.5` |
-| RateYourMusic | 0.5–5.0 (half-stars) | `(rating - 0.5) / 4.5` |
+| RateYourMusic | 1–10 (integers, 10 = 5 stars) | `(rating - 1) / 9.0` |
 | AniList | 0–100 | `rating / 100.0` |
 | Trakt | 1–10 | `(rating - 1) / 9.0` |
 | Steam | minutes played | `playtime / max_playtime` — proportion-based |
