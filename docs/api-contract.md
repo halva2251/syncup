@@ -130,8 +130,8 @@ field: file — the CSV file (max 10 MB)
 - Creates/replaces a `service_connections` row with `sync_status = 'ok'`
 - Returns 201 `{"imported": N}` on success; 413 if file exceeds 10 MB; 422 if CSV is malformed
 
-### `POST /connect/rateyourmusic/import` — Sketch (Phase 1.10)
-Same pattern as Letterboxd import. Accepts RateYourMusic ratings export CSV.
+### `POST /connect/rateyourmusic/import` — Live ✅
+Same pattern as Letterboxd import. Accepts RateYourMusic ratings export CSV (`Title`, `Release_Date`, `Rating` columns required). Returns `{"imported": N}` on 201. Wipe-and-replace per import; 10 MB cap.
 - Parses `Title`, `Release_Date` (year), `Rating` columns
 - Same wipe-and-replace, 10 MB cap, 201/413/422 responses
 
