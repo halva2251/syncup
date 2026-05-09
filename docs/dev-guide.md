@@ -352,7 +352,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 384 tests
+pytest                        # all 577 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -373,7 +373,7 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **S3 (Trakt REST OAuth) is complete.** `TraktClient`, `GET /api/connect/trakt/oauth/start`, and `GET /api/connect/trakt/oauth/callback` are live. 518 tests passing.
 
-**S4 (Reddit OAuth) is complete.** `RedditClient`, `GET /api/connect/reddit/oauth/start`, and `GET /api/connect/reddit/oauth/callback` are live. 576 tests passing.
+**S4 (Reddit OAuth) is complete.** `RedditClient`, `GET /api/connect/reddit/oauth/start`, and `GET /api/connect/reddit/oauth/callback` are live. 577 tests passing.
 
 **Next: S5** — RateYourMusic (CSV import), ships as its own PR.
 

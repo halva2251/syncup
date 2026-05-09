@@ -62,7 +62,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `RedditClient` — OAuth 2.0, subscribed subreddits, `> 1M` filter, `1/ln(subs+2)` niche scoring | `syncup/ingest/reddit.py` |
 | `GET /api/connect/reddit/oauth/start` + `GET /api/connect/reddit/oauth/callback` | `syncup/api/routes/connect.py` |
 | `RedditClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
-| 576 passing tests | `backend/tests/` |
+| 577 passing tests | `backend/tests/` |
 
 ---
 
