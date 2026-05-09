@@ -381,9 +381,11 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Phase 1.11 — Backend Hardening Sprint:**
 
-**Branch 1 (fix/security-hardening) is complete.** All 12 security items (S1–S12) merged: timing-safe OAuth, encryption key guard, error body stripping, proxy rate limiter, cookie attributes, security headers, required env vars, logout rate limit, CORS validation, error message injection prevention, session secret default, health fingerprint removal. 646 tests passing.
+**Branch 1 (fix/security-hardening) is complete.** All 12 security items (S1–S12) merged: timing-safe OAuth, encryption key guard, error body stripping, proxy rate limiter, cookie attributes, security headers, required env vars, logout rate limit, CORS validation, error message injection prevention, session secret default, health fingerprint removal.
 
-**Next: Branch 2 (fix/ingest-hardening)** — client error message sanitization, OAuth token refresh expiry checks, httpx cleanup, ValueError→SyncClientError conversions.
+**Branch 2 (fix/ingest-hardening) is complete.** All 10 ingest items (I1–I10) merged: client error body stripping (AniList/Trakt/Reddit), RequestError hostname scrubbing (Steam/Last.fm/AniList), OAuth token expiry guard for Trakt and Reddit, httpx.Client shutdown via `close_all()`, LastfmClient validators raise `SyncClientError`, Last.fm artist external_id normalized, ligature expansion in `normalize_title()`, sync route db guard, CSV 50K row cap, engagement_score clamp. 681 tests passing.
+
+**Next: Branch 3 (fix/db-hardening)** — match_cache unbounded growth, LIMIT/OFFSET on cached match queries, taste endpoint SQL window function, dimensions PATCH atomicity, missing indexes, long match cache write transaction, require_auth dual lookup, dual updated_at. See `docs/roadmap.md §Phase 1.11 Branch 3` for the full item list.
 
 ---
 

@@ -195,7 +195,7 @@ Proportion-based normalization is applied by each client in `fetch_items()`. Log
 
 **Goal:** address 8 CRITICAL and 18 HIGH security/reliability issues found during audit. Gate for Phase 2.1 (ML training).
 
-> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). Branch 2 (fix/ingest-hardening) complete ✅ (2026-05-09). 678 tests passing. Branches 3–4 pending.
+> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). Branch 2 (fix/ingest-hardening) complete ✅ (2026-05-09). 681 tests passing. Branches 3–4 pending.
 
 ### Branch 1: fix/security-hardening
 
