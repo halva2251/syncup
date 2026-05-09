@@ -354,7 +354,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 613 tests
+pytest                        # all 620 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -377,7 +377,7 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **S4 (Reddit OAuth) is complete.** `RedditClient`, `GET /api/connect/reddit/oauth/start`, and `GET /api/connect/reddit/oauth/callback` are live. 577 tests passing.
 
-**S5 (RateYourMusic CSV import) is complete.** `RateYourMusicClient`, `POST /api/connect/rateyourmusic/import` are live. 613 tests passing.
+**S5 (RateYourMusic CSV import) is complete.** `RateYourMusicClient`, `POST /api/connect/rateyourmusic/import`, and RateYourMusic taste rendering are live. 620 tests passing.
 
 **Next: Phase 2.1** — Item2Vec training on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset).
 

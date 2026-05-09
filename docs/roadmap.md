@@ -63,10 +63,11 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `GET /api/connect/reddit/oauth/start` + `GET /api/connect/reddit/oauth/callback` | `syncup/api/routes/connect.py` |
 | `RedditClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
 | 577 passing tests | `backend/tests/` |
-| `RateYourMusicClient` — CSV import, `Title`/`Release_Date`/`Rating` columns, year extraction, `(rating - 0.5) / 4.5` normalization | `syncup/ingest/rateyourmusic.py` |
+| `RateYourMusicClient` — CSV import, `Title`/`Release_Date`/`Rating` columns, year extraction, `(rating - 1) / 9.0` normalization (1–10 integer scale) | `syncup/ingest/rateyourmusic.py` |
 | `POST /api/connect/rateyourmusic/import` — multipart CSV, wipe-and-replace, 10 MB cap | `syncup/api/routes/connect.py` |
 | `RateYourMusicClient` registered in `register_default_clients` | `syncup/ingest/registry.py` |
-| 613 passing tests | `backend/tests/` |
+| RateYourMusic added to `GET /api/me/taste` — renders `services.rateyourmusic.top_albums` | `syncup/api/routes/taste.py` |
+| 620 passing tests | `backend/tests/` |
 
 ---
 
