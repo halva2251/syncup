@@ -253,7 +253,8 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
   | `reddit` | `community` | `subscribers` | int | Subscriber count at ingest time |
   | `reddit` | `community` | `description` | string | `public_description`, first 200 chars |
   | `rateyourmusic` | `album` | `title_normalized` | string | Lowercased/stripped album title |
-  | `rateyourmusic` | `album` | `release_year` | int | Year from `Release_Date` column |
+  | `rateyourmusic` | `album` | `release_year` | int | Year extracted from `Release_Date` column |
+  | `rateyourmusic` | `album` | `artist_normalized` | string | Normalized artist name (`First Name` + `Last Name`); empty string when absent. Load-bearing — included in `external_id` to prevent same-title album collisions across artists. |
 
   **Cross-service deduplication note:** Films and shows from different services (Letterboxd + Trakt) are stored as separate `items` rows (one per service). The heuristic matcher and embedding builder deduplicate media items by `(title_normalized, release_year)` when scoring — a film shared between two services counts as one shared item, not two. The `title_normalized` + `release_year` metadata keys are therefore load-bearing for all film/show/anime/manga `item_type` values.
 
