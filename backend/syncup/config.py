@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     debug: bool = False
     # session_secret is reserved for future signed-cookie or JWT features.
     # Current sessions use a random token stored server-side — no signing needed.
-    session_secret: str = ""
+    session_secret: str | None = None
 
     # ── Database ─────────────────────────────────────────────────────────────
     database_url: str

@@ -58,7 +58,14 @@ def _cors_origins() -> list[str]:
         try:
             return json.loads(raw)
         except (ValueError, json.JSONDecodeError):
-            logger.warning("Could not parse CORS_ALLOWED_ORIGINS — using defaults")
+            debug = os.environ.get("DEBUG", "false").lower() in ("1", "true", "yes")
+            if debug:
+                logger.error("Could not parse CORS_ALLOWED_ORIGINS — using defaults (debug mode)")
+                return ["http://127.0.0.1:3001", "http://localhost:3001"]
+            raise RuntimeError(
+                "CORS_ALLOWED_ORIGINS is set but could not be parsed as a JSON array. "
+                "Fix the value or remove it to use the default."
+            )
     return ["http://127.0.0.1:3001", "http://localhost:3001"]
 
 
@@ -193,7 +200,7 @@ router = APIRouter(prefix="/api")
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": app.version}
+    return {"status": "ok"}
 
 
 @router.get("/auth/spotify")

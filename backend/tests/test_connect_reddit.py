@@ -301,3 +301,20 @@ def test_reddit_callback_uses_compare_digest_for_state_validation(
         cookies={"reddit_state": "st"},
     )
     assert called, "secrets.compare_digest was not called for Reddit state validation"
+
+
+# ---------------------------------------------------------------------------
+# S10 — Reddit error query param must not be echoed in the response message
+# ---------------------------------------------------------------------------
+
+
+def test_reddit_callback_error_param_not_echoed(reddit_client: TestClient) -> None:
+    """The error= query param from Reddit must not appear verbatim in the response body."""
+    injected = "injected_malicious_content_XYZ"
+    resp = reddit_client.get(
+        "/api/connect/reddit/oauth/callback",
+        params={"state": "matching-state", "error": injected},
+        cookies={"reddit_state": "matching-state"},
+    )
+    assert resp.status_code == 400
+    assert injected not in resp.text, "Reddit error param must not be echoed to client"

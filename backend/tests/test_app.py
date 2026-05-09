@@ -60,9 +60,13 @@ def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None
 def test_health_returns_ok(client: TestClient) -> None:
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "ok"
-    assert body["version"] == "0.1.0"
+    assert resp.json()["status"] == "ok"
+
+
+# S12 — health endpoint must not expose version string (fingerprinting)
+def test_health_does_not_expose_version(client: TestClient) -> None:
+    resp = client.get("/api/health")
+    assert "version" not in resp.json(), "Health endpoint must not expose version"
 
 
 # ---------------------------------------------------------------------------
@@ -372,3 +376,38 @@ def test_settings_database_url_has_no_default(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------------------------------
+# S9 — Bad CORS_ALLOWED_ORIGINS must be fatal in non-debug mode
+# ---------------------------------------------------------------------------
+
+
+def test_cors_parse_error_is_fatal_in_production_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed CORS_ALLOWED_ORIGINS must raise RuntimeError when DEBUG is not set."""
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "not-valid-json")
+    monkeypatch.setenv("DEBUG", "false")
+
+    from syncup.api.app import _cors_origins
+
+    with pytest.raises(RuntimeError, match="CORS_ALLOWED_ORIGINS"):
+        _cors_origins()
+
+
+# ---------------------------------------------------------------------------
+# S11 — session_secret default must be None (not empty string)
+# ---------------------------------------------------------------------------
+
+
+def test_settings_session_secret_defaults_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """session_secret must default to None so misconfiguration is detectable."""
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x:x@localhost/x")
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+
+    from syncup.config import Settings
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    assert settings.session_secret is None, "session_secret must default to None, not empty string"

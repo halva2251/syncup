@@ -642,7 +642,7 @@ def reddit_oauth_callback(
         raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
 
     if error:
-        raise SyncUpError("REDDIT_OAUTH_DENIED", f"Reddit authorization denied: {error}", 400)
+        raise SyncUpError("REDDIT_OAUTH_DENIED", "Reddit authorization was denied", 400)
     if not code:
         raise SyncUpError("REDDIT_OAUTH_MISSING_CODE", "Missing authorization code", 400)
 
