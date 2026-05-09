@@ -59,6 +59,10 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `GET /api/connect/trakt/oauth/start` + `GET /api/connect/trakt/oauth/callback` | `syncup/api/routes/connect.py` |
 | `TraktClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
 | 518 passing tests | `backend/tests/` |
+| `RedditClient` — OAuth 2.0, subscribed subreddits, `> 1M` filter, `1/ln(subs+2)` niche scoring | `syncup/ingest/reddit.py` |
+| `GET /api/connect/reddit/oauth/start` + `GET /api/connect/reddit/oauth/callback` | `syncup/api/routes/connect.py` |
+| `RedditClient` registered in `register_default_clients` (when credentials present) | `syncup/ingest/registry.py` |
+| 576 passing tests | `backend/tests/` |
 
 ---
 
@@ -66,7 +70,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 
 **Goal:** Add Letterboxd, AniList, Trakt, Reddit, and RateYourMusic to the ingest pipeline. Introduce a `ServiceClient` Protocol so every future service slots in without touching the sync route.
 
-> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). S1 complete ✅ (2026-05-07). S2 complete ✅ (2026-05-08). S3 complete ✅ (2026-05-08). S4–S5 are next — each ships as an independent PR.
+> **Status:** Foundation complete ✅ (F1–F7 landed, 2026-05-03). S1 complete ✅ (2026-05-07). S2 complete ✅ (2026-05-08). S3 complete ✅ (2026-05-08). S4 complete ✅ (2026-05-09). S5 is next.
 
 ### F1–F7 Foundation (single PR)
 

@@ -77,7 +77,7 @@ lastfm.py          → LastfmClient (API key, no OAuth)            ← Live ✅
 letterboxd.py      → LetterboxdClient (CSV import, no auth)      ← Live ✅
 anilist.py         → AniListClient (GraphQL OAuth)               ← Live ✅
 trakt.py           → TraktClient (REST OAuth)                    ← Live ✅
-reddit.py          → RedditClient (OAuth, subreddit membership)  ← Planned S4
+reddit.py          → RedditClient (OAuth, subreddit membership)  ← Live ✅
 rateyourmusic.py   → RateYourMusicClient (CSV import, no auth)   ← Planned S5
 crypto.py          → Token encryption (AES-GCM)
 ```
@@ -373,9 +373,9 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **S3 (Trakt REST OAuth) is complete.** `TraktClient`, `GET /api/connect/trakt/oauth/start`, and `GET /api/connect/trakt/oauth/callback` are live. 518 tests passing.
 
-**Next: S4–S5 individual services** — each ships as its own PR:
-- S4: Reddit (OAuth)
-- S5: RateYourMusic (CSV import)
+**S4 (Reddit OAuth) is complete.** `RedditClient`, `GET /api/connect/reddit/oauth/start`, and `GET /api/connect/reddit/oauth/callback` are live. 576 tests passing.
+
+**Next: S5** — RateYourMusic (CSV import), ships as its own PR.
 
 After S1–S5, **Phase 2.1: Item2Vec training** on public datasets (Steam review dataset, AniList data dump, Last.fm public dataset). Once item embeddings are trained, Phase 2.2 (user embedding endpoint) and Phase 2.3 (embedding-based match endpoint) follow.
 
