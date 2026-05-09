@@ -183,7 +183,7 @@ def _do_sync_generic(
                 session,
                 user_id,
                 item_id,
-                raw_item["engagement_score"],
+                max(0.0, min(1.0, raw_item["engagement_score"])),
                 raw_item["raw_value"],
                 raw_item["raw_type"],
                 last_engaged_at=raw_item["last_engaged_at"],
@@ -240,6 +240,9 @@ def trigger_sync(
 
     if conn.sync_status == "syncing":
         raise SyncUpError("ALREADY_SYNCING", "A sync is already in progress.", 409)
+
+    if not hasattr(request.app.state, "db"):
+        raise SyncUpError("INTERNAL_ERROR", "Database not initialised", 500)
 
     conn.sync_status = "syncing"
     conn.sync_error = None

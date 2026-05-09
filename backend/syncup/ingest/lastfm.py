@@ -7,6 +7,7 @@ from typing import ClassVar
 import httpx
 
 from syncup.db.models import ServiceConnection
+from syncup.ingest._text import normalize_title
 from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
@@ -142,7 +143,7 @@ class LastfmClient:
                 max((float(a.get("playcount", 0)) for a in top_artists), default=1.0) or 1.0
             )
             for artist in top_artists:
-                external_id = artist.get("mbid") or artist["name"]
+                external_id = artist.get("mbid") or normalize_title(artist["name"])
                 playcount = float(artist.get("playcount", 0))
                 result.append(
                     RawItem(

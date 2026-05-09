@@ -225,6 +225,9 @@ def import_letterboxd(
     except SyncClientError as exc:
         raise SyncUpError("INVALID_CSV", str(exc), 422) from exc
 
+    if len(raw_items) > 50_000:
+        raise SyncUpError("FILE_TOO_LARGE", "CSV contains more than 50,000 rows", 422)
+
     # Wipe-and-replace in a single transaction:
     # 1. Delete existing letterboxd user_items for this user.
     # 2. Upsert each item into the canonical catalog and user_items.
@@ -751,6 +754,9 @@ def import_rateyourmusic(
         raw_items = client.parse_csv(text)
     except SyncClientError as exc:
         raise SyncUpError("INVALID_CSV", str(exc), 422) from exc
+
+    if len(raw_items) > 50_000:
+        raise SyncUpError("FILE_TOO_LARGE", "CSV contains more than 50,000 rows", 422)
 
     # Wipe-and-replace in a single transaction (same pattern as Letterboxd):
     # 1. Delete existing rateyourmusic user_items for this user.
