@@ -118,3 +118,50 @@ def test_close_all_skips_clients_without_close() -> None:
 
     register(_make_client("no_close"))
     close_all()  # must not raise
+
+
+def test_close_all_continues_after_one_client_raises() -> None:
+    """close_all() must attempt all clients even if one .close() raises."""
+    from unittest.mock import MagicMock
+
+    from syncup.ingest.registry import close_all
+
+    bad = MagicMock()
+    bad.service_name = "bad"
+    bad.close.side_effect = RuntimeError("exploded")
+    good = MagicMock()
+    good.service_name = "good"
+    register(bad)
+    register(good)
+
+    close_all()  # must not raise
+
+    bad.close.assert_called_once()
+    good.close.assert_called_once()
+
+
+def test_lifespan_shutdown_calls_close_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    """App lifespan shutdown must call close_all() to release httpx connections."""
+    from unittest.mock import MagicMock, patch
+
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test")
+    monkeypatch.setenv("DEBUG", "true")
+    monkeypatch.setenv("SYNCUP_TOKEN_ENCRYPTION_KEY", "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdA==")
+
+    from syncup.api.app import app
+
+    close_calls: list[str] = []
+
+    def _fake_close_all() -> None:
+        close_calls.append("called")
+
+    with (
+        patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()),
+        patch("syncup.api.app.close_all_clients", side_effect=_fake_close_all),
+    ):
+        from fastapi.testclient import TestClient
+
+        with TestClient(app):
+            pass  # enter + exit triggers lifespan shutdown
+
+    assert close_calls == ["called"], "close_all_clients() must be called during lifespan shutdown"

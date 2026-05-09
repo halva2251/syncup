@@ -130,6 +130,27 @@ def test_sync_requires_auth(unauthed_client: TestClient) -> None:
     assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
 
+def test_sync_returns_500_when_db_factory_missing(
+    sync_client: TestClient, mock_db: MagicMock
+) -> None:
+    """I8: trigger_sync must return 500 synchronously if app.state.db is absent."""
+    from syncup.api.app import app
+    from syncup.db.models import ServiceConnection
+
+    conn = MagicMock(spec=ServiceConnection)
+    conn.sync_status = "ok"
+    mock_db.scalar.return_value = conn
+
+    del app.state.db  # simulate missing factory
+
+    try:
+        resp = sync_client.post("/api/sync/spotify")
+        assert resp.status_code == 500
+        assert resp.json()["error"]["code"] == "INTERNAL_ERROR"
+    finally:
+        app.state.db = MagicMock()  # restore so teardown works
+
+
 def test_sync_invalid_service_returns_404(sync_client: TestClient) -> None:
     resp = sync_client.post("/api/sync/tiktok")
     assert resp.status_code == 404
