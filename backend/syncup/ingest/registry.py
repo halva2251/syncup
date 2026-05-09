@@ -47,6 +47,7 @@ def register_default_clients(settings: Settings) -> None:
     from syncup.ingest.anilist import AniListClient
     from syncup.ingest.lastfm import LastfmClient
     from syncup.ingest.letterboxd import LetterboxdClient
+    from syncup.ingest.rateyourmusic import RateYourMusicClient
     from syncup.ingest.spotify import SpotifyClient
     from syncup.ingest.steam import SteamClient
 
@@ -60,6 +61,7 @@ def register_default_clients(settings: Settings) -> None:
         )
     )
     register(LetterboxdClient())
+    register(RateYourMusicClient())
     if settings.anilist_client_id and settings.anilist_client_secret:
         register(
             AniListClient(
