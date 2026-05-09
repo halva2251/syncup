@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     # ── Token encryption ─────────────────────────────────────────────────────
     # base64-encoded 32-byte key; generate once per environment:
     # python -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
-    syncup_token_encryption_key: str = ""
+    syncup_token_encryption_key: str | None = None
 
     # ── Spotify ───────────────────────────────────────────────────────────────
     spotify_client_id: str
