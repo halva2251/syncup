@@ -519,3 +519,21 @@ def test_rym_import_skips_unrated_rows(
 
     assert resp.status_code == 201
     assert resp.json() == {"imported": 1}
+
+
+def test_rym_import_db_failure_returns_500(
+    connect_client: TestClient, mock_db: MagicMock
+) -> None:
+    import uuid
+
+    mock_db.scalar.return_value = None
+    mock_db.execute.return_value.scalar_one.return_value = uuid.uuid4()
+    mock_db.commit.side_effect = Exception("db exploded")
+
+    resp = connect_client.post(
+        "/api/connect/rateyourmusic/import",
+        files={"file": ("ratings.csv", _RYM_CSV, "text/csv")},
+    )
+
+    assert resp.status_code == 500
+    assert resp.json()["error"]["code"] == "IMPORT_FAILED"
