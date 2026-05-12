@@ -195,7 +195,7 @@ Proportion-based normalization is applied by each client in `fetch_items()`. Log
 
 **Goal:** address 8 CRITICAL and 18 HIGH security/reliability issues found during audit. Gate for Phase 2.1 (ML training).
 
-> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). Branch 2 (fix/ingest-hardening) complete ✅ (2026-05-09). Branch 3 (fix/db-hardening) complete ✅ (2026-05-12). 693 tests passing. Branch 4 pending.
+> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). Branch 2 (fix/ingest-hardening) complete ✅ (2026-05-09). Branch 3 (fix/db-hardening) complete ✅ (2026-05-12). Branch 4 (fix/api-quality) complete ✅ (2026-05-12). 719 tests passing. Phase 1.11 sprint complete — gate for Phase 2.1 (ML training) is now open.
 
 ### Branch 1: fix/security-hardening
 
@@ -253,9 +253,25 @@ Background cleanup jobs, unbounded queries, atomicity, index maintenance.
 | D13 | `UserEmbedding.computed_at`: add `default=_now` for Python-side ORM inserts | ✅ |
 | D14 | IVFFlat index on `user_embeddings` — **deferred to Phase 2.1** (requires trained embeddings) | ⏸ |
 
-### Branch 4: fix/api-quality (pending)
+### Branch 4: fix/api-quality (complete ✅ 2026-05-12)
 
 Sync visibility, response schemas, cursor pagination, input validation, onboarding fixes.
+
+| Item | What | Status |
+|------|------|--------|
+| A1 | `_set_sync_error`: narrow `except Exception` → `except SQLAlchemyError`; add `poll_url` to `SyncTriggeredOut` | ✅ |
+| A2 | `signup`/`login`: add `response_model=AuthOut` for OpenAPI accuracy | ✅ |
+| A3 | Match pagination: replace offset cursor with keyset on `(score DESC, user_b_id ASC)` — stable across cache refreshes | ✅ |
+| A4 | Whitespace strip+validate on `display_name`/`bio`/`discord_handle` (signup, PATCH /me) and obsession `name` | ✅ |
+| A5 | `ObsessionIn.weight`: add `le=10.0` upper bound; `_Category`: add `anime`/`manga`/`community` (matches DB CHECK) | ✅ |
+| A6 | `OverrideIn` and `OverridePatch.boost_multiplier`: add `le=10.0`; remove redundant custom validator | ✅ |
+| A7 | Onboarding `has_taste_data`: real `UserItem` count query (was incorrectly aliased from `has_connection_or_obsessions`) | ✅ |
+| A8 | Onboarding `next_step`: `set_display_name` is now first in the decision chain (before `connect_service`) | ✅ |
+| A9 | `RequestValidationError` handler: structured `{code, message, details}` response; ctx values sanitized for JSON | ✅ |
+| A10 | Spotify OAuth routes moved from `app.py` → `routes/connect.py` (`spotify_auth_router`); URLs unchanged | ✅ |
+| A11 | `lifespan` return type: `AsyncGenerator[None, None]` (removes `# type: ignore`) | ✅ |
+| A12 | `_CONVERTERS`: typed as `dict[tuple[str,str], Callable[[Any], TasteItemOut]]` | ✅ |
+| A13 | `MatchUserOut.model_config`: `ConfigDict(from_attributes=True)` instead of plain dict | ✅ |
 
 ---
 

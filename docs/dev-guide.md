@@ -387,7 +387,9 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Branch 3 (fix/db-hardening) is complete.** All 13 active items (D1–D13) merged: match_cache hourly cleanup task + `idx_match_cache_computed_at`, `_load_cached_matches` DB-side LIMIT+1/OFFSET pagination, `GET /api/me/taste` SQL window function (`ROW_NUMBER() OVER (PARTITION BY service, item_type)`), dimensions PATCH atomicity fix, four new indexes (D5/D6/D12 + D1), `_refresh_match_cache` phase split (read→compute→write), `require_auth` single JOIN query, `User.updated_at` onupdate removed, `UserItem.fetched_at` and `UserEmbedding.computed_at` Python defaults added. D14 (IVFFlat) deferred to Phase 2.1. 693 tests passing.
 
-**Next: Branch 4 (fix/api-quality)** — sync visibility, response schemas, cursor pagination, input validation, onboarding fixes. See `docs/roadmap.md §Phase 1.11 Branch 4` for the full item list.
+**Branch 4 (fix/api-quality) is complete.** All 13 items (A1–A13) merged: sync `poll_url`, match keyset cursor `(score, user_b_id)`, whitespace validators, obsession weight + category bounds, override boost bound, onboarding `has_taste_data` real UserItem query + `next_step` ordering, structured 422 response, Spotify routes moved to `connect.py`, type annotation fixes. 719 tests passing.
+
+**Phase 1.11 backend hardening sprint is complete.** Next: Phase 2.1 — Item2Vec training on public datasets (Steam reviews, Million Song Dataset), user embedding builder, and match endpoint. See `docs/roadmap.md §Phase 2` for the full plan.
 
 ---
 
