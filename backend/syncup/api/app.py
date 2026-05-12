@@ -1,6 +1,7 @@
 """FastAPI application — entry point for the SyncUp backend."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -40,6 +41,7 @@ from syncup.db.models import ServiceConnection  # noqa: E402
 from syncup.db.session import get_db, sessionmaker_for  # noqa: E402
 from syncup.exceptions import SyncUpError  # noqa: E402
 from syncup.ingest.crypto import encrypt_token  # noqa: E402
+from syncup.api.routes.matches import _cleanup_stale_match_cache  # noqa: E402
 from syncup.ingest.registry import close_all as close_all_clients  # noqa: E402
 from syncup.ingest.registry import register_default_clients  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
@@ -119,8 +121,16 @@ async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
         redirect_uri=settings.spotify_redirect_uri,
     )
     register_default_clients(settings)
+
+    async def _cleanup_loop() -> None:
+        while True:
+            await asyncio.sleep(3600)
+            _cleanup_stale_match_cache(app.state.db)
+
+    cleanup_task = asyncio.create_task(_cleanup_loop())
     logger.info("SyncUp API started (debug=%s)", settings.debug)
     yield
+    cleanup_task.cancel()
     app.state.spotify.close()
     close_all_clients()
     logger.info("SyncUp API shut down")

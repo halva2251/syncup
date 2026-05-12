@@ -10,7 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
@@ -237,13 +237,19 @@ def require_auth(
     if not token:
         raise SyncUpError("UNAUTHORIZED", "Authentication required", 401)
 
-    session = db.get(SessionRow, token)
-    if session is None or session.expires_at < datetime.now(UTC):
-        raise SyncUpError("UNAUTHORIZED", "Session expired or invalid", 401)
+    user = db.execute(
+        select(User)
+        .join(SessionRow, SessionRow.user_id == User.id)
+        .where(
+            and_(
+                SessionRow.token == token,
+                SessionRow.expires_at >= datetime.now(UTC),
+            )
+        )
+    ).scalar_one_or_none()
 
-    user = db.get(User, session.user_id)
     if user is None:
-        raise SyncUpError("UNAUTHORIZED", "User not found", 401)
+        raise SyncUpError("UNAUTHORIZED", "Session expired or invalid", 401)
 
     return user
 
