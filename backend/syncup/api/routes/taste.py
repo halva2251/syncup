@@ -232,7 +232,9 @@ def get_taste(
     )
 
     taste_rows = db.execute(
-        select(subq).where(subq.c.rn <= _TASTE_TOP_N)
+        select(subq)
+        .where(subq.c.rn <= _TASTE_TOP_N)
+        .order_by(subq.c.engagement_score.desc())
     ).all()
 
     groups: defaultdict[tuple[str, str], list] = defaultdict(list)

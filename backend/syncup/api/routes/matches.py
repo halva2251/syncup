@@ -320,15 +320,14 @@ def get_matches(
     offset = _decode_cursor(cursor)
     page, has_more = _load_cached_matches(user.id, db, limit=limit, offset=offset)
 
-    if offset == 0 and not page:
-        # No cached matches yet — kick off a background refresh and return empty.
+    if not page:
+        # Empty page means either no cache or the cache expired mid-session.
+        # Always schedule a background refresh so the client gets fresh results
+        # on the next request, regardless of which page they were on.
         background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
         return MatchListOut(items=[], next_cursor=None)
 
     next_cursor = _encode_cursor(offset + limit) if has_more else None
-
-    if not page:
-        return MatchListOut(items=[], next_cursor=None)
 
     other_user_ids = [
         row.user_b_id if row.user_a_id == user.id else row.user_a_id for row in page

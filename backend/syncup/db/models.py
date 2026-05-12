@@ -27,6 +27,7 @@ from sqlalchemy import (
     UniqueConstraint,
     desc,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -171,7 +172,7 @@ class ServiceConnection(Base):
         Index(  # D12 — partial index for background job queries on active/errored syncs
             "idx_sync_status",
             "sync_status",
-            postgresql_where="sync_status IN ('syncing', 'error')",
+            postgresql_where=text("sync_status IN ('syncing', 'error')"),
         ),
     )
 
@@ -315,7 +316,7 @@ class ManualObsession(Base):
         Index(  # D5 — item_id FK lookups only needed when item_id IS NOT NULL
             "idx_obsessions_item",
             "item_id",
-            postgresql_where="item_id IS NOT NULL",
+            postgresql_where=text("item_id IS NOT NULL"),
         ),
     )
 

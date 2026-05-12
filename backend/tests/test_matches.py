@@ -239,10 +239,26 @@ def test_get_matches_triggers_refresh_on_cache_miss(
     match_client: tuple[TestClient, User],
 ) -> None:
     client, _ = match_client
-    # Cache miss (offset=0, empty page) → schedule background refresh and return empty.
+    # Any empty page (offset=0 or mid-session expiry) triggers a background refresh.
     with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
          patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
         resp = client.get("/api/matches")
+
+    mock_refresh.assert_called_once()
+    assert resp.json() == {"items": [], "next_cursor": None}
+
+
+def test_get_matches_triggers_refresh_on_deep_page_cache_expiry(
+    match_client: tuple[TestClient, User],
+) -> None:
+    """Empty page at offset>0 (cache expired mid-session) also schedules a refresh."""
+    import base64
+
+    client, _ = match_client
+    deep_cursor = base64.b64encode(b"40").decode()
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
+         patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
+        resp = client.get(f"/api/matches?cursor={deep_cursor}")
 
     mock_refresh.assert_called_once()
     assert resp.json() == {"items": [], "next_cursor": None}

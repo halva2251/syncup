@@ -123,9 +123,10 @@ async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
     register_default_clients(settings)
 
     async def _cleanup_loop() -> None:
+        loop = asyncio.get_running_loop()
         while True:
             await asyncio.sleep(3600)
-            _cleanup_stale_match_cache(app.state.db)
+            await loop.run_in_executor(None, _cleanup_stale_match_cache, app.state.db)
 
     cleanup_task = asyncio.create_task(_cleanup_loop())
     logger.info("SyncUp API started (debug=%s)", settings.debug)
