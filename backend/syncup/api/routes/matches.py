@@ -67,23 +67,30 @@ class MatchListOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Cursor helpers — keyset on (score DESC, user_b_id ASC)
+# Cursor helpers — keyset on (score DESC, user_a_id ASC, user_b_id ASC)
+#
+# Using both PK columns as tie-breakers guarantees stable pagination regardless
+# of whether the current user is the A-side or B-side of the match pair.
+# A single user_b_id tie-breaker would silently skip rows when the current user
+# appears as user_b_id (multiple rows would share the same user_b_id value).
 # ---------------------------------------------------------------------------
 
 
-def _encode_cursor(score: float, user_b_id: uuid.UUID) -> str:
-    """Encode a keyset cursor as base64(score:user_b_id)."""
-    return base64.b64encode(f"{score:.6f}:{user_b_id}".encode()).decode()
+def _encode_cursor(score: float, user_a_id: uuid.UUID, user_b_id: uuid.UUID) -> str:
+    """Encode a keyset cursor as base64(score:user_a_id:user_b_id)."""
+    return base64.b64encode(f"{score:.6f}:{user_a_id}:{user_b_id}".encode()).decode()
 
 
-def _decode_cursor(cursor: str | None) -> tuple[float, uuid.UUID] | None:
+def _decode_cursor(
+    cursor: str | None,
+) -> tuple[float, uuid.UUID, uuid.UUID] | None:
     """Decode a keyset cursor; return None on any parse error."""
     if cursor is None:
         return None
     try:
         decoded = base64.b64decode(cursor).decode()
-        score_str, uid_str = decoded.split(":", 1)
-        return float(score_str), uuid.UUID(uid_str)
+        score_str, a_str, b_str = decoded.split(":", 2)
+        return float(score_str), uuid.UUID(a_str), uuid.UUID(b_str)
     except Exception:
         logger.warning("Invalid match cursor %r — ignoring", cursor)
         return None
@@ -105,9 +112,10 @@ def _load_cached_matches(
     *,
     limit: int = 20,
     cursor_score: float | None = None,
+    cursor_user_a_id: uuid.UUID | None = None,
     cursor_user_b_id: uuid.UUID | None = None,
 ) -> tuple[list[MatchCache], bool]:
-    """Load a page of cached matches using a keyset cursor on (score DESC, user_b_id ASC).
+    """Load a page of cached matches using a keyset cursor on (score DESC, user_a_id ASC, user_b_id ASC).
 
     Returns (rows, has_more). Fetches limit+1 to detect the next page without COUNT.
     """
@@ -116,12 +124,14 @@ def _load_cached_matches(
         or_(MatchCache.user_a_id == user_id, MatchCache.user_b_id == user_id),
         MatchCache.computed_at >= cutoff,
     ]
-    if cursor_score is not None and cursor_user_b_id is not None:
+    if cursor_score is not None and cursor_user_a_id is not None and cursor_user_b_id is not None:
         base_filter.append(
             or_(
                 MatchCache.score < cursor_score,
+                and_(MatchCache.score == cursor_score, MatchCache.user_a_id > cursor_user_a_id),
                 and_(
                     MatchCache.score == cursor_score,
+                    MatchCache.user_a_id == cursor_user_a_id,
                     MatchCache.user_b_id > cursor_user_b_id,
                 ),
             )
@@ -130,7 +140,7 @@ def _load_cached_matches(
         db.scalars(
             select(MatchCache)
             .where(*base_filter)
-            .order_by(desc(MatchCache.score), MatchCache.user_b_id.asc())
+            .order_by(desc(MatchCache.score), MatchCache.user_a_id.asc(), MatchCache.user_b_id.asc())
             .limit(limit + 1)
         ).all()
     )
@@ -337,7 +347,8 @@ def get_matches(
         db,
         limit=limit,
         cursor_score=cursor_data[0] if cursor_data else None,
-        cursor_user_b_id=cursor_data[1] if cursor_data else None,
+        cursor_user_a_id=cursor_data[1] if cursor_data else None,
+        cursor_user_b_id=cursor_data[2] if cursor_data else None,
     )
 
     if not page:
@@ -348,7 +359,9 @@ def get_matches(
         return MatchListOut(items=[], next_cursor=None)
 
     last_row = page[-1]
-    next_cursor = _encode_cursor(last_row.score, last_row.user_b_id) if has_more else None
+    next_cursor = (
+        _encode_cursor(last_row.score, last_row.user_a_id, last_row.user_b_id) if has_more else None
+    )
 
     other_user_ids = [
         row.user_b_id if row.user_a_id == user.id else row.user_a_id for row in page

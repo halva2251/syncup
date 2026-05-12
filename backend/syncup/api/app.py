@@ -186,11 +186,9 @@ async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONR
 
 @app.exception_handler(RequestValidationError)
 async def _validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    import json as _json
-
     # exc.errors() may contain Python exceptions in ctx fields; round-trip through
     # json.dumps(default=str) to make every value JSON-serializable.
-    details = _json.loads(_json.dumps(exc.errors(), default=str))
+    details = json.loads(json.dumps(exc.errors(), default=str))
     return JSONResponse(
         {
             "error": {
