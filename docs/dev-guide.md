@@ -385,7 +385,9 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Branch 2 (fix/ingest-hardening) is complete.** All 10 ingest items (I1–I10) merged: client error body stripping (AniList/Trakt/Reddit), RequestError hostname scrubbing (Steam/Last.fm/AniList), OAuth token expiry guard for Trakt and Reddit, httpx.Client shutdown via `close_all()`, LastfmClient validators raise `SyncClientError`, Last.fm artist external_id normalized, ligature expansion in `normalize_title()`, sync route db guard, CSV 50K row cap, engagement_score clamp. 681 tests passing.
 
-**Next: Branch 3 (fix/db-hardening)** — match_cache unbounded growth, LIMIT/OFFSET on cached match queries, taste endpoint SQL window function, dimensions PATCH atomicity, missing indexes, long match cache write transaction, require_auth dual lookup, dual updated_at. See `docs/roadmap.md §Phase 1.11 Branch 3` for the full item list.
+**Branch 3 (fix/db-hardening) is complete.** All 13 active items (D1–D13) merged: match_cache hourly cleanup task + `idx_match_cache_computed_at`, `_load_cached_matches` DB-side LIMIT+1/OFFSET pagination, `GET /api/me/taste` SQL window function (`ROW_NUMBER() OVER (PARTITION BY service, item_type)`), dimensions PATCH atomicity fix, four new indexes (D5/D6/D12 + D1), `_refresh_match_cache` phase split (read→compute→write), `require_auth` single JOIN query, `User.updated_at` onupdate removed, `UserItem.fetched_at` and `UserEmbedding.computed_at` Python defaults added. D14 (IVFFlat) deferred to Phase 2.1. 693 tests passing.
+
+**Next: Branch 4 (fix/api-quality)** — sync visibility, response schemas, cursor pagination, input validation, onboarding fixes. See `docs/roadmap.md §Phase 1.11 Branch 4` for the full item list.
 
 ---
 
