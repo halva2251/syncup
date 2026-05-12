@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
 
@@ -34,6 +35,7 @@ _USER_ITEMS_TABLE = UserItem.__table__
 class SyncTriggeredOut(BaseModel):
     status: Literal["syncing"]
     service: str
+    poll_url: str
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +130,7 @@ def _set_sync_error(
             .values(sync_status="error", sync_error=error[:1000])
         )
         session.commit()
-    except Exception:
+    except SQLAlchemyError:
         session.rollback()
         logger.exception(
             "Failed to write sync error status for user %s / %s", user_id, service
@@ -254,4 +256,4 @@ def trigger_sync(
     db_factory: sessionmaker[DbSession] = request.app.state.db
     background_tasks.add_task(_do_sync_generic, db_factory, user.id, service)
 
-    return SyncTriggeredOut(status="syncing", service=service)
+    return SyncTriggeredOut(status="syncing", service=service, poll_url="/api/me")

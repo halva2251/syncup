@@ -571,3 +571,80 @@ def test_get_matches_returns_empty_when_only_user_in_pool(
 
     assert resp.status_code == 200
     assert resp.json() == {"items": [], "next_cursor": None}
+
+
+# ---------------------------------------------------------------------------
+# A3 — keyset cursor on (score, user_b_id)
+# ---------------------------------------------------------------------------
+
+
+def test_cursor_encode_decode_roundtrip() -> None:
+    """A3: keyset cursor encodes (score, user_a_id, user_b_id) and decodes back exactly."""
+    from syncup.api.routes.matches import _decode_cursor, _encode_cursor
+
+    score = 0.854321
+    user_a_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    user_b_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    cursor = _encode_cursor(score, user_a_id, user_b_id)
+    decoded = _decode_cursor(cursor)
+
+    assert decoded is not None
+    decoded_score, decoded_a, decoded_b = decoded
+    assert abs(decoded_score - score) < 1e-5
+    assert decoded_a == user_a_id
+    assert decoded_b == user_b_id
+
+
+def test_cursor_decode_returns_none_for_invalid_cursor() -> None:
+    """A3: invalid cursor string is gracefully ignored (returns None)."""
+    from syncup.api.routes.matches import _decode_cursor
+
+    assert _decode_cursor("not-valid-base64!!") is None
+    assert _decode_cursor(None) is None
+
+
+def test_get_matches_next_cursor_encodes_last_row_position(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """A3: next_cursor encodes (score, user_a_id, user_b_id) of the last returned row."""
+    from syncup.api.routes.matches import _decode_cursor
+
+    client, user = match_client
+    other = _make_user()
+    row = _make_cache_row(user.id, other.id, score=0.75)
+    mock_db.scalars.return_value.all.return_value = [other]
+
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], True)):
+        resp = client.get("/api/matches?limit=1")
+
+    cursor = resp.json()["next_cursor"]
+    assert cursor is not None
+    decoded = _decode_cursor(cursor)
+    assert decoded is not None
+    decoded_score, decoded_a, decoded_b = decoded
+    assert abs(decoded_score - 0.75) < 1e-5
+    assert decoded_a == row.user_a_id
+    assert decoded_b == row.user_b_id
+
+
+def test_get_matches_passes_decoded_cursor_to_load_function(
+    match_client: tuple[TestClient, User],
+) -> None:
+    """A3: cursor from request is decoded and forwarded as cursor_score/cursor_user_a_id/cursor_user_b_id."""
+    import base64
+
+    client, _ = match_client
+    score = 0.75
+    a_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    b_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    cursor_str = base64.b64encode(f"{score:.6f}:{a_id}:{b_id}".encode()).decode()
+
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)) as mock_load, \
+         patch("syncup.api.routes.matches._refresh_match_cache"):
+        client.get(f"/api/matches?cursor={cursor_str}")
+
+    _, kwargs = mock_load.call_args
+    assert kwargs.get("cursor_score") == pytest.approx(score, abs=1e-5)
+    assert kwargs.get("cursor_user_a_id") == a_id
+    assert kwargs.get("cursor_user_b_id") == b_id

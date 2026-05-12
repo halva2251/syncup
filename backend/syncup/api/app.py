@@ -5,43 +5,34 @@ import asyncio
 import json
 import logging
 import os
-import secrets
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
 
-import httpx
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRouter
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session as DbSession
 
 load_dotenv()
 
 from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from syncup.api.routes.connect import router as connect_router  # noqa: E402
+from syncup.api.routes.connect import spotify_auth_router  # noqa: E402
 from syncup.api.routes.me import router as me_router  # noqa: E402
-from syncup.api.routes.matches import router as matches_router  # noqa: E402
+from syncup.api.routes.matches import _cleanup_stale_match_cache, router as matches_router  # noqa: E402
 from syncup.api.routes.onboarding import router as onboarding_router  # noqa: E402
 from syncup.api.routes.obsessions import router as obsessions_router  # noqa: E402
 from syncup.api.routes.dimensions import router as dimensions_router  # noqa: E402
 from syncup.api.routes.overrides import router as overrides_router  # noqa: E402
 from syncup.api.routes.sync import router as sync_router  # noqa: E402
 from syncup.api.routes.taste import router as taste_router  # noqa: E402
-from syncup.auth.router import require_auth  # noqa: E402
 from syncup.auth.router import router as auth_router  # noqa: E402
 from syncup.config import Settings  # noqa: E402
-from syncup.db.models import ServiceConnection  # noqa: E402
-from syncup.db.session import get_db, sessionmaker_for  # noqa: E402
+from syncup.db.session import sessionmaker_for  # noqa: E402
 from syncup.exceptions import SyncUpError  # noqa: E402
-from syncup.ingest.crypto import encrypt_token  # noqa: E402
-from syncup.api.routes.matches import _cleanup_stale_match_cache  # noqa: E402
 from syncup.ingest.registry import close_all as close_all_clients  # noqa: E402
 from syncup.ingest.registry import register_default_clients  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
@@ -99,7 +90,7 @@ def _error_json(code: str, message: str, status_code: int) -> JSONResponse:
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> Any:  # type: ignore[type-arg]
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = Settings()  # type: ignore[call-arg]
 
     if not settings.syncup_token_encryption_key:
@@ -195,7 +186,19 @@ async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONR
 
 @app.exception_handler(RequestValidationError)
 async def _validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    return _error_json("VALIDATION_ERROR", str(exc.errors()), 422)
+    # exc.errors() may contain Python exceptions in ctx fields; round-trip through
+    # json.dumps(default=str) to make every value JSON-serializable.
+    details = json.loads(json.dumps(exc.errors(), default=str))
+    return JSONResponse(
+        {
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Validation failed",
+                "details": details,
+            }
+        },
+        status_code=422,
+    )
 
 
 @app.exception_handler(Exception)
@@ -216,126 +219,11 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/auth/spotify")
-def spotify_auth_start(request: Request) -> RedirectResponse:
-    """Redirect the user to Spotify's authorization page."""
-    settings: Settings = request.app.state.settings
-    client: SpotifyClient = request.app.state.spotify
-    verifier, challenge = client.generate_pkce_pair()
-    state = secrets.token_urlsafe(16)
-
-    redirect_url = client.get_authorize_url(state=state, code_challenge=challenge)
-    response = RedirectResponse(url=redirect_url)
-    _cookie_opts: dict[str, Any] = {
-        "httponly": True,
-        "samesite": "lax",
-        "max_age": 600,
-        "secure": not settings.debug,
-    }
-    response.set_cookie("spotify_state", state, **_cookie_opts)
-    response.set_cookie("spotify_verifier", verifier, **_cookie_opts)
-    return response
-
-
-@router.get("/auth/spotify/callback")
-def spotify_callback(
-    request: Request,
-    code: Annotated[str, Query(min_length=1)],
-    state: Annotated[str, Query(min_length=1)],
-    db: Annotated[DbSession, Depends(get_db)],
-) -> RedirectResponse:
-    """Complete the Spotify OAuth flow.
-
-    Validates PKCE state, requires an authenticated SyncUp session, exchanges
-    the code for tokens, encrypts them, upserts service_connections, and
-    redirects to the frontend.  State/PKCE checks happen before auth so that
-    a state mismatch returns 400 rather than 401.
-    """
-    client: SpotifyClient = request.app.state.spotify
-    settings: Settings = request.app.state.settings
-    cookie_state = request.cookies.get("spotify_state")
-    verifier = request.cookies.get("spotify_verifier")
-
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
-        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch")
-    if not verifier:
-        raise SyncUpError("MISSING_PKCE_VERIFIER", "Missing PKCE verifier")
-
-    # Auth check after PKCE validation so state mismatch errors are still 400.
-    user = require_auth(request=request, db=db)
-
-    try:
-        tokens = client.exchange_code(code=code, code_verifier=verifier)
-        spotify_profile = client.fetch_me(tokens.access_token)
-    except httpx.HTTPStatusError as exc:
-        logger.warning("Spotify token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
-        raise SyncUpError(
-            "SPOTIFY_TOKEN_ERROR",
-            "Spotify token exchange failed — please reconnect",
-            exc.response.status_code,
-        ) from exc
-    except httpx.RequestError as exc:
-        logger.warning("Could not reach Spotify: %s", exc)
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Spotify — please retry", 502) from exc
-
-    spotify_user_id: str | None = spotify_profile.get("id")
-    if not spotify_user_id:
-        raise SyncUpError("SPOTIFY_PROFILE_INVALID", "Spotify profile missing user id", 502)
-    token_expires_at = datetime.now(UTC) + timedelta(seconds=tokens.expires_in)
-    access_enc = encrypt_token(tokens.access_token)
-    refresh_enc = encrypt_token(tokens.refresh_token)
-
-    existing = db.scalar(
-        select(ServiceConnection).where(
-            ServiceConnection.user_id == user.id,
-            ServiceConnection.service == "spotify",
-        )
-    )
-    if existing is not None:
-        existing.external_user_id = spotify_user_id
-        existing.access_token_encrypted = access_enc
-        existing.refresh_token_encrypted = refresh_enc
-        existing.token_expires_at = token_expires_at
-        existing.sync_status = "pending"
-        existing.sync_error = None
-    else:
-        db.add(
-            ServiceConnection(
-                user_id=user.id,
-                service="spotify",
-                external_user_id=spotify_user_id,
-                access_token_encrypted=access_enc,
-                refresh_token_encrypted=refresh_enc,
-                token_expires_at=token_expires_at,
-                sync_status="pending",
-            )
-        )
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        # Race condition: two OAuth callbacks fired simultaneously for the same
-        # user+service. The first one committed; the connection already exists.
-        logger.warning("Spotify upsert race on user %s; connection already exists", user.id)
-
-    logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
-
-    _state_cookie_del_opts = {
-        "httponly": True,
-        "samesite": "lax",
-        "secure": not settings.debug,
-        "path": "/",
-    }
-    response = RedirectResponse("/", status_code=302)
-    response.delete_cookie("spotify_state", **_state_cookie_del_opts)
-    response.delete_cookie("spotify_verifier", **_state_cookie_del_opts)
-    return response
-
-
 app.include_router(router)
 app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(connect_router)
+app.include_router(spotify_auth_router)
 app.include_router(sync_router)
 app.include_router(taste_router)
 app.include_router(obsessions_router)

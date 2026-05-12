@@ -168,21 +168,21 @@ def test_sync_spotify_returns_syncing(sync_client: TestClient, mock_db: MagicMoc
     mock_db.scalar.return_value = _make_connection("spotify")
     resp = sync_client.post("/api/sync/spotify")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "syncing", "service": "spotify"}
+    assert resp.json() == {"status": "syncing", "service": "spotify", "poll_url": "/api/me"}
 
 
 def test_sync_steam_returns_syncing(sync_client: TestClient, mock_db: MagicMock) -> None:
     mock_db.scalar.return_value = _make_connection("steam", "76561198000000000")
     resp = sync_client.post("/api/sync/steam")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "syncing", "service": "steam"}
+    assert resp.json() == {"status": "syncing", "service": "steam", "poll_url": "/api/me"}
 
 
 def test_sync_lastfm_returns_syncing(sync_client: TestClient, mock_db: MagicMock) -> None:
     mock_db.scalar.return_value = _make_connection("lastfm", "halva")
     resp = sync_client.post("/api/sync/lastfm")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "syncing", "service": "lastfm"}
+    assert resp.json() == {"status": "syncing", "service": "lastfm", "poll_url": "/api/me"}
 
 
 def test_sync_sets_syncing_status_and_commits(
@@ -377,10 +377,12 @@ def test_do_sync_generic_set_sync_error_self_failure_is_handled(
     mock_db_factory: MagicMock,
     mock_session: MagicMock,
 ) -> None:
-    """If _set_sync_error's own UPDATE fails, it rolls back and logs without raising."""
+    """If _set_sync_error's own UPDATE fails with SQLAlchemyError, it rolls back silently."""
+    from sqlalchemy.exc import SQLAlchemyError
+
     conn = _make_connection("steam", "76561198000000000")
     mock_session.scalar.return_value = conn
-    mock_session.execute.side_effect = Exception("DB is down")
+    mock_session.execute.side_effect = SQLAlchemyError("DB is down")
     client = MagicMock()
     client.refresh_token.return_value = None
     client.fetch_items.side_effect = httpx.RequestError("timeout")
@@ -520,3 +522,31 @@ def test_do_sync_generic_clamps_engagement_score_below_0(
 
     engagement_score_arg = mock_upsert.call_args.args[3]
     assert engagement_score_arg >= 0.0, f"engagement_score must be clamped, got {engagement_score_arg}"
+
+
+# ---------------------------------------------------------------------------
+# A1 — poll_url in sync response + narrow exception in _set_sync_error
+# ---------------------------------------------------------------------------
+
+
+def test_trigger_sync_response_includes_poll_url(
+    sync_client: TestClient, mock_db: MagicMock
+) -> None:
+    """A1: sync triggered response must include poll_url so clients know where to poll."""
+    mock_db.scalar.return_value = _make_connection("spotify")
+    resp = sync_client.post("/api/sync/spotify")
+    assert resp.status_code == 200
+    assert resp.json()["poll_url"] == "/api/me"
+
+
+def test_set_sync_error_only_catches_sqla_errors() -> None:
+    """A1: _set_sync_error must not swallow non-SQLAlchemy exceptions."""
+    from sqlalchemy.orm import Session as DbSession2
+
+    from syncup.api.routes.sync import _set_sync_error
+
+    session = MagicMock(spec=DbSession2)
+    session.execute.side_effect = RuntimeError("programming bug")
+
+    with pytest.raises(RuntimeError, match="programming bug"):
+        _set_sync_error(session, uuid.uuid4(), "steam", "some error")

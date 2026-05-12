@@ -434,3 +434,33 @@ def test_require_auth_uses_single_db_query(mock_db: MagicMock) -> None:
 
     mock_db.execute.assert_called_once()
     mock_db.get.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# A4 — whitespace validation on display_name
+# ---------------------------------------------------------------------------
+
+
+def test_signup_display_name_whitespace_only_returns_422(
+    auth_client: TestClient, mock_db: MagicMock
+) -> None:
+    """A4: display_name with only whitespace must be rejected."""
+    mock_db.scalar.return_value = None
+    resp = auth_client.post(
+        "/api/auth/signup",
+        json={"email": "a@b.com", "password": "password123", "display_name": "   "},
+    )
+    assert resp.status_code == 422
+
+
+def test_signup_display_name_is_stripped(
+    auth_client: TestClient, mock_db: MagicMock
+) -> None:
+    """A4: leading/trailing whitespace is stripped from display_name."""
+    mock_db.scalar.return_value = None
+    resp = auth_client.post(
+        "/api/auth/signup",
+        json={"email": "a@b.com", "password": "password123", "display_name": "  Alice  "},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["user"]["display_name"] == "Alice"

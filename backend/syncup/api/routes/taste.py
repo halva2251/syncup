@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
@@ -186,7 +187,7 @@ def _to_rateyourmusic_album(row: Any) -> RateYourMusicAlbumOut:
     )
 
 
-_CONVERTERS: dict[tuple[str, str], Any] = {
+_CONVERTERS: dict[tuple[str, str], Callable[[Any], TasteItemOut]] = {
     ("steam", "game"): _to_steam_game,
     ("lastfm", "artist"): _to_lastfm_artist,
     ("lastfm", "track"): _to_lastfm_track,

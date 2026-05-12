@@ -47,7 +47,7 @@ def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None
     )
 
     with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
-        with patch("syncup.api.app.require_auth", return_value=fake_user):
+        with patch("syncup.api.routes.connect.require_auth", return_value=fake_user):
             with TestClient(app, follow_redirects=False) as c:
                 yield c
 
@@ -154,7 +154,7 @@ def test_callback_success_redirects_to_frontend(authed_client: TestClient) -> No
     with (
         patch("syncup.ingest.spotify.SpotifyClient.exchange_code", return_value=_MOCK_TOKENS),
         patch("syncup.ingest.spotify.SpotifyClient.fetch_me", return_value={"id": "spotify-123"}),
-        patch("syncup.api.app.encrypt_token", return_value=b"encrypted"),
+        patch("syncup.api.routes.connect.encrypt_token", return_value=b"encrypted"),
     ):
         auth_resp = authed_client.get("/api/auth/spotify", follow_redirects=False)
         assert auth_resp.status_code in (302, 307)
@@ -171,7 +171,7 @@ def test_callback_success_clears_pkce_cookies(authed_client: TestClient) -> None
     with (
         patch("syncup.ingest.spotify.SpotifyClient.exchange_code", return_value=_MOCK_TOKENS),
         patch("syncup.ingest.spotify.SpotifyClient.fetch_me", return_value={"id": "spotify-123"}),
-        patch("syncup.api.app.encrypt_token", return_value=b"encrypted"),
+        patch("syncup.api.routes.connect.encrypt_token", return_value=b"encrypted"),
     ):
         authed_client.get("/api/auth/spotify", follow_redirects=False)
         state = authed_client.cookies.get("spotify_state")
@@ -207,7 +207,7 @@ def test_callback_encrypts_both_tokens(authed_client: TestClient) -> None:
     with (
         patch("syncup.ingest.spotify.SpotifyClient.exchange_code", return_value=_MOCK_TOKENS),
         patch("syncup.ingest.spotify.SpotifyClient.fetch_me", return_value={"id": "spotify-123"}),
-        patch("syncup.api.app.encrypt_token", return_value=b"encrypted") as enc_mock,
+        patch("syncup.api.routes.connect.encrypt_token", return_value=b"encrypted") as enc_mock,
     ):
         authed_client.get("/api/auth/spotify", follow_redirects=False)
         state = authed_client.cookies.get("spotify_state")
@@ -258,7 +258,7 @@ def test_spotify_callback_uses_compare_digest_for_state_validation(
         called.append((a, b))
         return original(a, b)
 
-    monkeypatch.setattr("syncup.api.app.secrets.compare_digest", spy)
+    monkeypatch.setattr("syncup.api.routes.connect.secrets.compare_digest", spy)
     authed_client.get("/api/auth/spotify", follow_redirects=False)
     state = authed_client.cookies.get("spotify_state")
     authed_client.get(f"/api/auth/spotify/callback?code=c&state={state}")
@@ -411,3 +411,19 @@ def test_settings_session_secret_defaults_to_none(monkeypatch: pytest.MonkeyPatc
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.session_secret is None, "session_secret must default to None, not empty string"
+
+
+# ---------------------------------------------------------------------------
+# A9 — ValidationError response must include structured details, not raw repr
+# ---------------------------------------------------------------------------
+
+
+def test_validation_error_response_has_structured_details(client: TestClient) -> None:
+    """A9: 422 responses must include 'details' array, not raw Python repr string."""
+    resp = client.get("/api/auth/spotify/callback?state=s")  # missing required 'code' param
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["message"] == "Validation failed"
+    assert "details" in body["error"], "422 response must include 'details' field"
+    assert isinstance(body["error"]["details"], list)

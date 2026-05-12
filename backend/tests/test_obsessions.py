@@ -259,3 +259,62 @@ def test_delete_obsession_wrong_user_returns_404(
 
     resp = obs_client.delete(f"/api/me/obsessions/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# A5 — weight upper bound + A4 whitespace + category fix
+# ---------------------------------------------------------------------------
+
+
+def test_create_obsession_weight_above_10_returns_422(obs_client: TestClient) -> None:
+    """A5: weight must not exceed 10.0."""
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={"category": "game", "name": "Disco Elysium", "weight": 10.1},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_obsession_weight_exactly_10_accepted(obs_client: TestClient) -> None:
+    """A5: weight == 10.0 is the maximum allowed value."""
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={"category": "game", "name": "Disco Elysium", "weight": 10.0},
+    )
+    assert resp.status_code == 201
+
+
+def test_create_obsession_whitespace_name_returns_422(obs_client: TestClient) -> None:
+    """A4: name consisting only of whitespace must be rejected."""
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={"category": "game", "name": "   "},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_obsession_anime_category_accepted(obs_client: TestClient) -> None:
+    """Category fix: 'anime' is a valid category (was missing from Literal)."""
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={"category": "anime", "name": "Serial Experiments Lain"},
+    )
+    assert resp.status_code == 201
+
+
+def test_create_obsession_manga_category_accepted(obs_client: TestClient) -> None:
+    """Category fix: 'manga' is a valid category."""
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={"category": "manga", "name": "Berserk"},
+    )
+    assert resp.status_code == 201
+
+
+def test_create_obsession_community_category_accepted(obs_client: TestClient) -> None:
+    """Category fix: 'community' is a valid category."""
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={"category": "community", "name": "r/aboringdystopia"},
+    )
+    assert resp.status_code == 201

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
@@ -40,20 +40,13 @@ class OverrideOut(BaseModel):
 
 class OverrideIn(BaseModel):
     item_id: uuid.UUID
-    boost_multiplier: float = Field(gt=0)
+    boost_multiplier: float = Field(gt=0, le=10.0)
     note: str | None = Field(default=None, max_length=500)
 
 
 class OverridePatch(BaseModel):
-    boost_multiplier: float | None = None
+    boost_multiplier: float | None = Field(default=None, gt=0, le=10.0)
     note: str | None = Field(default=None, max_length=500)
-
-    @field_validator("boost_multiplier")
-    @classmethod
-    def boost_must_be_positive(cls, v: float | None) -> float | None:
-        if v is not None and v <= 0:
-            raise ValueError("boost_multiplier must be > 0")
-        return v
 
 
 @router.get("/overrides", response_model=list[OverrideOut])
