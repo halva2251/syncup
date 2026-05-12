@@ -520,3 +520,31 @@ def test_do_sync_generic_clamps_engagement_score_below_0(
 
     engagement_score_arg = mock_upsert.call_args.args[3]
     assert engagement_score_arg >= 0.0, f"engagement_score must be clamped, got {engagement_score_arg}"
+
+
+# ---------------------------------------------------------------------------
+# A1 — poll_url in sync response + narrow exception in _set_sync_error
+# ---------------------------------------------------------------------------
+
+
+def test_trigger_sync_response_includes_poll_url(
+    sync_client: TestClient, mock_db: MagicMock
+) -> None:
+    """A1: sync triggered response must include poll_url so clients know where to poll."""
+    mock_db.scalar.return_value = _make_connection("spotify")
+    resp = sync_client.post("/api/sync/spotify")
+    assert resp.status_code == 200
+    assert resp.json()["poll_url"] == "/api/me"
+
+
+def test_set_sync_error_only_catches_sqla_errors() -> None:
+    """A1: _set_sync_error must not swallow non-SQLAlchemy exceptions."""
+    from sqlalchemy.orm import Session as DbSession2
+
+    from syncup.api.routes.sync import _set_sync_error
+
+    session = MagicMock(spec=DbSession2)
+    session.execute.side_effect = RuntimeError("programming bug")
+
+    with pytest.raises(RuntimeError, match="programming bug"):
+        _set_sync_error(session, uuid.uuid4(), "steam", "some error")

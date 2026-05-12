@@ -67,6 +67,7 @@ def _make_ob_client(
     user: User,
     ok_connections: int,
     obsessions: int,
+    user_items: int = 0,
 ) -> Generator[TestClient, None, None]:
     """Authenticated client with configurable DB state (counts, not objects)."""
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
@@ -77,6 +78,8 @@ def _make_ob_client(
     from syncup.db.session import get_db
 
     mock_db.scalar.side_effect = _counts(ok_connections, obsessions)
+    # A7: has_taste_data now uses db.execute(...).scalar_one() for real UserItem count
+    mock_db.execute.return_value.scalar_one.return_value = user_items
 
     app.dependency_overrides[get_db] = lambda: mock_db
     app.dependency_overrides[require_auth] = lambda: user
@@ -94,7 +97,7 @@ def ob_client(
 ) -> Generator[TestClient, None, None]:
     """Default authenticated client: no connections, no obsessions, not matchable."""
     yield from _make_ob_client(
-        monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=0
+        monkeypatch, mock_db, _make_user(), ok_connections=0, obsessions=0, user_items=0
     )
 
 
@@ -220,7 +223,7 @@ def test_connection_and_zero_obsessions_is_true(
 
 
 # ---------------------------------------------------------------------------
-# has_taste_data — derived from has_connection_or_obsessions
+# has_taste_data — A7: real UserItem count query (not aliased from connections)
 # ---------------------------------------------------------------------------
 
 
@@ -229,14 +232,26 @@ def test_has_taste_data_false_when_no_data(ob_client: TestClient) -> None:
     assert resp.json()["has_taste_data"] is False
 
 
-def test_has_taste_data_true_when_has_connection(
+def test_has_taste_data_true_when_user_items_exist(
     monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
 ) -> None:
+    """A7: has_taste_data reflects real UserItem count, not connections."""
     for c in _make_ob_client(
-        monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0
+        monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0, user_items=5
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["has_taste_data"] is True
+
+
+def test_has_taste_data_false_when_connection_but_no_synced_items(
+    monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
+) -> None:
+    """A7: connection without synced items → has_taste_data=False."""
+    for c in _make_ob_client(
+        monkeypatch, mock_db, _make_user(), ok_connections=1, obsessions=0, user_items=0
+    ):
+        resp = c.get("/api/onboarding/status")
+        assert resp.json()["has_taste_data"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -297,3 +312,27 @@ def test_next_step_null_when_fully_onboarded(
     ):
         resp = c.get("/api/onboarding/status")
         assert resp.json()["next_step"] is None
+
+
+def test_next_step_set_display_name_when_no_display_name(
+    monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
+) -> None:
+    """A8: set_display_name is the first next_step, before connect_service."""
+    user = _make_user(display_name="")
+    for c in _make_ob_client(
+        monkeypatch, mock_db, user, ok_connections=0, obsessions=0
+    ):
+        resp = c.get("/api/onboarding/status")
+        assert resp.json()["next_step"] == "set_display_name"
+
+
+def test_next_step_connect_service_skips_display_name_when_set(
+    monkeypatch: pytest.MonkeyPatch, mock_db: MagicMock
+) -> None:
+    """A8: when display_name is set, next_step falls through to connect_service."""
+    user = _make_user(display_name="Alice")
+    for c in _make_ob_client(
+        monkeypatch, mock_db, user, ok_connections=0, obsessions=0
+    ):
+        resp = c.get("/api/onboarding/status")
+        assert resp.json()["next_step"] == "connect_service"

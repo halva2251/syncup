@@ -411,3 +411,19 @@ def test_settings_session_secret_defaults_to_none(monkeypatch: pytest.MonkeyPatc
 
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.session_secret is None, "session_secret must default to None, not empty string"
+
+
+# ---------------------------------------------------------------------------
+# A9 — ValidationError response must include structured details, not raw repr
+# ---------------------------------------------------------------------------
+
+
+def test_validation_error_response_has_structured_details(client: TestClient) -> None:
+    """A9: 422 responses must include 'details' array, not raw Python repr string."""
+    resp = client.get("/api/auth/spotify/callback?state=s")  # missing required 'code' param
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    assert body["error"]["message"] == "Validation failed"
+    assert "details" in body["error"], "422 response must include 'details' field"
+    assert isinstance(body["error"]["details"], list)

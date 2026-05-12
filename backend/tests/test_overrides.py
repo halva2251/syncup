@@ -406,3 +406,50 @@ def test_delete_override_wrong_user_returns_404(
 
     resp = ov_client.delete(f"/api/me/overrides/{uuid.uuid4()}")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# A6 — boost_multiplier upper bound (10.0 max)
+# ---------------------------------------------------------------------------
+
+
+def test_create_override_boost_above_10_returns_422(
+    ov_client: TestClient, mock_db: MagicMock
+) -> None:
+    """A6: boost_multiplier must not exceed 10.0 on create."""
+    item = _make_item()
+    mock_db.get.return_value = item
+
+    resp = ov_client.post(
+        "/api/me/overrides",
+        json={"item_id": str(item.id), "boost_multiplier": 10.1},
+    )
+    assert resp.status_code == 422
+
+
+def test_create_override_boost_exactly_10_accepted(
+    ov_client: TestClient, mock_db: MagicMock
+) -> None:
+    """A6: boost_multiplier == 10.0 is the maximum allowed value."""
+    item = _make_item()
+    mock_db.get.return_value = item
+    mock_db.scalar.return_value = None  # no existing override
+
+    resp = ov_client.post(
+        "/api/me/overrides",
+        json={"item_id": str(item.id), "boost_multiplier": 10.0},
+    )
+    assert resp.status_code == 201
+
+
+def test_patch_override_boost_above_10_returns_422(
+    ov_client: TestClient, mock_db: MagicMock
+) -> None:
+    """A6: boost_multiplier must not exceed 10.0 on patch."""
+    ov = _make_override()
+    mock_db.scalar.return_value = ov
+
+    resp = ov_client.patch(
+        f"/api/me/overrides/{ov.id}", json={"boost_multiplier": 10.1}
+    )
+    assert resp.status_code == 422

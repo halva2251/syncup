@@ -293,3 +293,45 @@ def test_patch_me_is_matchable_non_bool_returns_422(
     c, _ = patch_client
     resp = c.patch("/api/me", json={"is_matchable": "yes"})
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# A4 — whitespace validation on string fields
+# ---------------------------------------------------------------------------
+
+
+def test_patch_me_whitespace_display_name_returns_422(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    """A4: display_name of only whitespace must be rejected."""
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"display_name": "   "})
+    assert resp.status_code == 422
+
+
+def test_patch_me_whitespace_bio_returns_422(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    """A4: bio of only whitespace must be rejected (use null to clear it)."""
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"bio": "   "})
+    assert resp.status_code == 422
+
+
+def test_patch_me_whitespace_discord_handle_returns_422(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    """A4: discord_handle of only whitespace must be rejected."""
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"discord_handle": "   "})
+    assert resp.status_code == 422
+
+
+def test_patch_me_display_name_is_stripped(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    """A4: leading/trailing whitespace is stripped from display_name."""
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"display_name": "  Alice  "})
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "Alice"
