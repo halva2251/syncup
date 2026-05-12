@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
@@ -18,13 +18,25 @@ from syncup.limiter import limiter
 
 router = APIRouter(prefix="/api/me", tags=["obsessions"])
 
-_Category = Literal["game", "music", "film", "book", "show", "other"]
+_Category = Literal[
+    "game", "music", "film", "book", "show",
+    "anime", "manga", "community", "other",
+]
 
 
 class ObsessionIn(BaseModel):
     category: _Category
     name: str = Field(min_length=1, max_length=200)
-    weight: float = Field(default=1.0, gt=0)
+    weight: float = Field(default=1.0, gt=0, le=10.0)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError("cannot be blank")
+        return v
 
 
 class ObsessionOut(BaseModel):

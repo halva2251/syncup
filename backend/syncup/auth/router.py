@@ -52,6 +52,15 @@ class SignupRequest(BaseModel):
             return v.strip().lower()
         return v
 
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def strip_display_name(cls, v: object) -> object:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError("cannot be blank")
+        return v
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -78,6 +87,13 @@ class UserOut(BaseModel):
     onboarded: bool
     created_at: datetime
     updated_at: datetime
+
+
+class AuthOut(BaseModel):
+    """Response wrapper for signup and login — needed for OpenAPI docs since these
+    routes return JSONResponse directly to set cookies."""
+
+    user: UserOut
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +125,7 @@ def _set_session_cookie(response: Response, token: str, *, debug: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/signup", status_code=201)
+@router.post("/signup", status_code=201, response_model=AuthOut)
 @limiter.limit("5/minute")
 def signup(
     request: Request,
@@ -157,7 +173,7 @@ def signup(
     return response
 
 
-@router.post("/login")
+@router.post("/login", response_model=AuthOut)
 @limiter.limit("10/minute")
 def login(
     request: Request,

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field, StrictBool
+from pydantic import BaseModel, Field, StrictBool, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
@@ -28,6 +28,17 @@ class ProfilePatch(BaseModel):
     discord_handle: str | None = Field(default=None, max_length=100)
     avatar_url: str | None = Field(default=None, max_length=500)
     is_matchable: StrictBool | None = None
+
+    @field_validator("display_name", "bio", "discord_handle", mode="before")
+    @classmethod
+    def strip_and_validate(cls, v: object) -> object:
+        if v is None:
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError("cannot be blank")
+        return v
 
 
 @router.get("/me", response_model=MeOut)

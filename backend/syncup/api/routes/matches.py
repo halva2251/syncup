@@ -9,8 +9,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
-from pydantic import BaseModel
-from sqlalchemy import delete as sa_delete
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy import and_, delete as sa_delete
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
@@ -39,7 +39,7 @@ _CACHE_MAX_AGE_HOURS = 24
 
 
 class MatchUserOut(BaseModel):
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     display_name: str
@@ -67,22 +67,26 @@ class MatchListOut(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Cursor helpers (simple offset cursor, replaced by ANN in Phase 2)
+# Cursor helpers — keyset on (score DESC, user_b_id ASC)
 # ---------------------------------------------------------------------------
 
 
-def _encode_cursor(offset: int) -> str:
-    return base64.b64encode(str(offset).encode()).decode()
+def _encode_cursor(score: float, user_b_id: uuid.UUID) -> str:
+    """Encode a keyset cursor as base64(score:user_b_id)."""
+    return base64.b64encode(f"{score:.6f}:{user_b_id}".encode()).decode()
 
 
-def _decode_cursor(cursor: str | None) -> int:
+def _decode_cursor(cursor: str | None) -> tuple[float, uuid.UUID] | None:
+    """Decode a keyset cursor; return None on any parse error."""
     if cursor is None:
-        return 0
+        return None
     try:
-        return int(base64.b64decode(cursor).decode())
+        decoded = base64.b64decode(cursor).decode()
+        score_str, uid_str = decoded.split(":", 1)
+        return float(score_str), uuid.UUID(uid_str)
     except Exception:
-        logger.warning("Invalid match cursor %r — resetting to page 0", cursor)
-        return 0
+        logger.warning("Invalid match cursor %r — ignoring", cursor)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -100,24 +104,34 @@ def _load_cached_matches(
     db: DbSession,
     *,
     limit: int = 20,
-    offset: int = 0,
+    cursor_score: float | None = None,
+    cursor_user_b_id: uuid.UUID | None = None,
 ) -> tuple[list[MatchCache], bool]:
-    """Load a page of cached matches. Returns (rows, has_more).
+    """Load a page of cached matches using a keyset cursor on (score DESC, user_b_id ASC).
 
-    Fetches limit+1 rows so the caller can detect whether another page exists
-    without a separate COUNT query.
+    Returns (rows, has_more). Fetches limit+1 to detect the next page without COUNT.
     """
     cutoff = datetime.now(UTC) - timedelta(hours=_CACHE_MAX_AGE_HOURS)
+    base_filter = [
+        or_(MatchCache.user_a_id == user_id, MatchCache.user_b_id == user_id),
+        MatchCache.computed_at >= cutoff,
+    ]
+    if cursor_score is not None and cursor_user_b_id is not None:
+        base_filter.append(
+            or_(
+                MatchCache.score < cursor_score,
+                and_(
+                    MatchCache.score == cursor_score,
+                    MatchCache.user_b_id > cursor_user_b_id,
+                ),
+            )
+        )
     rows = list(
         db.scalars(
             select(MatchCache)
-            .where(
-                or_(MatchCache.user_a_id == user_id, MatchCache.user_b_id == user_id),
-                MatchCache.computed_at >= cutoff,
-            )
-            .order_by(desc(MatchCache.score))
+            .where(*base_filter)
+            .order_by(desc(MatchCache.score), MatchCache.user_b_id.asc())
             .limit(limit + 1)
-            .offset(offset)
         ).all()
     )
     has_more = len(rows) > limit
@@ -317,8 +331,14 @@ def get_matches(
     if not user.is_matchable:
         raise SyncUpError("NOT_MATCHABLE", "Set is_matchable=true before viewing matches", 403)
 
-    offset = _decode_cursor(cursor)
-    page, has_more = _load_cached_matches(user.id, db, limit=limit, offset=offset)
+    cursor_data = _decode_cursor(cursor)
+    page, has_more = _load_cached_matches(
+        user.id,
+        db,
+        limit=limit,
+        cursor_score=cursor_data[0] if cursor_data else None,
+        cursor_user_b_id=cursor_data[1] if cursor_data else None,
+    )
 
     if not page:
         # Empty page means either no cache or the cache expired mid-session.
@@ -327,7 +347,8 @@ def get_matches(
         background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
         return MatchListOut(items=[], next_cursor=None)
 
-    next_cursor = _encode_cursor(offset + limit) if has_more else None
+    last_row = page[-1]
+    next_cursor = _encode_cursor(last_row.score, last_row.user_b_id) if has_more else None
 
     other_user_ids = [
         row.user_b_id if row.user_a_id == user.id else row.user_a_id for row in page

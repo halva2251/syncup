@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import secrets
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Self
 
 import httpx
@@ -27,6 +27,7 @@ from syncup.ingest.crypto import encrypt_token
 from syncup.ingest.lastfm import LastfmClient
 from syncup.ingest.protocol import SyncClientError
 from syncup.ingest.reddit import RedditClient
+from syncup.ingest.spotify import SpotifyClient
 from syncup.ingest.steam import SteamClient
 from syncup.ingest.trakt import TraktClient
 from syncup.limiter import limiter
@@ -34,6 +35,10 @@ from syncup.limiter import limiter
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/connect", tags=["connect"])
+
+# Spotify auth lives under /api/auth (not /api/connect) for legacy URL compatibility.
+# A10: moved here from app.py to keep all service-connection logic in one module.
+spotify_auth_router = APIRouter(prefix="/api/auth", tags=["connect"])
 
 
 # ---------------------------------------------------------------------------
@@ -845,3 +850,120 @@ def import_rateyourmusic(
 
     logger.info("User %s imported %d RateYourMusic albums", user.id, len(raw_items))
     return RateYourMusicImportOut(imported=len(raw_items))
+
+
+# ===========================================================================
+# Spotify auth — A10: moved from app.py; URLs kept at /api/auth/spotify* for
+# backward compatibility.
+# ===========================================================================
+
+
+@spotify_auth_router.get("/spotify")
+def spotify_auth_start(request: Request) -> RedirectResponse:
+    """Redirect the user to Spotify's authorization page."""
+    settings: Settings = request.app.state.settings
+    client: SpotifyClient = request.app.state.spotify
+    verifier, challenge = client.generate_pkce_pair()
+    state = secrets.token_urlsafe(16)
+
+    redirect_url = client.get_authorize_url(state=state, code_challenge=challenge)
+    response = RedirectResponse(url=redirect_url)
+    _cookie_opts: dict[str, Any] = {
+        "httponly": True,
+        "samesite": "lax",
+        "max_age": 600,
+        "secure": not settings.debug,
+    }
+    response.set_cookie("spotify_state", state, **_cookie_opts)
+    response.set_cookie("spotify_verifier", verifier, **_cookie_opts)
+    return response
+
+
+@spotify_auth_router.get("/spotify/callback")
+def spotify_callback(
+    request: Request,
+    code: Annotated[str, Query(min_length=1)],
+    state: Annotated[str, Query(min_length=1)],
+    db: Annotated[DbSession, Depends(get_db)],
+) -> RedirectResponse:
+    """Complete the Spotify OAuth flow."""
+    client: SpotifyClient = request.app.state.spotify
+    settings: Settings = request.app.state.settings
+    cookie_state = request.cookies.get("spotify_state")
+    verifier = request.cookies.get("spotify_verifier")
+
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch")
+    if not verifier:
+        raise SyncUpError("MISSING_PKCE_VERIFIER", "Missing PKCE verifier")
+
+    user = require_auth(request=request, db=db)
+
+    try:
+        tokens = client.exchange_code(code=code, code_verifier=verifier)
+        spotify_profile = client.fetch_me(tokens.access_token)
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "Spotify token exchange failed (status=%s): %s",
+            exc.response.status_code, exc.response.text,
+        )
+        raise SyncUpError(
+            "SPOTIFY_TOKEN_ERROR",
+            "Spotify token exchange failed — please reconnect",
+            exc.response.status_code,
+        ) from exc
+    except httpx.RequestError as exc:
+        logger.warning("Could not reach Spotify: %s", exc)
+        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Spotify — please retry", 502) from exc
+
+    spotify_user_id: str | None = spotify_profile.get("id")
+    if not spotify_user_id:
+        raise SyncUpError("SPOTIFY_PROFILE_INVALID", "Spotify profile missing user id", 502)
+
+    token_expires_at = datetime.now(UTC) + timedelta(seconds=tokens.expires_in)
+    access_enc = encrypt_token(tokens.access_token)
+    refresh_enc = encrypt_token(tokens.refresh_token)
+
+    existing = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == "spotify",
+        )
+    )
+    if existing is not None:
+        existing.external_user_id = spotify_user_id
+        existing.access_token_encrypted = access_enc
+        existing.refresh_token_encrypted = refresh_enc
+        existing.token_expires_at = token_expires_at
+        existing.sync_status = "pending"
+        existing.sync_error = None
+    else:
+        db.add(
+            ServiceConnection(
+                user_id=user.id,
+                service="spotify",
+                external_user_id=spotify_user_id,
+                access_token_encrypted=access_enc,
+                refresh_token_encrypted=refresh_enc,
+                token_expires_at=token_expires_at,
+                sync_status="pending",
+            )
+        )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.warning("Spotify upsert race on user %s; connection already exists", user.id)
+
+    logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
+
+    _state_cookie_del_opts = {
+        "httponly": True,
+        "samesite": "lax",
+        "secure": not settings.debug,
+        "path": "/",
+    }
+    response = RedirectResponse("/", status_code=302)
+    response.delete_cookie("spotify_state", **_state_cookie_del_opts)
+    response.delete_cookie("spotify_verifier", **_state_cookie_del_opts)
+    return response
