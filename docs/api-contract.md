@@ -17,10 +17,15 @@ Routes are marked **Live** (implemented) or **Sketch** (planned, shape may chang
   ```json
   { "error": { "code": "NOT_FOUND", "message": "..." } }
   ```
+  Validation errors (422) include a `details` array:
+  ```json
+  { "error": { "code": "VALIDATION_ERROR", "message": "Validation failed", "details": [...] } }
+  ```
 - Paginated endpoints use cursor pagination:
   ```json
   { "items": [...], "next_cursor": "opaque_string_or_null" }
   ```
+  Match pagination uses a keyset cursor encoding `(score, user_a_id, user_b_id)` — stable across cache refreshes.
 
 ---
 
@@ -33,6 +38,7 @@ Email/password signup.
 { "email": "me@example.com", "password": "...", "display_name": "alex" }
 // res
 { "user": { "id": "...", "email": "...", "display_name": "alex" } }
+// display_name is stripped; whitespace-only → 422
 ```
 
 ### `POST /auth/login`
@@ -168,8 +174,13 @@ OAuth callback for the data connection (distinct from login OAuth callback).
 ### `DELETE /me/connections/{service}`
 Disconnects + purges pulled data for that service.
 
-### `POST /me/connections/{service}/sync`
-Triggers a fresh pull. Returns `{ "status": "syncing" }`; actual work runs in background.
+### `POST /sync/{service}` — Live ✅
+Triggers a fresh pull. Returns immediately; actual work runs in background.
+```json
+// res
+{ "status": "syncing", "service": "spotify", "poll_url": "/api/me" }
+```
+Poll `poll_url` to check `connections[].sync_status` for `"ok"` or `"error"`.
 
 ---
 
@@ -203,7 +214,8 @@ Paginated raw items for a service/type.
 { "category": "book", "name": "Blindsight", "weight": 1.5 }
 // category ∈ game | music | film | book | show | anime | manga | community | other
 // (anime, manga, community added in migration 0007 for AniList and Reddit support)
-// weight defaults to 1.0, must be > 0
+// weight defaults to 1.0, must be > 0 and ≤ 10.0
+// name is stripped of leading/trailing whitespace; blank-after-strip → 422
 ```
 ### `DELETE /me/obsessions/{id}` — Live ✅
 
@@ -213,6 +225,7 @@ Paginated raw items for a service/type.
 // req
 { "item_id": "...", "boost_multiplier": 2.5, "note": "my favourite despite low hours" }
 // item_id must reference an existing items row
+// boost_multiplier must be > 0 and ≤ 10.0
 // duplicate override for same item returns 409
 ```
 ### `PATCH /me/overrides/{id}` — Live ✅ — update `boost_multiplier` or `note`; sending `note: null` clears it
@@ -324,13 +337,14 @@ What the user still needs to do before becoming matchable.
   "has_set_matchable": false,
   "next_step": "connect_service"
 }
+// next_step progression: "set_display_name" → "connect_service" → "set_matchable" → null
 ```
 
-- `has_display_name`: always `true` (NOT NULL at signup)
+- `has_display_name`: `true` when `users.display_name` is non-blank
 - `has_languages`: `true` when `users.languages` is set; skippable — does not block `next_step`
 - `has_connection_or_obsessions`: ≥1 `ok`-status service connection OR ≥3 manual obsessions
-- `has_taste_data`: `true` when the user has taste data to display (derived from `has_connection_or_obsessions`)
-- `next_step`: `"connect_service"` → `"set_matchable"` → `null` (fully onboarded)
+- `has_taste_data`: `true` when the user has ≥1 synced `UserItem` rows (real item count, independent of connections)
+- `next_step`: `"set_display_name"` → `"connect_service"` → `"set_matchable"` → `null` (fully onboarded)
 
 ---
 
