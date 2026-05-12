@@ -195,7 +195,7 @@ Proportion-based normalization is applied by each client in `fetch_items()`. Log
 
 **Goal:** address 8 CRITICAL and 18 HIGH security/reliability issues found during audit. Gate for Phase 2.1 (ML training).
 
-> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). Branch 2 (fix/ingest-hardening) complete ✅ (2026-05-09). 681 tests passing. Branches 3–4 pending.
+> **Status:** Branch 1 (fix/security-hardening) complete ✅ (2026-05-09). Branch 2 (fix/ingest-hardening) complete ✅ (2026-05-09). Branch 3 (fix/db-hardening) complete ✅ (2026-05-12). 693 tests passing. Branch 4 pending.
 
 ### Branch 1: fix/security-hardening
 
@@ -232,9 +232,26 @@ Client error handling, token lifecycle, and ingest robustness.
 | I9 | CSV imports (Letterboxd, RateYourMusic) reject >50,000 rows with 422 FILE_TOO_LARGE | ✅ |
 | I10 | `engagement_score` clamped to [0.0, 1.0] in `_do_sync_generic` before upsert | ✅ |
 
-### Branch 3: fix/db-hardening (pending)
+### Branch 3: fix/db-hardening (complete ✅ 2026-05-12)
 
 Background cleanup jobs, unbounded queries, atomicity, index maintenance.
+
+| Item | What | Status |
+|------|------|--------|
+| D1 | `match_cache` hourly cleanup task + `idx_match_cache_computed_at` index | ✅ |
+| D2 | `_load_cached_matches`: push `LIMIT+1`/`OFFSET` pagination to DB; returns `(rows, has_more)` | ✅ |
+| D3 | `GET /api/me/taste` unbounded query → `ROW_NUMBER() OVER (PARTITION BY service, item_type)` window function | ✅ |
+| D4 | `PATCH /api/me/dimensions` atomicity: wrap `DELETE`+`INSERT` in single `try/except` | ✅ |
+| D5 | `idx_obsessions_item` partial index (`WHERE item_id IS NOT NULL`) | ✅ |
+| D6 | `idx_overrides_item` index on `preference_overrides.item_id` | ✅ |
+| D7 | `_refresh_match_cache` phase split: read → compute (pure Python) → write (short transaction) | ✅ |
+| D8 | `require_auth`: replace 2× `db.get()` with single session–user `JOIN` query | ✅ |
+| D9 | `User.updated_at`: remove `onupdate=func.now()` (DB trigger in migration 0005 owns it) | ✅ |
+| D10 | UUID pair ordering test: `user_a_id < user_b_id` invariant verified | ✅ |
+| D11 | `UserItem.fetched_at`: add `default=_now` for Python-side ORM inserts | ✅ |
+| D12 | `idx_sync_status` partial index (`WHERE sync_status IN ('syncing','error')`) | ✅ |
+| D13 | `UserEmbedding.computed_at`: add `default=_now` for Python-side ORM inserts | ✅ |
+| D14 | IVFFlat index on `user_embeddings` — **deferred to Phase 2.1** (requires trained embeddings) | ⏸ |
 
 ### Branch 4: fix/api-quality (pending)
 

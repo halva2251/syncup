@@ -372,12 +372,12 @@ def test_require_auth_no_cookie_returns_401(mock_db: MagicMock) -> None:
 
 
 def test_require_auth_expired_session_returns_401(mock_db: MagicMock) -> None:
+    """D8: expired session → JOIN with WHERE expires_at >= now() returns None → 401."""
     from syncup.auth.router import require_auth
     from syncup.exceptions import SyncUpError
 
-    expired_session = MagicMock(spec=SessionRow)
-    expired_session.expires_at = datetime.now(UTC) - timedelta(days=1)
-    mock_db.get.return_value = expired_session
+    # After D8: the single JOIN query returns None when session is expired.
+    mock_db.execute.return_value.scalar_one_or_none.return_value = None
 
     mock_request = MagicMock()
     mock_request.cookies.get.return_value = "expired-token"
@@ -389,20 +389,12 @@ def test_require_auth_expired_session_returns_401(mock_db: MagicMock) -> None:
 
 
 def test_require_auth_deleted_user_returns_401(mock_db: MagicMock) -> None:
-    """Orphaned session: token valid but user row was deleted."""
+    """D8: orphaned session (user deleted) → JOIN returns None → 401."""
     from syncup.auth.router import require_auth
     from syncup.exceptions import SyncUpError
 
-    valid_session = MagicMock(spec=SessionRow)
-    valid_session.expires_at = datetime.now(UTC) + timedelta(days=1)
-    valid_session.user_id = uuid.uuid4()
-
-    def _get(model: type, key: object) -> object:
-        if model is SessionRow:
-            return valid_session
-        return None  # user deleted
-
-    mock_db.get.side_effect = _get
+    # After D8: the JOIN returns nothing when the user row no longer exists.
+    mock_db.execute.return_value.scalar_one_or_none.return_value = None
 
     mock_request = MagicMock()
     mock_request.cookies.get.return_value = "valid-token"
@@ -412,3 +404,33 @@ def test_require_auth_deleted_user_returns_401(mock_db: MagicMock) -> None:
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.code == "UNAUTHORIZED"
+
+
+def test_require_auth_valid_session_returns_user(mock_db: MagicMock) -> None:
+    """D8: valid session → single JOIN returns the User object directly."""
+    from syncup.auth.router import require_auth
+
+    user = _make_user()
+    mock_db.execute.return_value.scalar_one_or_none.return_value = user
+
+    mock_request = MagicMock()
+    mock_request.cookies.get.return_value = "valid-token"
+
+    result = require_auth(mock_request, mock_db)
+    assert result is user
+
+
+def test_require_auth_uses_single_db_query(mock_db: MagicMock) -> None:
+    """D8: require_auth makes exactly one DB query (session+user JOIN)."""
+    from syncup.auth.router import require_auth
+
+    user = _make_user()
+    mock_db.execute.return_value.scalar_one_or_none.return_value = user
+
+    mock_request = MagicMock()
+    mock_request.cookies.get.return_value = "valid-token"
+
+    require_auth(mock_request, mock_db)
+
+    mock_db.execute.assert_called_once()
+    mock_db.get.assert_not_called()

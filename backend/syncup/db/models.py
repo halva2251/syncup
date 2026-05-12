@@ -27,6 +27,7 @@ from sqlalchemy import (
     UniqueConstraint,
     desc,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, CITEXT, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -75,7 +76,7 @@ class User(Base):
         nullable=False,
         server_default=func.now(),
         default=_now,
-        onupdate=func.now(),
+        # onupdate intentionally absent — the DB trigger in migration 0005 owns this column.
     )
 
     auth_providers: Mapped[list[AuthProvider]] = relationship(
@@ -168,6 +169,11 @@ class ServiceConnection(Base):
             name="ck_sync_status_values",
         ),
         Index("idx_service_connections_user", "user_id"),
+        Index(  # D12 — partial index for background job queries on active/errored syncs
+            "idx_sync_status",
+            "sync_status",
+            postgresql_where=text("sync_status IN ('syncing', 'error')"),
+        ),
     )
 
 
@@ -237,7 +243,7 @@ class UserItem(Base):
         DateTime(timezone=True), nullable=True
     )
     fetched_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=func.now(), default=_now
     )
 
     user: Mapped[User] = relationship(back_populates="user_items")
@@ -275,6 +281,7 @@ class PreferenceOverride(Base):
         UniqueConstraint("user_id", "item_id"),
         CheckConstraint("boost_multiplier > 0", name="ck_boost_multiplier_positive"),
         Index("idx_overrides_user", "user_id"),
+        Index("idx_overrides_item", "item_id"),  # D6
     )
 
 
@@ -306,6 +313,11 @@ class ManualObsession(Base):
             name="ck_obsession_category_values",
         ),
         Index("idx_obsessions_user", "user_id"),
+        Index(  # D5 — item_id FK lookups only needed when item_id IS NOT NULL
+            "idx_obsessions_item",
+            "item_id",
+            postgresql_where=text("item_id IS NOT NULL"),
+        ),
     )
 
 
@@ -344,7 +356,7 @@ class UserEmbedding(Base):
         Vector(EMBEDDING_DIM), nullable=False
     )
     computed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True), nullable=False, server_default=func.now(), default=_now
     )
 
     user: Mapped[User] = relationship(back_populates="embeddings")
@@ -387,6 +399,7 @@ class MatchCache(Base):
         CheckConstraint("user_a_id < user_b_id", name="ck_match_cache_order"),
         Index("idx_match_cache_a", "user_a_id", desc("score")),
         Index("idx_match_cache_b", "user_b_id", desc("score")),
+        Index("idx_match_cache_computed_at", "computed_at"),  # D1 — cleanup job range scan
     )
 
 

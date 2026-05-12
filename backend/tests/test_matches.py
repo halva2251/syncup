@@ -167,7 +167,7 @@ def test_get_matches_returns_empty_list_when_no_matches(
     match_client: tuple[TestClient, User],
 ) -> None:
     client, _ = match_client
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[]), \
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
          patch("syncup.api.routes.matches._refresh_match_cache"):
         resp = client.get("/api/matches")
     assert resp.status_code == 200
@@ -183,7 +183,7 @@ def test_get_matches_returns_match_shape(
     row = _make_cache_row(user.id, other.id, score=0.75)
     mock_db.scalars.return_value.all.return_value = [other]
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[row]):
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], False)):
         resp = client.get("/api/matches")
 
     assert resp.status_code == 200
@@ -207,7 +207,7 @@ def test_get_matches_shared_highlights_in_response(
     row = _make_cache_row(user.id, other.id)
     mock_db.scalars.return_value.all.return_value = [other]
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[row]):
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], False)):
         resp = client.get("/api/matches")
 
     highlights = resp.json()["items"][0]["shared_highlights"]
@@ -223,7 +223,7 @@ def test_get_matches_does_not_trigger_refresh_on_cache_hit(
     row = _make_cache_row(user.id, other.id)
     mock_db.scalars.return_value.all.return_value = [other]
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[row]), \
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], False)), \
          patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
         client.get("/api/matches")
 
@@ -239,10 +239,26 @@ def test_get_matches_triggers_refresh_on_cache_miss(
     match_client: tuple[TestClient, User],
 ) -> None:
     client, _ = match_client
-    # Cache miss → schedule background refresh and return empty immediately.
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[]), \
+    # Any empty page (offset=0 or mid-session expiry) triggers a background refresh.
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
          patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
         resp = client.get("/api/matches")
+
+    mock_refresh.assert_called_once()
+    assert resp.json() == {"items": [], "next_cursor": None}
+
+
+def test_get_matches_triggers_refresh_on_deep_page_cache_expiry(
+    match_client: tuple[TestClient, User],
+) -> None:
+    """Empty page at offset>0 (cache expired mid-session) also schedules a refresh."""
+    import base64
+
+    client, _ = match_client
+    deep_cursor = base64.b64encode(b"40").decode()
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
+         patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
+        resp = client.get(f"/api/matches?cursor={deep_cursor}")
 
     mock_refresh.assert_called_once()
     assert resp.json() == {"items": [], "next_cursor": None}
@@ -262,7 +278,8 @@ def test_get_matches_respects_limit(
     rows = [_make_cache_row(user.id, o.id, score=0.9 - i * 0.1) for i, o in enumerate(others)]
     mock_db.scalars.return_value.all.return_value = others[:2]
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=rows):
+    # has_more=True means there are rows beyond what was returned
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=(rows[:2], True)):
         resp = client.get("/api/matches?limit=2")
 
     assert resp.status_code == 200
@@ -278,12 +295,13 @@ def test_get_matches_cursor_advances_page(
     others = [_make_user(display_name=f"User {i}") for i in range(4)]
     rows = [_make_cache_row(user.id, o.id, score=0.9 - i * 0.1) for i, o in enumerate(others)]
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=rows):
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=(rows[:2], True)):
         mock_db.scalars.return_value.all.return_value = others[:2]
         first_resp = client.get("/api/matches?limit=2")
         cursor = first_resp.json()["next_cursor"]
         assert cursor is not None
 
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=(rows[2:], False)):
         mock_db.scalars.return_value.all.return_value = others[2:]
         resp = client.get(f"/api/matches?limit=2&cursor={cursor}")
 
@@ -300,7 +318,7 @@ def test_get_matches_no_next_cursor_on_last_page(
     row = _make_cache_row(user.id, other.id)
     mock_db.scalars.return_value.all.return_value = [other]
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[row]):
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], False)):
         resp = client.get("/api/matches?limit=20")
 
     assert resp.json()["next_cursor"] is None
@@ -363,21 +381,22 @@ def test_recompute_invalidates_cache_and_returns_204(
 
 
 def test_load_cached_matches_queries_db_with_cutoff() -> None:
-    """_load_cached_matches delegates the staleness filter to the DB."""
+    """D2: _load_cached_matches returns (rows, has_more) tuple."""
     from syncup.api.routes.matches import _load_cached_matches
 
     user_id = uuid.uuid4()
     mock_db = MagicMock(spec=DbSession)
     mock_db.scalars.return_value.all.return_value = []
 
-    result = _load_cached_matches(user_id, mock_db)
+    rows, has_more = _load_cached_matches(user_id, mock_db)
 
-    assert result == []
+    assert rows == []
+    assert has_more is False
     mock_db.scalars.assert_called_once()
 
 
 def test_load_cached_matches_returns_rows_from_db() -> None:
-    """_load_cached_matches returns whatever the DB gives back."""
+    """D2: _load_cached_matches returns the rows and has_more flag."""
     from syncup.api.routes.matches import _load_cached_matches
 
     user_id = uuid.uuid4()
@@ -385,9 +404,154 @@ def test_load_cached_matches_returns_rows_from_db() -> None:
     mock_db = MagicMock(spec=DbSession)
     mock_db.scalars.return_value.all.return_value = [row]
 
-    result = _load_cached_matches(user_id, mock_db)
+    rows, has_more = _load_cached_matches(user_id, mock_db)
 
-    assert result == [row]
+    assert rows == [row]
+    assert has_more is False
+
+
+def test_load_cached_matches_has_more_true_when_extra_row() -> None:
+    """D2: has_more=True when DB returned more rows than the limit."""
+    from syncup.api.routes.matches import _load_cached_matches
+
+    user_id = uuid.uuid4()
+    # When limit=2 the function fetches 3 (limit+1); if 3 rows come back → has_more=True
+    rows = [_make_cache_row(user_id, uuid.uuid4()) for _ in range(3)]
+    mock_db = MagicMock(spec=DbSession)
+    mock_db.scalars.return_value.all.return_value = rows
+
+    result_rows, has_more = _load_cached_matches(user_id, mock_db, limit=2)
+
+    assert len(result_rows) == 2  # trimmed to limit
+    assert has_more is True
+
+
+def test_load_cached_matches_has_more_false_on_last_page() -> None:
+    """D2: has_more=False when DB returned fewer rows than limit+1."""
+    from syncup.api.routes.matches import _load_cached_matches
+
+    user_id = uuid.uuid4()
+    rows = [_make_cache_row(user_id, uuid.uuid4()) for _ in range(2)]
+    mock_db = MagicMock(spec=DbSession)
+    mock_db.scalars.return_value.all.return_value = rows
+
+    result_rows, has_more = _load_cached_matches(user_id, mock_db, limit=5)
+
+    assert len(result_rows) == 2
+    assert has_more is False
+
+
+# ---------------------------------------------------------------------------
+# D7 — _refresh_match_cache phase split
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_match_cache_always_closes_read_session() -> None:
+    """D7: the read session is always closed, even when no matchable users exist."""
+    from syncup.api.routes.matches import _refresh_match_cache
+
+    factory = MagicMock()
+    db = MagicMock(spec=DbSession)
+    factory.return_value = db
+    db.scalars.return_value.all.return_value = []  # no matchable users
+
+    _refresh_match_cache(factory, uuid.uuid4())
+
+    db.close.assert_called()
+
+
+def test_refresh_match_cache_uses_separate_write_session() -> None:
+    """D7: factory() is called twice — once for read, once for write."""
+    from syncup.api.routes.matches import _refresh_match_cache
+
+    user_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    item_id = uuid.uuid4()
+
+    read_db = MagicMock(spec=DbSession)
+    write_db = MagicMock(spec=DbSession)
+
+    sessions: list[MagicMock] = [read_db, write_db]
+    factory = MagicMock(side_effect=sessions)
+
+    # Read-phase data: two matchable users who share an item
+    read_db.scalars.return_value.all.return_value = [user_id, other_id]
+
+    r1, r2 = MagicMock(), MagicMock()
+    r1.user_id, r1.item_id, r1.service, r1.name = user_id, item_id, "steam", "CS2"
+    r2.user_id, r2.item_id, r2.service, r2.name = other_id, item_id, "steam", "CS2"
+
+    pop = MagicMock()
+    pop.item_id, pop.pop = item_id, 2
+
+    read_db.execute.return_value.all.side_effect = [[r1, r2], [pop]]
+
+    _refresh_match_cache(factory, user_id)
+
+    assert factory.call_count == 2  # read session + write session
+    read_db.close.assert_called()
+    write_db.commit.assert_called()
+    write_db.close.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# D10 — UUID pair ordering invariant
+# ---------------------------------------------------------------------------
+
+
+def test_match_cache_uuid_pair_always_has_a_less_than_b() -> None:
+    """D10: _refresh_match_cache always stores user_a_id < user_b_id in MatchCache."""
+    from syncup.api.routes.matches import _refresh_match_cache
+
+    # user_id > other_id — the function must swap them
+    user_id = uuid.UUID("ffffffff-ffff-ffff-ffff-000000000001")
+    other_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    assert other_id < user_id  # sanity check for the test setup
+    item_id = uuid.uuid4()
+
+    read_db = MagicMock(spec=DbSession)
+    write_db = MagicMock(spec=DbSession)
+    factory = MagicMock(side_effect=[read_db, write_db])
+
+    read_db.scalars.return_value.all.return_value = [user_id, other_id]
+
+    r1, r2 = MagicMock(), MagicMock()
+    r1.user_id, r1.item_id, r1.service, r1.name = user_id, item_id, "steam", "CS2"
+    r2.user_id, r2.item_id, r2.service, r2.name = other_id, item_id, "steam", "CS2"
+
+    pop = MagicMock()
+    pop.item_id, pop.pop = item_id, 2
+
+    read_db.execute.return_value.all.side_effect = [[r1, r2], [pop]]
+
+    _refresh_match_cache(factory, user_id)
+
+    write_db.merge.assert_called_once()
+    merged_row = write_db.merge.call_args[0][0]
+    assert merged_row.user_a_id < merged_row.user_b_id, (
+        f"Expected user_a_id < user_b_id but got "
+        f"{merged_row.user_a_id} >= {merged_row.user_b_id}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# D1 — match_cache cleanup task
+# ---------------------------------------------------------------------------
+
+
+def test_cleanup_stale_match_cache_deletes_old_rows() -> None:
+    """D1: _cleanup_stale_match_cache executes a DELETE and commits."""
+    from syncup.api.routes.matches import _cleanup_stale_match_cache
+
+    factory = MagicMock()
+    db = MagicMock(spec=DbSession)
+    factory.return_value = db
+
+    _cleanup_stale_match_cache(factory)
+
+    db.execute.assert_called_once()
+    db.commit.assert_called_once()
+    db.close.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -400,8 +564,8 @@ def test_get_matches_returns_empty_when_only_user_in_pool(
 ) -> None:
     """When the requesting user is the only matchable user, return empty gracefully."""
     client, _ = match_client
-    # Cache miss triggers refresh; refresh finds no other users; second load returns empty.
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=[]), \
+    # Cache miss (empty first page at offset 0) → triggers refresh, returns empty.
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
          patch("syncup.api.routes.matches._refresh_match_cache"):
         resp = client.get("/api/matches")
 

@@ -275,3 +275,20 @@ def test_patch_dimensions_commit_failure_returns_500(
     assert resp.status_code == 500
     assert resp.json()["error"]["code"] == "INTERNAL_ERROR"
     mock_db.rollback.assert_called_once()
+
+
+def test_patch_dimensions_execute_failure_triggers_rollback(
+    dim_client: TestClient, mock_db: MagicMock
+) -> None:
+    """D4: SQLAlchemyError on DELETE must roll back and return 500."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    mock_db.execute.side_effect = SQLAlchemyError("lock timeout")
+
+    resp = dim_client.patch(
+        "/api/me/dimensions",
+        json={"weights": {"steam": 1.0}},
+    )
+    assert resp.status_code == 500
+    assert resp.json()["error"]["code"] == "INTERNAL_ERROR"
+    mock_db.rollback.assert_called_once()

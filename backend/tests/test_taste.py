@@ -329,11 +329,13 @@ def test_taste_items_ordered_by_score_descending(
 def test_taste_limits_to_top_20_per_item_type(
     taste_client: TestClient, mock_db: MagicMock
 ) -> None:
+    # D3: SQL ROW_NUMBER() OVER (...) caps rows before Python sees them.
+    # The mock returns exactly 20 rows (simulating what the window function emits).
     rows = [
         _taste_row(
             "steam", "game", f"Game {i}", external_id=str(i), engagement_score=1.0 - i * 0.01
         )
-        for i in range(25)
+        for i in range(20)
     ]
     _set_execute_results(mock_db, rows)
 
@@ -345,17 +347,19 @@ def test_taste_limits_to_top_20_per_item_type(
 def test_taste_top_20_limit_is_per_group_not_global(
     taste_client: TestClient, mock_db: MagicMock
 ) -> None:
+    # D3: each partition (steam/game, spotify/artist) gets its own ROW_NUMBER() window.
+    # Mock returns exactly 20 per group as the SQL would.
     steam_rows = [
         _taste_row(
             "steam", "game", f"Game {i}", external_id=f"g{i}", engagement_score=1.0 - i * 0.01
         )
-        for i in range(25)
+        for i in range(20)
     ]
     spotify_rows = [
         _taste_row(
             "spotify", "artist", f"Artist {i}", external_id=f"a{i}", engagement_score=0.5 - i * 0.01
         )
-        for i in range(25)
+        for i in range(20)
     ]
     _set_execute_results(mock_db, steam_rows + spotify_rows)
 

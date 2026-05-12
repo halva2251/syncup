@@ -71,13 +71,12 @@ def update_dimensions(
 ) -> DimensionWeightsOut:
     normalised = _normalise(body.weights)
 
-    db.execute(
-        delete(UserDimensionWeight).where(UserDimensionWeight.user_id == user.id)
-    )
-    for service, weight in normalised.items():
-        db.add(UserDimensionWeight(user_id=user.id, service=service, weight=weight))
-
     try:
+        db.execute(
+            delete(UserDimensionWeight).where(UserDimensionWeight.user_id == user.id)
+        )
+        for service, weight in normalised.items():
+            db.add(UserDimensionWeight(user_id=user.id, service=service, weight=weight))
         db.commit()
     except SQLAlchemyError as exc:
         db.rollback()

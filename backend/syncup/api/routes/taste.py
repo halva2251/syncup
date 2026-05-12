@@ -7,7 +7,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.auth.router import RequireAuth
@@ -210,7 +210,12 @@ def get_taste(
     user: RequireAuth,
 ) -> TasteOut:
     """Return the authenticated user's aggregated taste profile."""
-    taste_rows = db.execute(
+    rn = func.row_number().over(
+        partition_by=[Item.service, Item.item_type],
+        order_by=UserItem.engagement_score.desc(),
+    ).label("rn")
+
+    subq = (
         select(
             UserItem.engagement_score,
             UserItem.raw_value,
@@ -219,18 +224,22 @@ def get_taste(
             Item.item_type,
             Item.name,
             Item.meta,
+            rn,
         )
         .join(Item, UserItem.item_id == Item.id)
         .where(UserItem.user_id == user.id)
-        .order_by(UserItem.engagement_score.desc())
+        .subquery()
+    )
+
+    taste_rows = db.execute(
+        select(subq)
+        .where(subq.c.rn <= _TASTE_TOP_N)
+        .order_by(subq.c.engagement_score.desc())
     ).all()
 
-    # Collect top-N per (service, item_type); global DESC order preserves per-group ordering.
     groups: defaultdict[tuple[str, str], list] = defaultdict(list)
     for row in taste_rows:
-        key = (row.service, row.item_type)
-        if len(groups[key]) < _TASTE_TOP_N:
-            groups[key].append(row)
+        groups[(row.service, row.item_type)].append(row)
 
     def _build(svc: str, itype: str) -> list:
         converter = _CONVERTERS.get((svc, itype))
