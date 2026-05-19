@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     try:
         validate_key()
-    except ValueError as exc:
+    except (ValueError, KeyError) as exc:
         raise RuntimeError(f"Invalid SYNCUP_TOKEN_ENCRYPTION_KEY: {exc}") from exc
 
     app.state.settings = settings

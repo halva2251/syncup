@@ -50,12 +50,14 @@ def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None
 
     # Override both: DI system (for routes using `user: RequireAuth`) and
     # module-level name (for routes calling require_auth(request=..., db=...) directly).
-    app.dependency_overrides[require_auth] = lambda: fake_user
-    with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
-        with patch("syncup.api.routes.connect.require_auth", return_value=fake_user):
-            with TestClient(app, follow_redirects=False) as c:
-                yield c
-    app.dependency_overrides.pop(require_auth, None)
+    try:
+        app.dependency_overrides[require_auth] = lambda: fake_user
+        with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
+            with patch("syncup.api.routes.connect.require_auth", return_value=fake_user):
+                with TestClient(app, follow_redirects=False) as c:
+                    yield c
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
 
 
 # ---------------------------------------------------------------------------
@@ -103,11 +105,13 @@ def spotify_authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClie
         updated_at=now,
     )
 
-    app.dependency_overrides[require_auth] = lambda: fake_user
-    with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
-        with TestClient(app, follow_redirects=False) as c:
-            yield c
-    app.dependency_overrides.pop(require_auth, None)
+    try:
+        app.dependency_overrides[require_auth] = lambda: fake_user
+        with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
+            with TestClient(app, follow_redirects=False) as c:
+                yield c
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
 
 
 # H1: unauthenticated requests must be rejected
