@@ -389,6 +389,8 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Branch 4 (fix/api-quality) is complete.** All 13 items (A1–A13) merged: sync `poll_url`, match keyset cursor `(score, user_b_id)`, whitespace validators, obsession weight + category bounds, override boost bound, onboarding `has_taste_data` real UserItem query + `next_step` ordering, structured 422 response, Spotify routes moved to `connect.py`, type annotation fixes. 719 tests passing.
 
+**OAuth follow-up (fix/oauth-security-h1-h2-h3) is complete.** Three HIGH issues from post-Phase-1.11 oauth-security-reviewer audit: H1 — `GET /api/auth/spotify` now requires `RequireAuth` + `@limiter.limit("10/minute")` (was missing both, unlike every other OAuth start route); H2 — `validate_key()` added to `crypto.py` and called in `lifespan`, so a wrong-length encryption key raises `RuntimeError` at startup rather than on the first token operation; H3 — `anilist_oauth_callback` `SyncClientError` handler now uses a fixed message instead of `str(exc)`, preventing GraphQL error details from reaching API consumers. 722 tests passing.
+
 **Phase 1.11 backend hardening sprint is complete.** Next: Phase 2.1 — Item2Vec training on public datasets (Steam reviews, Million Song Dataset), user embedding builder, and match endpoint. See `docs/roadmap.md §Phase 2` for the full plan.
 
 ---

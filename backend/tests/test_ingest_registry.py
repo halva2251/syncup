@@ -1,4 +1,5 @@
 """Tests for ServiceRegistry."""
+
 from __future__ import annotations
 
 from typing import ClassVar
@@ -146,7 +147,9 @@ def test_lifespan_shutdown_calls_close_all(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test")
     monkeypatch.setenv("DEBUG", "true")
-    monkeypatch.setenv("SYNCUP_TOKEN_ENCRYPTION_KEY", "dGVzdGtleXRlc3RrZXl0ZXN0a2V5dGVzdA==")
+    monkeypatch.setenv(
+        "SYNCUP_TOKEN_ENCRYPTION_KEY", "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
+    )
 
     from syncup.api.app import app
 

@@ -1,4 +1,5 @@
 """Service connection routes — OAuth flows and CSV imports for all supported platforms."""
+
 from __future__ import annotations
 
 import logging
@@ -140,11 +141,17 @@ def connect_steam(
     except (SyncClientError, ValueError) as exc:
         raise SyncUpError("STEAM_USER_NOT_FOUND", str(exc), 404) from exc
     except httpx.HTTPStatusError as exc:
-        logger.warning("Steam API error (status=%s): %s", exc.response.status_code, exc.response.text)
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Steam returned an error — please retry", 502) from exc
+        logger.warning(
+            "Steam API error (status=%s): %s", exc.response.status_code, exc.response.text
+        )
+        raise SyncUpError(
+            "UPSTREAM_UNAVAILABLE", "Steam returned an error — please retry", 502
+        ) from exc
     except httpx.RequestError as exc:
         logger.warning("Steam network error: %s", exc)
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Steam — please retry", 502) from exc
+        raise SyncUpError(
+            "UPSTREAM_UNAVAILABLE", "Could not reach Steam — please retry", 502
+        ) from exc
 
     conn = _upsert_connection(db, user.id, "steam", steam_id)
     logger.info("User %s connected Steam (steam_id=%s)", user.id, steam_id)
@@ -168,11 +175,17 @@ def connect_lastfm(
     except (SyncClientError, ValueError) as exc:
         raise SyncUpError("LASTFM_USER_NOT_FOUND", str(exc), 404) from exc
     except httpx.HTTPStatusError as exc:
-        logger.warning("Last.fm API error (status=%s): %s", exc.response.status_code, exc.response.text)
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Last.fm returned an error — please retry", 502) from exc
+        logger.warning(
+            "Last.fm API error (status=%s): %s", exc.response.status_code, exc.response.text
+        )
+        raise SyncUpError(
+            "UPSTREAM_UNAVAILABLE", "Last.fm returned an error — please retry", 502
+        ) from exc
     except httpx.RequestError as exc:
         logger.warning("Last.fm network error: %s", exc)
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Last.fm — please retry", 502) from exc
+        raise SyncUpError(
+            "UPSTREAM_UNAVAILABLE", "Could not reach Last.fm — please retry", 502
+        ) from exc
 
     conn = _upsert_connection(db, user.id, "lastfm", body.username)
     logger.info("User %s connected Last.fm (username=%s)", user.id, body.username)
@@ -398,9 +411,16 @@ def anilist_oauth_callback(
             tokens = client.exchange_code(code)
             me = client.fetch_me(tokens.access_token)
         except SyncClientError as exc:
-            raise SyncUpError("ANILIST_TOKEN_ERROR", str(exc), 400) from exc
+            logger.warning("AniList authorization error: %s", exc)
+            raise SyncUpError(
+                "ANILIST_TOKEN_ERROR", "AniList authorization failed — please reconnect", 400
+            ) from exc
         except httpx.HTTPStatusError as exc:
-            logger.warning("AniList token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            logger.warning(
+                "AniList token exchange failed (status=%s): %s",
+                exc.response.status_code,
+                exc.response.text,
+            )
             raise SyncUpError(
                 "ANILIST_TOKEN_ERROR",
                 "AniList token exchange failed — please reconnect",
@@ -456,7 +476,9 @@ def anilist_oauth_callback(
     logger.info("User %s connected AniList (anilist_id=%s)", user.id, anilist_user_id)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(_ANILIST_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/")
+    response.delete_cookie(
+        _ANILIST_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/"
+    )
     return response
 
 
@@ -580,7 +602,9 @@ def trakt_oauth_callback(
     logger.info("User %s connected Trakt (trakt_username=%s)", user.id, trakt_username)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(_TRAKT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/")
+    response.delete_cookie(
+        _TRAKT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/"
+    )
     return response
 
 
@@ -711,7 +735,9 @@ def reddit_oauth_callback(
     logger.info("User %s connected Reddit (reddit_username=%s)", user.id, reddit_username)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(_REDDIT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/")
+    response.delete_cookie(
+        _REDDIT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/"
+    )
     return response
 
 
@@ -859,7 +885,11 @@ def import_rateyourmusic(
 
 
 @spotify_auth_router.get("/spotify")
-def spotify_auth_start(request: Request) -> RedirectResponse:
+@limiter.limit("10/minute")
+def spotify_auth_start(
+    request: Request,
+    user: RequireAuth,
+) -> RedirectResponse:
     """Redirect the user to Spotify's authorization page."""
     settings: Settings = request.app.state.settings
     client: SpotifyClient = request.app.state.spotify
@@ -905,7 +935,8 @@ def spotify_callback(
     except httpx.HTTPStatusError as exc:
         logger.warning(
             "Spotify token exchange failed (status=%s): %s",
-            exc.response.status_code, exc.response.text,
+            exc.response.status_code,
+            exc.response.text,
         )
         raise SyncUpError(
             "SPOTIFY_TOKEN_ERROR",
@@ -914,7 +945,9 @@ def spotify_callback(
         ) from exc
     except httpx.RequestError as exc:
         logger.warning("Could not reach Spotify: %s", exc)
-        raise SyncUpError("UPSTREAM_UNAVAILABLE", "Could not reach Spotify — please retry", 502) from exc
+        raise SyncUpError(
+            "UPSTREAM_UNAVAILABLE", "Could not reach Spotify — please retry", 502
+        ) from exc
 
     spotify_user_id: str | None = spotify_profile.get("id")
     if not spotify_user_id:
