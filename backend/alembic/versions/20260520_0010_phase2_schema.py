@@ -9,8 +9,9 @@ Changes:
   - user_items: add excluded BOOLEAN NOT NULL DEFAULT FALSE
   - items.embedding: widen vector dimension 128 → 384 (sentence-transformers)
   - user_embeddings.embedding: widen vector dimension 128 → 384; delete stale rows first
-  - Drop and recreate idx_items_embedding with new dimension
-  - idx_user_embeddings_combined deferred to Block H (match upgrade)
+  - Drop idx_items_embedding and idx_user_embeddings_combined before type change
+  - Recreate idx_items_embedding with new dimension (384)
+  - idx_user_embeddings_combined left absent — recreated in Block H with tuned lists param
 """
 
 from __future__ import annotations
@@ -62,8 +63,13 @@ def upgrade() -> None:
 
     op.execute(sa.text("ALTER TABLE items ALTER COLUMN embedding TYPE vector(384)"))
 
-    # user_embeddings.embedding is NOT NULL — delete stale rows before alter.
-    # Rows will be rebuilt when users recompute via POST /api/embeddings/build.
+    # user_embeddings.embedding is NOT NULL — drop its IVFFlat index first,
+    # then delete stale rows, then alter the column type.
+    # idx_user_embeddings_combined was created in the initial migration; it
+    # cannot survive a dimension change and must be dropped here.
+    # It will be recreated in Block H (feat/phase2-match-upgrade) with the
+    # lists parameter tuned to the actual row count at that point.
+    op.drop_index("idx_user_embeddings_combined", table_name="user_embeddings", if_exists=True)
     op.execute(sa.text("DELETE FROM user_embeddings"))
     op.execute(sa.text("ALTER TABLE user_embeddings ALTER COLUMN embedding TYPE vector(384)"))
 
@@ -81,9 +87,6 @@ def upgrade() -> None:
             """
         )
     )
-    # Note: idx_user_embeddings_combined is deferred to Block H (match upgrade,
-    # feat/phase2-match-upgrade). The index requires trained combined vectors
-    # to be useful and its lists parameter needs to be tuned at that point.
 
 
 def downgrade() -> None:
@@ -94,9 +97,21 @@ def downgrade() -> None:
     op.execute(sa.text("UPDATE items SET embedding = NULL WHERE embedding IS NOT NULL"))
     op.execute(sa.text("ALTER TABLE items ALTER COLUMN embedding TYPE vector(128)"))
 
-    # Revert user_embeddings.embedding dimension
+    # Revert user_embeddings.embedding dimension and restore its index.
+    # The index was dropped in upgrade; downgrade must reinstate the pre-upgrade state.
     op.execute(sa.text("DELETE FROM user_embeddings"))
     op.execute(sa.text("ALTER TABLE user_embeddings ALTER COLUMN embedding TYPE vector(128)"))
+    op.execute(
+        sa.text(
+            """
+            CREATE INDEX idx_user_embeddings_combined
+            ON user_embeddings
+            USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = 100)
+            WHERE service = 'combined'
+            """
+        )
+    )
 
     # Restore original items IVFFlat index (128-dim)
     op.execute(
