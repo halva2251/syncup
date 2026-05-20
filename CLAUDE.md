@@ -120,7 +120,27 @@ After implementing any feature, always update the relevant docs before committin
 
 This is non-negotiable. Stale docs are worse than no docs — they mislead the next session.
 
-## 6. Session Quality Standard
+## 6. Automation Stack
+
+Available in `.claude/` — use these, don't repeat the manual equivalents.
+
+**Hooks (automatic — no action needed):**
+- Every `.py` file save runs `ruff format` + `ruff check --fix` and `mypy` automatically.
+- Don't run `ruff check <files>` manually — it already happened.
+
+**Skills (slash commands):**
+- `/run-suite` — runs the full pytest suite (`tests/ -q --tb=short`). Use after GREEN to catch regressions. Pass a file path to scope to one module.
+- `/db-migration` — guided Alembic workflow: check state → generate → review → apply → verify. Use whenever `models.py` changes.
+
+**Agents (dispatch via Agent tool):**
+- `ml-reviewer` — use after any change to `syncup/embeddings/` or `syncup/matching/`. Knows all Phase 2 invariants (L2-norm, log1p placement, pgvector index, LLM input selection).
+- `oauth-security-reviewer` — use before any PR touching `syncup/auth/`, OAuth clients, or `connect.py`. Covers PKCE, state validation, AES-GCM, cookie flags.
+
+**MCP Servers:**
+- `context7` — ask for live docs on any library (FastAPI, SQLAlchemy, PyTorch, pgvector, Alembic).
+- `postgres` — read-only DB queries against the local Docker instance (requires `docker compose up -d` in `backend/`). Use to inspect schema, verify migrations landed, check live data after sync/import. No writes — all schema changes go through Alembic.
+
+## 7. Session Quality Standard
 
 Every session should follow this shape. The user confirmed on 2026-05-07 this is the standard.
 
@@ -131,9 +151,12 @@ Every session should follow this shape. The user confirmed on 2026-05-07 this is
 
 **Implementation:**
 - TDD: RED → GREEN with explicit test runs at each stage
-- Full suite after GREEN to catch regressions
-- Lint only touched files
-- Dispatch code-reviewer Agent after implementation — fix all HIGH issues before moving on
+- Hooks auto-lint and auto-typecheck on every save — no manual lint step
+- Run `/run-suite` after GREEN to catch regressions across all tests
+- Dispatch the right reviewer Agent after implementation — fix all HIGH issues before moving on:
+  - `ml-reviewer` for embeddings/matching changes
+  - `oauth-security-reviewer` for auth/OAuth changes
+  - `code-reviewer` for everything else
 
 **External reviews (Kimi etc.):**
 - Triage carefully: explain what's worth fixing, what's intentional, what's irrelevant

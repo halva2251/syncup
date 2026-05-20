@@ -1,4 +1,5 @@
 """FastAPI HTTP layer tests — covers the 3 live routes."""
+
 from __future__ import annotations
 
 import uuid
@@ -34,6 +35,7 @@ def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None
     monkeypatch.setenv("DEBUG", "true")
 
     from syncup.api.app import app
+    from syncup.auth.router import require_auth
 
     now = datetime.now(UTC)
     fake_user = User(
@@ -46,10 +48,16 @@ def authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None
         updated_at=now,
     )
 
-    with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
-        with patch("syncup.api.routes.connect.require_auth", return_value=fake_user):
-            with TestClient(app, follow_redirects=False) as c:
-                yield c
+    # Override both: DI system (for routes using `user: RequireAuth`) and
+    # module-level name (for routes calling require_auth(request=..., db=...) directly).
+    try:
+        app.dependency_overrides[require_auth] = lambda: fake_user
+        with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
+            with patch("syncup.api.routes.connect.require_auth", return_value=fake_user):
+                with TestClient(app, follow_redirects=False) as c:
+                    yield c
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
 
 
 # ---------------------------------------------------------------------------
@@ -74,20 +82,59 @@ def test_health_does_not_expose_version(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_spotify_auth_redirects_to_spotify(client: TestClient) -> None:
+@pytest.fixture
+def spotify_authed_client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient, None, None]:
+    """Authenticated client for testing the Spotify auth start route."""
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("DEBUG", "true")
+
+    import uuid
+    from datetime import UTC, datetime
+
+    from syncup.api.app import app
+    from syncup.auth.router import require_auth
+
+    now = datetime.now(UTC)
+    fake_user = User(
+        id=uuid.uuid4(),
+        email="test@example.com",
+        display_name="Tester",
+        is_matchable=False,
+        onboarded=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+    try:
+        app.dependency_overrides[require_auth] = lambda: fake_user
+        with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
+            with TestClient(app, follow_redirects=False) as c:
+                yield c
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
+
+
+# H1: unauthenticated requests must be rejected
+def test_spotify_auth_start_requires_auth(client: TestClient) -> None:
+    """H1: GET /api/auth/spotify must reject unauthenticated requests with 401."""
     resp = client.get("/api/auth/spotify", follow_redirects=False)
+    assert resp.status_code == 401
+
+
+def test_spotify_auth_redirects_to_spotify(spotify_authed_client: TestClient) -> None:
+    resp = spotify_authed_client.get("/api/auth/spotify")
     assert resp.status_code in (302, 307)
     assert "accounts.spotify.com" in resp.headers["location"]
 
 
-def test_spotify_auth_sets_httponly_cookies(client: TestClient) -> None:
-    resp = client.get("/api/auth/spotify", follow_redirects=False)
+def test_spotify_auth_sets_httponly_cookies(spotify_authed_client: TestClient) -> None:
+    resp = spotify_authed_client.get("/api/auth/spotify")
     assert "spotify_state" in resp.cookies
     assert "spotify_verifier" in resp.cookies
 
 
-def test_spotify_auth_includes_client_id_in_url(client: TestClient) -> None:
-    resp = client.get("/api/auth/spotify", follow_redirects=False)
+def test_spotify_auth_includes_client_id_in_url(spotify_authed_client: TestClient) -> None:
+    resp = spotify_authed_client.get("/api/auth/spotify")
     assert "test-client-id" in resp.headers["location"]
 
 
@@ -190,7 +237,8 @@ def test_callback_fetch_me_failure_returns_error(authed_client: TestClient) -> N
         patch(
             "syncup.ingest.spotify.SpotifyClient.fetch_me",
             side_effect=httpx.HTTPStatusError(
-                "403", request=httpx.Request("GET", "https://api.spotify.com/v1/me"),
+                "403",
+                request=httpx.Request("GET", "https://api.spotify.com/v1/me"),
                 response=httpx.Response(403),
             ),
         ),
@@ -277,6 +325,24 @@ def test_startup_requires_encryption_key_in_debug_mode(
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test")
     monkeypatch.setenv("DEBUG", "true")
     monkeypatch.setenv("SYNCUP_TOKEN_ENCRYPTION_KEY", "")  # explicitly blank
+
+    from syncup.api.app import app
+
+    with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
+        with pytest.raises(RuntimeError, match="SYNCUP_TOKEN_ENCRYPTION_KEY"):
+            with TestClient(app):
+                pass
+
+
+# H2: wrong-length key must also fail at startup (not silently at first use)
+def test_startup_rejects_bad_key_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    """H2: SYNCUP_TOKEN_ENCRYPTION_KEY decoding to wrong byte length must raise RuntimeError at startup."""
+    import base64
+
+    bad_key = base64.b64encode(b"x" * 5).decode()  # 5 bytes — not 16/24/32
+    monkeypatch.setenv("SYNCUP_TOKEN_ENCRYPTION_KEY", bad_key)
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test")
+    monkeypatch.setenv("DEBUG", "true")
 
     from syncup.api.app import app
 

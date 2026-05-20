@@ -2,6 +2,7 @@
 GET /api/connect/anilist/oauth/start
 GET /api/connect/anilist/oauth/callback
 """
+
 from __future__ import annotations
 
 import uuid
@@ -329,3 +330,36 @@ def test_anilist_callback_token_error_does_not_leak_upstream_body(
         cookies={"anilist_state": "st"},
     )
     assert sensitive not in resp.text, "Upstream error body must not be returned to client"
+
+
+# ---------------------------------------------------------------------------
+# H3 — AniList GraphQL error text must not reach the API consumer
+# ---------------------------------------------------------------------------
+
+
+def test_anilist_callback_graphql_error_uses_fixed_message(
+    anilist_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """H3: SyncClientError wrapping a GraphQL message must yield a fixed response, not the upstream text."""
+    from syncup.ingest.protocol import SyncClientError as _SyncClientError
+
+    graphql_leak = "Cannot query field 'secretField' on type 'User'"
+    fake_user = _make_user()
+    # require_auth is called directly (not via DI) in the callback — patch at module level
+    monkeypatch.setattr("syncup.api.routes.connect.require_auth", lambda **_: fake_user)
+
+    def _raise_graphql_error(self: object, code: str) -> None:
+        raise _SyncClientError(f"AniList GraphQL error: {graphql_leak}")
+
+    monkeypatch.setattr(
+        "syncup.api.routes.connect.AniListClient.exchange_code", _raise_graphql_error
+    )
+
+    resp = anilist_client.get(
+        "/api/connect/anilist/oauth/callback",
+        params={"code": "c", "state": "st"},
+        cookies={"anilist_state": "st"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "ANILIST_TOKEN_ERROR"
+    assert graphql_leak not in resp.text, "GraphQL error detail must not be returned to client"

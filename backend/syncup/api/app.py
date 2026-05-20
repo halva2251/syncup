@@ -1,4 +1,5 @@
 """FastAPI application — entry point for the SyncUp backend."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,11 +22,12 @@ from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from syncup.api.routes.connect import router as connect_router  # noqa: E402
 from syncup.api.routes.connect import spotify_auth_router  # noqa: E402
-from syncup.api.routes.me import router as me_router  # noqa: E402
-from syncup.api.routes.matches import _cleanup_stale_match_cache, router as matches_router  # noqa: E402
-from syncup.api.routes.onboarding import router as onboarding_router  # noqa: E402
-from syncup.api.routes.obsessions import router as obsessions_router  # noqa: E402
 from syncup.api.routes.dimensions import router as dimensions_router  # noqa: E402
+from syncup.api.routes.matches import _cleanup_stale_match_cache  # noqa: E402
+from syncup.api.routes.matches import router as matches_router
+from syncup.api.routes.me import router as me_router  # noqa: E402
+from syncup.api.routes.obsessions import router as obsessions_router  # noqa: E402
+from syncup.api.routes.onboarding import router as onboarding_router  # noqa: E402
 from syncup.api.routes.overrides import router as overrides_router  # noqa: E402
 from syncup.api.routes.sync import router as sync_router  # noqa: E402
 from syncup.api.routes.taste import router as taste_router  # noqa: E402
@@ -33,6 +35,7 @@ from syncup.auth.router import router as auth_router  # noqa: E402
 from syncup.config import Settings  # noqa: E402
 from syncup.db.session import sessionmaker_for  # noqa: E402
 from syncup.exceptions import SyncUpError  # noqa: E402
+from syncup.ingest.crypto import validate_key  # noqa: E402
 from syncup.ingest.registry import close_all as close_all_clients  # noqa: E402
 from syncup.ingest.registry import register_default_clients  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
@@ -89,6 +92,7 @@ def _error_json(code: str, message: str, status_code: int) -> JSONResponse:
 # Lifespan — build shared state once at startup
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings = Settings()  # type: ignore[call-arg]
@@ -96,8 +100,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if not settings.syncup_token_encryption_key:
         raise RuntimeError(
             "SYNCUP_TOKEN_ENCRYPTION_KEY is not set. "
-            "Generate one: python -c \"import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())\""
+            'Generate one: python -c "import secrets,base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"'
         )
+    try:
+        validate_key()
+    except (ValueError, KeyError) as exc:
+        raise RuntimeError(f"Invalid SYNCUP_TOKEN_ENCRYPTION_KEY: {exc}") from exc
 
     app.state.settings = settings
     app.state.db = sessionmaker_for(
@@ -164,6 +172,7 @@ async def security_headers(request: Request, call_next: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Exception handlers — all errors return { "error": { "code", "message" } }
 # ---------------------------------------------------------------------------
+
 
 @app.exception_handler(RateLimitExceeded)
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:

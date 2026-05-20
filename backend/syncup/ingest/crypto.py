@@ -1,4 +1,5 @@
 """AES-GCM encryption for OAuth tokens stored in the database."""
+
 from __future__ import annotations
 
 import base64
@@ -22,6 +23,16 @@ def _get_key() -> bytes:
             f"Set {_KEY_ENV} to a base64-encoded key of the correct length."
         )
     return raw
+
+
+def validate_key() -> None:
+    """Validate key length at startup. Not cached — safe to call on every boot."""
+    raw = base64.b64decode(os.environ[_KEY_ENV])
+    if len(raw) not in _VALID_KEY_LENGTHS:
+        raise ValueError(
+            f"Token encryption key must be 16, 24, or 32 bytes (got {len(raw)}). "
+            f"Set {_KEY_ENV} to a base64-encoded key of the correct length."
+        )
 
 
 def encrypt_token(plaintext: str) -> bytes:
