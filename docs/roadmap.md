@@ -384,7 +384,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 >
 > | Block | Branch | Depends on | Delivers |
 > |-------|--------|------------|----------|
-> | A | `feat/phase2-schema` | — | EMBEDDING_DIM 128→384, `excluded` col, vibe cols, new deps/config |
+> | A | ~~`feat/phase2-schema`~~ ✅ | — | EMBEDDING_DIM 128→384, `excluded` col, vibe cols, new deps/config |
 > | B | `feat/phase2-semantic` | A | `semantic.py`, `item_text.py`, AniList ingest genres fix |
 > | C | `feat/phase2-enrichment` | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
 > | D | `feat/phase2-user-embeddings` | A+B | `POST /api/embeddings/build`, `aggregate_vectors()`, auto-embed post-sync |
@@ -402,6 +402,19 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > **No hard gate:** unlike the original plan, Phase 2 does not depend on offline training or public datasets. Semantic embeddings work from day one on existing item data.
 
 > **Trigger gap:** syncing a service does NOT automatically trigger user embedding computation. `POST /api/embeddings/build` must be called explicitly after sync (or via `POST /api/me/recompute`). Auto-triggering post-sync is Block F.
+
+### 2.0 Phase 2 Block A — Schema & Config
+
+> **Status:** Complete ✅ (2026-05-20). `feat/phase2-schema` merged to master. 726 tests passing.
+>
+> Delivered:
+> - `EMBEDDING_DIM` changed 128 → 384 (sentence-transformers `all-MiniLM-L6-v2`)
+> - `UserItem.excluded: bool DEFAULT FALSE` — Phase 2 item exclusion column
+> - `User.vibe_summary`, `User.archetype`, `User.key_themes`, `User.vibe_computed_at` — vibe synthesis columns
+> - Migration `20260520_0010`: vector type widened, stale 128-dim embeddings cleared, IVFFlat index recreated
+> - `Settings.embedding_model_name`, `Settings.llm_api_key`, `Settings.tmdb_api_key` added
+> - `pyproject.toml [ml]`: `sentence-transformers>=3.0`, `implicit>=0.7`, `anthropic>=0.25`
+> - `Item2Vec.TrainingConfig.vector_size` (128) is now explicitly decoupled from `EMBEDDING_DIM` (384)
 
 ### 2.1 Dimension migration + semantic embedding module
 

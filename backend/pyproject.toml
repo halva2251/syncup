@@ -26,6 +26,10 @@ ml = [
     "scikit-learn>=1.4",
     "gensim>=4.3",
     "torch>=2.2",
+    # Phase 2: semantic embeddings, CF re-ranker, vibe synthesis
+    "sentence-transformers>=3.0",
+    "implicit>=0.7",
+    "anthropic>=0.25",
 ]
 dev = [
     "pytest>=8.0",

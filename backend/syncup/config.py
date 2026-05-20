@@ -54,4 +54,17 @@ class Settings(BaseSettings):
     reddit_redirect_uri: str = "http://127.0.0.1:3000/api/connect/reddit/oauth/callback"
     reddit_user_agent: str = ""
 
+    # ── Phase 2 ML ───────────────────────────────────────────────────────────
+    # Sentence-transformers model used for semantic item embeddings.
+    # all-MiniLM-L6-v2 outputs 384-dim vectors; must match EMBEDDING_DIM.
+    embedding_model_name: str = "all-MiniLM-L6-v2"
+
+    # Anthropic API key for vibe synthesis (Claude). Optional — if unset,
+    # vibe synthesis is skipped and match score falls back to 100% item-average.
+    llm_api_key: str | None = None
+
+    # TMDB API key for film/show genre enrichment. Optional — if unset,
+    # films embed with name+year only (acceptable fallback).
+    tmdb_api_key: str | None = None
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}

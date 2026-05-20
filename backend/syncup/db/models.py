@@ -4,10 +4,13 @@ Kept flat for now because the graph is small enough to comprehend in
 one file. Split by aggregate root (users/auth, items/engagement,
 matching) once any single section grows past ~200 lines.
 
-All vector columns are dimension 128, matching
-``TrainingConfig.vector_size`` in syncup.embeddings.item2vec. If that
-default changes, both must move together and a migration must follow.
+All vector columns use EMBEDDING_DIM=384 (sentence-transformers
+all-MiniLM-L6-v2). Item2Vec (TrainingConfig.vector_size=128) is an
+optional future enhancement and is decoupled from this constant.
+If EMBEDDING_DIM changes, update the Alembic migration and all
+dependent enrichment/embedding scripts.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -34,7 +37,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from syncup.db.base import Base
 
-EMBEDDING_DIM = 128
+EMBEDDING_DIM = 384
 
 
 def _uuid_pk() -> Mapped[uuid.UUID]:
@@ -61,14 +64,19 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     discord_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
-    languages: Mapped[list[str] | None] = mapped_column(
-        ARRAY(Text), nullable=True
-    )
+    languages: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     is_matchable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
     onboarded: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+    # ── Phase 2 vibe synthesis columns ───────────────────────────────────────
+    vibe_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    archetype: Mapped[str | None] = mapped_column(Text, nullable=True)
+    key_themes: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    vibe_computed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = mapped_column(
@@ -142,18 +150,12 @@ class ServiceConnection(Base):
     )
     service: Mapped[str] = mapped_column(Text, nullable=False)
     external_user_id: Mapped[str] = mapped_column(Text, nullable=False)
-    access_token_encrypted: Mapped[bytes | None] = mapped_column(
-        LargeBinary, nullable=True
-    )
-    refresh_token_encrypted: Mapped[bytes | None] = mapped_column(
-        LargeBinary, nullable=True
-    )
+    access_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    refresh_token_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    last_synced_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_status: Mapped[str] = mapped_column(
         Text, nullable=False, default="pending", server_default="pending"
     )
@@ -188,9 +190,7 @@ class Item(Base):
     meta: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, nullable=False, server_default="{}"
     )
-    embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(EMBEDDING_DIM), nullable=True
-    )
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
     embedding_computed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -202,9 +202,7 @@ class Item(Base):
     preference_overrides: Mapped[list[PreferenceOverride]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
-    manual_obsessions: Mapped[list[ManualObsession]] = relationship(
-        back_populates="item"
-    )
+    manual_obsessions: Mapped[list[ManualObsession]] = relationship(back_populates="item")
 
     __table_args__ = (
         UniqueConstraint("service", "item_type", "external_id"),
@@ -239,11 +237,13 @@ class UserItem(Base):
     raw_type: Mapped[str] = mapped_column(
         Text, nullable=False, default="consumption", server_default="consumption"
     )
-    last_engaged_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_engaged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), default=_now
+    )
+    # Phase 2: exclude misrepresentative items from embedding and LLM input
+    excluded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
 
     user: Mapped[User] = relationship(back_populates="user_items")
@@ -299,9 +299,7 @@ class ManualObsession(Base):
     item_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("items.id", ondelete="SET NULL"), nullable=True
     )
-    weight: Mapped[float] = mapped_column(
-        Float, nullable=False, default=1.0, server_default="1.0"
-    )
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0, server_default="1.0")
     created_at: Mapped[datetime] = _created_at()
 
     user: Mapped[User] = relationship(back_populates="manual_obsessions")
@@ -330,16 +328,12 @@ class UserDimensionWeight(Base):
         primary_key=True,
     )
     service: Mapped[str] = mapped_column(Text, primary_key=True)
-    weight: Mapped[float] = mapped_column(
-        Float, nullable=False, default=1.0, server_default="1.0"
-    )
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0, server_default="1.0")
 
     user: Mapped[User] = relationship(back_populates="dimension_weights")
 
     __table_args__ = (
-        CheckConstraint(
-            "weight >= 0 AND weight <= 1", name="ck_dimension_weight_range"
-        ),
+        CheckConstraint("weight >= 0 AND weight <= 1", name="ck_dimension_weight_range"),
     )
 
 
@@ -352,9 +346,7 @@ class UserEmbedding(Base):
         primary_key=True,
     )
     service: Mapped[str] = mapped_column(Text, primary_key=True)
-    embedding: Mapped[list[float]] = mapped_column(
-        Vector(EMBEDDING_DIM), nullable=False
-    )
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), default=_now
     )
@@ -412,9 +404,7 @@ class Session(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = _created_at()
 
     __table_args__ = (

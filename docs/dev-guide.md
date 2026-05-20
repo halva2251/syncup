@@ -391,7 +391,9 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **OAuth follow-up (fix/oauth-security-h1-h2-h3) is complete.** Three HIGH issues from post-Phase-1.11 oauth-security-reviewer audit: H1 — `GET /api/auth/spotify` now requires `RequireAuth` + `@limiter.limit("10/minute")` (was missing both, unlike every other OAuth start route); H2 — `validate_key()` added to `crypto.py` and called in `lifespan`, so a wrong-length encryption key raises `RuntimeError` at startup rather than on the first token operation; H3 — `anilist_oauth_callback` `SyncClientError` handler now uses a fixed message instead of `str(exc)`, preventing GraphQL error details from reaching API consumers. 722 tests passing.
 
-**Phase 1.11 backend hardening sprint is complete.** Next: Phase 2.1 — Item2Vec training on public datasets (Steam reviews, Million Song Dataset), user embedding builder, and match endpoint. See `docs/roadmap.md §Phase 2` for the full plan.
+**Phase 1.11 backend hardening sprint is complete.**
+
+**Phase 2 Block A (feat/phase2-schema) is complete.** `EMBEDDING_DIM` changed 128 → 384 for sentence-transformers `all-MiniLM-L6-v2`. `UserItem.excluded` column added for Phase 2 item exclusion. Four vibe synthesis columns added to `User` (`vibe_summary`, `archetype`, `key_themes`, `vibe_computed_at`). Migration `20260520_0010` applied — vector columns widened, stale embeddings cleared, IVFFlat index recreated. Config gains `embedding_model_name`, `llm_api_key`, `tmdb_api_key`. ML deps (`sentence-transformers`, `implicit`, `anthropic`) added to `[ml]` extras. 726 tests passing. Next: Block B (`feat/phase2-semantic`) and Block C (`feat/phase2-enrichment`) can run in parallel.
 
 ---
 
