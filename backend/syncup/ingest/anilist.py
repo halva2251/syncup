@@ -227,7 +227,10 @@ class AniListClient:
             logger.warning("AniList network error: %s", exc)
             raise SyncClientError("Could not reach AniList — please retry") from exc
 
-        body = resp.json()
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            raise SyncClientError("AniList returned a non-JSON response — please retry") from exc
         if "errors" in body:
             messages = "; ".join(e.get("message", "Unknown error") for e in body["errors"])
             raise SyncClientError(f"AniList GraphQL error: {messages}")

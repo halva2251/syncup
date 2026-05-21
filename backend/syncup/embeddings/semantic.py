@@ -10,6 +10,7 @@ All outputs are L2-normalized so cosine similarity reduces to a dot product.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import cast
 
 import numpy as np
@@ -32,14 +33,18 @@ from syncup.config import Settings
 # mypy cannot see that.
 _MODEL_NAME: str = Settings().embedding_model_name  # type: ignore[call-arg]
 
-# Module-level model cache — None until first embed call.
+# Module-level model cache and its lock (double-checked locking pattern).
+# The lock prevents a double-init race when encode() is offloaded to a thread pool.
 _model: SentenceTransformer | None = None
+_model_lock = threading.Lock()
 
 
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
-        _model = SentenceTransformer(_MODEL_NAME)
+        with _model_lock:
+            if _model is None:
+                _model = SentenceTransformer(_MODEL_NAME)
     return _model
 
 
@@ -77,12 +82,18 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
     """Embed a list of strings and return L2-normalized rows.
 
     Raises:
-        ValueError: if texts is empty or contains only blank strings.
+        ValueError: if texts is empty, or if any individual string is blank.
+            Blank strings produce degenerate near-zero embeddings that corrupt
+            cosine similarity scores silently — raise early instead.
     """
     if not texts:
         raise ValueError("embed_batch requires a non-empty list")
-    if not any(t.strip() for t in texts):
-        raise ValueError("embed_batch: all texts are empty or whitespace-only")
+    blank_indices = [i for i, t in enumerate(texts) if not t.strip()]
+    if blank_indices:
+        raise ValueError(
+            f"embed_batch: blank string(s) at index/indices {blank_indices} — "
+            "all texts must be non-empty"
+        )
 
     model = _get_model()
     raw: np.ndarray = model.encode(texts, convert_to_numpy=True, batch_size=256)

@@ -174,6 +174,26 @@ def test_embed_batch_empty_list_raises_value_error() -> None:
             semantic.embed_batch([])
 
 
+def test_embed_batch_all_whitespace_raises_value_error() -> None:
+    """All-blank list must raise, same guard as embed_text."""
+    from syncup.embeddings import semantic
+
+    fake_model = _make_fake_model()
+    with patch.object(semantic, "_model", fake_model):
+        with pytest.raises(ValueError):
+            semantic.embed_batch(["  ", "\t", ""])
+
+
+def test_embed_batch_individual_blank_raises_value_error() -> None:
+    """Even a single blank string in an otherwise valid batch must raise."""
+    from syncup.embeddings import semantic
+
+    fake_model = _make_fake_model()
+    with patch.object(semantic, "_model", fake_model):
+        with pytest.raises(ValueError, match="blank"):
+            semantic.embed_batch(["valid text", "   ", "also valid"])
+
+
 def test_embed_batch_single_text_works() -> None:
     from syncup.embeddings import semantic
 
@@ -224,3 +244,49 @@ def test_model_cached_after_first_call() -> None:
             MockST.assert_called_once()
     finally:
         semantic._model = original
+
+
+# ---------------------------------------------------------------------------
+# _normalize — zero-norm warning path
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_zero_norm_emits_warning() -> None:
+    """A zero vector must log a warning, not silently pass through."""
+    import logging
+
+    import numpy as np
+
+    from syncup.embeddings.semantic import _normalize
+
+    zero_vectors = np.zeros((2, EMBEDDING_DIM), dtype=np.float64)
+    with patch.object(logging.getLogger("syncup.embeddings.semantic"), "warning") as mock_warn:
+        result = _normalize(zero_vectors)
+        mock_warn.assert_called_once()
+        # warning message must mention norm or zero
+        args = mock_warn.call_args[0]
+        assert "zero" in args[0].lower() or "norm" in args[0].lower()
+    # Output is still the zero vector (1.0 safe-norm applied to zero row)
+    assert result.shape == zero_vectors.shape
+    assert np.allclose(result, 0.0)
+
+
+def test_normalize_unit_vectors_unchanged() -> None:
+    """Already-normalized vectors should not trigger the warning."""
+    import logging
+
+    import numpy as np
+
+    from syncup.embeddings.semantic import _normalize
+
+    # Build unit vectors
+    raw = np.random.randn(3, EMBEDDING_DIM).astype(np.float64)
+    norms = np.linalg.norm(raw, axis=1, keepdims=True)
+    unit = raw / norms
+
+    with patch.object(logging.getLogger("syncup.embeddings.semantic"), "warning") as mock_warn:
+        result = _normalize(unit)
+        mock_warn.assert_not_called()
+    # Each row should still be a unit vector
+    result_norms = np.linalg.norm(result, axis=1)
+    np.testing.assert_allclose(result_norms, 1.0, atol=1e-6)

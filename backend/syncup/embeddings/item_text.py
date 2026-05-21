@@ -18,7 +18,10 @@ This function MUST NEVER RAISE. Missing or None metadata falls back gracefully.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def item_to_text(item: Any) -> str:
@@ -69,6 +72,10 @@ def item_to_text(item: Any) -> str:
         return f"r/{name} — online community"
 
     # Generic fallback — manual obsessions (book, other, etc.) and unknown types
+    if not name and not item_type:
+        logger.warning(
+            "item_to_text: item has empty name and item_type — embedding will be degenerate"
+        )
     return f"{name} — {item_type}"
 
 

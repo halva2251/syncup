@@ -321,6 +321,20 @@ def test_album_with_none_artist_falls_back() -> None:
     assert text == "Album — album, music"
 
 
+def test_album_with_artist_key_fallback_format() -> None:
+    """meta['artist'] (not artist_normalized) is the secondary fallback for album."""
+    from syncup.embeddings.item_text import item_to_text
+
+    item = _item(
+        "Murder Ballads",
+        "album",
+        {"artist": "Nick Cave"},  # artist_normalized absent, artist present
+        service="rateyourmusic",
+    )
+    text = item_to_text(item)
+    assert text == "Murder Ballads by Nick Cave — album, music"
+
+
 # ---------------------------------------------------------------------------
 # Reddit communities
 # ---------------------------------------------------------------------------
@@ -478,3 +492,27 @@ def test_result_is_always_non_empty_string() -> None:
         result = item_to_text(item)
         assert isinstance(result, str)
         assert len(result.strip()) > 0
+
+
+def test_never_raises_when_meta_attribute_is_none() -> None:
+    """item.meta = None (not a dict with None values) must be handled gracefully."""
+    from types import SimpleNamespace
+
+    from syncup.embeddings.item_text import item_to_text
+
+    # meta attribute itself is None — getattr(..., {}) or {} handles this
+    for item_type in (
+        "game",
+        "artist",
+        "track",
+        "film",
+        "show",
+        "anime",
+        "manga",
+        "album",
+        "community",
+    ):
+        obj = SimpleNamespace(name="Test", item_type=item_type, meta=None, service="x")
+        result = item_to_text(obj)  # must not raise
+        assert isinstance(result, str)
+        assert "Test" in result
