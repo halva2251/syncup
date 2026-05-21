@@ -78,15 +78,15 @@ def item_to_text(item: Any) -> str:
 
 
 def _list_or_empty(value: Any) -> list[str]:
-    """Return value as a list if it's a non-empty list, else []."""
+    """Return value as a non-empty list of stripped strings, else []."""
     if isinstance(value, list) and value:
-        return value
+        return [str(v).strip() for v in value if v is not None]
     return []
 
 
 def _with_genres(base: str, meta: dict[str, Any]) -> str:
     """Append ', genre1, genre2' to base if genres are present in meta."""
-    genres = _list_or_empty(meta.get("genres"))
+    genres = [g for g in _list_or_empty(meta.get("genres")) if g]
     if genres:
         return f"{base}, {', '.join(genres)}"
     return base

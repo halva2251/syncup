@@ -385,7 +385,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > | Block | Branch | Depends on | Delivers |
 > |-------|--------|------------|----------|
 > | A | ~~`feat/phase2-schema`~~ ✅ | — | EMBEDDING_DIM 128→384, `excluded` col, vibe cols, new deps/config |
-> | B | `feat/phase2-semantic` | A | `semantic.py`, `item_text.py`, AniList ingest genres fix |
+> | B | ~~`feat/phase2-semantic`~~ ✅ | A | `semantic.py`, `item_text.py`, AniList ingest genres fix |
 > | C | `feat/phase2-enrichment` | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
 > | D | `feat/phase2-user-embeddings` | A+B | `POST /api/embeddings/build`, `aggregate_vectors()`, auto-embed post-sync |
 > | E | `feat/phase2-item-exclusion` | A | `PATCH /api/me/items/{id}` |
@@ -416,9 +416,19 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > - `pyproject.toml [ml]`: `sentence-transformers>=3.0`, `implicit>=0.7`, `anthropic>=0.25`
 > - `Item2Vec.TrainingConfig.vector_size` (128) is now explicitly decoupled from `EMBEDDING_DIM` (384)
 
+### 2.1 Phase 2 Block B — Semantic Embedding Module
+
+> **Status:** Complete ✅ (2026-05-21). `feat/phase2-semantic` — 779 tests passing.
+>
+> Delivered:
+> - `syncup/embeddings/semantic.py` — lazy-loaded `SentenceTransformer` wrapper; `embed_text()` + `embed_batch()`, L2-normalized output; model name read from `Settings.embedding_model_name`; zero-norm rows emit logger.warning
+> - `syncup/embeddings/item_text.py` — `item_to_text(item)` serializer per roadmap §2.1 format table; handles game/artist/track/film/show/anime/manga/album/community + generic fallback; never raises
+> - `syncup/ingest/anilist.py` — `genres` field added to GraphQL query (both animeList and mangaList); stored as `metadata["genres"]` (list, defaults to [])
+> - 53 new tests (test_semantic.py + test_item_text.py + 3 anilist genre tests)
+
 ### 2.1 Dimension migration + semantic embedding module
 
-**Status:** Not started
+**Status:** Complete — see Block B above.
 
 **EMBEDDING_DIM: 128 → 384.** `all-MiniLM-L6-v2` (sentence-transformers) outputs 384-dim vectors. 384 captures more semantic nuance than 128 for text. Migration changes `items.embedding` and `user_embeddings.embedding` column types and recreates IVFFlat indexes.
 

@@ -9,7 +9,11 @@ All outputs are L2-normalized so cosine similarity reduces to a dot product.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -20,23 +24,35 @@ except ImportError as exc:  # pragma: no cover
 
 from syncup.config import Settings
 
-# Module-level cache — None until first embed_text / embed_batch call.
+# Model name read once at module load — avoids re-reading .env on every call
+# and eliminates the Settings() re-instantiation race when encode() is moved
+# to a thread pool executor.
+_MODEL_NAME: str = Settings().embedding_model_name
+
+# Module-level model cache — None until first embed call.
 _model: SentenceTransformer | None = None
 
 
 def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
-        model_name = Settings().embedding_model_name
-        _model = SentenceTransformer(model_name)
+        _model = SentenceTransformer(_MODEL_NAME)
     return _model
 
 
 def _normalize(vectors: np.ndarray) -> np.ndarray:
-    """L2-normalize each row. Rows with zero norm are left as-is (shouldn't happen)."""
+    """L2-normalize each row. Logs a warning for any zero-norm row (degenerate embedding)."""
     norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    norms = np.where(norms == 0, 1.0, norms)
-    return vectors / norms
+    zero_mask = norms == 0
+    if zero_mask.any():
+        n_zero = int(zero_mask.sum())
+        logger.warning(
+            "embed: %d row(s) have zero L2 norm — embedding will be the zero vector. "
+            "This indicates degenerate model output for the supplied text.",
+            n_zero,
+        )
+    safe_norms = np.where(zero_mask, 1.0, norms)
+    return vectors / safe_norms
 
 
 def embed_text(text: str) -> list[float]:
@@ -58,10 +74,12 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
     """Embed a list of strings and return L2-normalized rows.
 
     Raises:
-        ValueError: if texts is empty.
+        ValueError: if texts is empty or contains only blank strings.
     """
     if not texts:
         raise ValueError("embed_batch requires a non-empty list")
+    if not any(t.strip() for t in texts):
+        raise ValueError("embed_batch: all texts are empty or whitespace-only")
 
     model = _get_model()
     raw: np.ndarray = model.encode(texts, convert_to_numpy=True, batch_size=256)
