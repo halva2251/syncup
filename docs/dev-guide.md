@@ -395,7 +395,7 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Phase 2 Block A (feat/phase2-schema) is complete.** `EMBEDDING_DIM` changed 128 → 384 for sentence-transformers `all-MiniLM-L6-v2`. `UserItem.excluded` column added for Phase 2 item exclusion. Four vibe synthesis columns added to `User` (`vibe_summary`, `archetype`, `key_themes`, `vibe_computed_at`). Migration `20260520_0010` applied — vector columns widened, stale embeddings cleared, IVFFlat index recreated. Config gains `embedding_model_name`, `llm_api_key`, `tmdb_api_key`. ML deps (`sentence-transformers`, `implicit`, `anthropic`) added to `[ml]` extras. 726 tests passing.
 
-**Phase 2 Block B (feat/phase2-semantic) is complete.** `syncup/embeddings/semantic.py` — lazy-loaded SentenceTransformer wrapper; `embed_text()` and `embed_batch()` with L2-normalized output. `syncup/embeddings/item_text.py` — `item_to_text(item)` serializer per roadmap §2.1; handles all item_types; never raises. AniList `genres` field added to GraphQL query and stored in `metadata["genres"]`. 779 tests passing. Next: Block C (`feat/phase2-enrichment`) and Block D (`feat/phase2-user-embeddings`) can proceed; Block D now unblocked by Block B.
+**Phase 2 Block B (feat/phase2-semantic) is complete.** `syncup/embeddings/semantic.py` — lazy-loaded SentenceTransformer wrapper; `embed_text()` and `embed_batch()` with L2-normalized output. `syncup/embeddings/item_text.py` — `item_to_text(item)` serializer per roadmap §2.1; handles all item_types; never raises. AniList `genres` field added to GraphQL query and stored in `metadata["genres"]`. 785 tests passing. Next: Block C (`feat/phase2-enrichment`) and Block D (`feat/phase2-user-embeddings`) can proceed; Block D now unblocked by Block B.
 
 ---
 

@@ -418,13 +418,14 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 
 ### 2.1 Phase 2 Block B — Semantic Embedding Module
 
-> **Status:** Complete ✅ (2026-05-21). `feat/phase2-semantic` — 779 tests passing.
+> **Status:** Complete ✅ (2026-05-21). `feat/phase2-semantic` merged via PR #14 — 785 tests passing.
 >
 > Delivered:
-> - `syncup/embeddings/semantic.py` — lazy-loaded `SentenceTransformer` wrapper; `embed_text()` + `embed_batch()`, L2-normalized output; model name read from `Settings.embedding_model_name`; zero-norm rows emit logger.warning
-> - `syncup/embeddings/item_text.py` — `item_to_text(item)` serializer per roadmap §2.1 format table; handles game/artist/track/film/show/anime/manga/album/community + generic fallback; never raises
-> - `syncup/ingest/anilist.py` — `genres` field added to GraphQL query (both animeList and mangaList); stored as `metadata["genres"]` (list, defaults to [])
-> - 53 new tests (test_semantic.py + test_item_text.py + 3 anilist genre tests)
+> - `syncup/embeddings/semantic.py` — lazy-loaded `SentenceTransformer` wrapper; `embed_text()` + `embed_batch()`, L2-normalized output; `_MODEL_NAME` cached at module load; double-checked locking for thread safety; per-element blank guard in `embed_batch`; zero-norm rows emit `logger.warning`
+> - `syncup/embeddings/item_text.py` — `item_to_text(item)` serializer per roadmap §2.1 format table; handles game/artist/track/film/show/anime/manga/album/community + generic fallback; duck-typed; never raises; degenerate name+type emits `logger.warning`
+> - `syncup/ingest/anilist.py` — `genres` field added to GraphQL query (both animeList and mangaList); stored as `metadata["genres"]` (list, defaults to []); `_graphql` `resp.json()` guarded against non-JSON 200 responses
+> - Agent frontmatter: `tools:` + `model:` added to alembic-reviewer, ml-reviewer, oauth-security-reviewer
+> - 59 new tests (test_semantic.py × 20, test_item_text.py × 42, test_anilist.py +3, manual_test_block_b.py script)
 
 ### 2.1 Dimension migration + semantic embedding module
 
