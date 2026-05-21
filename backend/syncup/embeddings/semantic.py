@@ -10,6 +10,7 @@ All outputs are L2-normalized so cosine similarity reduces to a dot product.
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 import numpy as np
 
@@ -27,7 +28,9 @@ from syncup.config import Settings
 # Model name read once at module load — avoids re-reading .env on every call
 # and eliminates the Settings() re-instantiation race when encode() is moved
 # to a thread pool executor.
-_MODEL_NAME: str = Settings().embedding_model_name
+# pydantic-settings reads required fields from env vars, not the constructor;
+# mypy cannot see that.
+_MODEL_NAME: str = Settings().embedding_model_name  # type: ignore[call-arg]
 
 # Module-level model cache — None until first embed call.
 _model: SentenceTransformer | None = None
@@ -67,7 +70,7 @@ def embed_text(text: str) -> list[float]:
     model = _get_model()
     raw: np.ndarray = model.encode([text], convert_to_numpy=True)
     normalized = _normalize(raw.astype(np.float64))
-    return normalized[0].tolist()
+    return cast(list[float], normalized[0].tolist())
 
 
 def embed_batch(texts: list[str]) -> list[list[float]]:
@@ -84,4 +87,4 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
     model = _get_model()
     raw: np.ndarray = model.encode(texts, convert_to_numpy=True, batch_size=256)
     normalized = _normalize(raw.astype(np.float64))
-    return normalized.tolist()
+    return cast(list[list[float]], normalized.tolist())
