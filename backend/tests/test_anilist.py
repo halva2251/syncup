@@ -1,4 +1,5 @@
 """Tests for AniListClient — GraphQL OAuth client, Protocol conformance, fetch_items."""
+
 from __future__ import annotations
 
 import urllib.parse
@@ -9,7 +10,6 @@ import httpx
 import pytest
 
 from syncup.ingest.protocol import ServiceClient, SyncClientError
-
 
 # ---------------------------------------------------------------------------
 # httpx mock transport helpers
@@ -247,9 +247,9 @@ def test_get_authorize_url_contains_redirect_uri() -> None:
     from syncup.ingest.anilist import AniListClient
 
     redirect = "http://127.0.0.1:3000/api/connect/anilist/oauth/callback"
-    url = AniListClient(
-        client_id="x", client_secret="s", redirect_uri=redirect
-    ).get_authorize_url(state="st")
+    url = AniListClient(client_id="x", client_secret="s", redirect_uri=redirect).get_authorize_url(
+        state="st"
+    )
     params = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query))
     assert params["redirect_uri"] == redirect
 
@@ -636,3 +636,91 @@ def test_graphql_request_error_message_does_not_leak_exception_repr(
     assert "internal-host-xyz" not in str(exc_info.value), (
         "Internal hostname must not appear in SyncClientError"
     )
+
+
+# ---------------------------------------------------------------------------
+# Block B — genres field in metadata (Phase 2 AniList fix)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_items_metadata_has_genres_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """genres must be stored in metadata after fetch_items."""
+    monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
+    body = {
+        "data": {
+            "Viewer": {"id": 1, "mediaListOptions": {"scoreFormat": "POINT_100"}},
+            "animeList": {
+                "lists": [
+                    {
+                        "entries": [
+                            {
+                                "media": {
+                                    "id": 30,
+                                    "title": {
+                                        "romaji": "Neon Genesis Evangelion",
+                                        "english": "Neon Genesis Evangelion",
+                                    },
+                                    "startDate": {"year": 1995},
+                                    "format": "TV",
+                                    "genres": ["Mecha", "Psychological", "Drama"],
+                                },
+                                "score": 95,
+                                "updatedAt": 1700000000,
+                            }
+                        ]
+                    }
+                ]
+            },
+            "mangaList": {"lists": []},
+        }
+    }
+    c = _client([_json_resp(body)])
+    items = c.fetch_items(_make_connection())
+    eva = next(i for i in items if i["name"] == "Neon Genesis Evangelion")
+    assert "genres" in eva["metadata"], "genres must be present in metadata"
+    assert eva["metadata"]["genres"] == ["Mecha", "Psychological", "Drama"]
+
+
+def test_fetch_items_genres_empty_list_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When genres is missing from the API response, metadata['genres'] should be []."""
+    monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
+    # Use the existing _COMBINED_BODY which has no genres field
+    c = _client([_json_resp(_COMBINED_BODY)])
+    items = c.fetch_items(_make_connection())
+    for item in items:
+        assert "genres" in item["metadata"], "genres key must always be present"
+        assert isinstance(item["metadata"]["genres"], list)
+
+
+def test_fetch_items_manga_genres_stored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """genres must also be stored for manga entries."""
+    monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
+    body = {
+        "data": {
+            "Viewer": {"id": 1, "mediaListOptions": {"scoreFormat": "POINT_100"}},
+            "animeList": {"lists": []},
+            "mangaList": {
+                "lists": [
+                    {
+                        "entries": [
+                            {
+                                "media": {
+                                    "id": 100,
+                                    "title": {"romaji": "Berserk", "english": None},
+                                    "startDate": {"year": 1989},
+                                    "format": "MANGA",
+                                    "genres": ["Fantasy", "Dark Fantasy"],
+                                },
+                                "score": 100,
+                                "updatedAt": 1700000002,
+                            }
+                        ]
+                    }
+                ]
+            },
+        }
+    }
+    c = _client([_json_resp(body)])
+    items = c.fetch_items(_make_connection())
+    berserk = next(i for i in items if "Berserk" in i["name"])
+    assert berserk["metadata"]["genres"] == ["Fantasy", "Dark Fantasy"]
