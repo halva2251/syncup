@@ -1,4 +1,5 @@
 """AniList GraphQL OAuth client."""
+
 from __future__ import annotations
 
 import logging
@@ -45,6 +46,7 @@ query {
           title { romaji english }
           startDate { year }
           format
+          genres
         }
         score
         updatedAt
@@ -59,6 +61,7 @@ query {
           title { romaji english }
           startDate { year }
           format
+          genres
         }
         score
         updatedAt
@@ -129,7 +132,11 @@ class AniListClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            logger.warning("AniList token exchange failed (status=%s): %s", exc.response.status_code, exc.response.text)
+            logger.warning(
+                "AniList token exchange failed (status=%s): %s",
+                exc.response.status_code,
+                exc.response.text,
+            )
             raise SyncClientError("AniList token exchange failed — please reconnect") from exc
         except httpx.RequestError as exc:
             logger.warning("AniList token exchange network error: %s", exc)
@@ -138,9 +145,7 @@ class AniListClient:
         try:
             data = resp.json()
         except ValueError as exc:
-            raise SyncClientError(
-                "AniList returned an invalid response — please retry"
-            ) from exc
+            raise SyncClientError("AniList returned an invalid response — please retry") from exc
         return TokenPair(
             access_token=data["access_token"],
             refresh_token=data.get("refresh_token"),
@@ -191,9 +196,7 @@ class AniListClient:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _graphql(
-        self, query: str, variables: dict[str, Any], access_token: str
-    ) -> dict[str, Any]:
+    def _graphql(self, query: str, variables: dict[str, Any], access_token: str) -> dict[str, Any]:
         """Execute a GraphQL query and return the data dict.
 
         Raises SyncClientError on HTTP errors or GraphQL error responses.
@@ -210,7 +213,9 @@ class AniListClient:
             )
             resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            logger.warning("AniList API error (status=%s): %s", exc.response.status_code, exc.response.text)
+            logger.warning(
+                "AniList API error (status=%s): %s", exc.response.status_code, exc.response.text
+            )
             if exc.response.status_code == 401:
                 raise SyncClientError(
                     "AniList token rejected — please reconnect your AniList account"
@@ -255,14 +260,13 @@ class AniListClient:
                 start_date = media.get("startDate") or {}
                 release_year = int(start_date.get("year") or 0)
                 fmt = media.get("format") or ""
+                genres: list[str] = media.get("genres") or []
                 title_norm = normalize_title(name)
                 engagement_score = max(0.0, min(1.0, score / score_max))
 
                 updated_at_ts = entry.get("updatedAt")
                 last_engaged_at = (
-                    datetime.fromtimestamp(updated_at_ts, UTC)
-                    if updated_at_ts
-                    else None
+                    datetime.fromtimestamp(updated_at_ts, UTC) if updated_at_ts else None
                 )
 
                 result.append(
@@ -277,6 +281,7 @@ class AniListClient:
                             "title_normalized": title_norm,
                             "release_year": release_year,
                             "format": fmt,
+                            "genres": genres,
                         },
                         last_engaged_at=last_engaged_at,
                     )
