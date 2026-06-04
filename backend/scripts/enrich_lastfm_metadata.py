@@ -98,6 +98,8 @@ def enrich_lastfm_items(
         if tags:
             safe_meta = item.meta or {}
             item.meta = {**safe_meta, "genres": tags}
+            # Commit per-item so a crash mid-run doesn't lose all progress; the
+            # HTTP rate limit (0.2 s between calls) makes commit frequency negligible.
             session.commit()
             enriched += 1
             logger.info("Enriched %r: %s", item.name, tags)

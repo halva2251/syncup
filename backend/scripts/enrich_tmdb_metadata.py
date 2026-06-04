@@ -131,6 +131,10 @@ def enrich_tmdb_items(
     if not movie_genres and not tv_genres:
         logger.error("Both TMDB genre lists failed to load — aborting enrichment.")
         return 0
+    if not movie_genres:
+        logger.warning("Movie genre map failed — film items will not be enriched this run.")
+    if not tv_genres:
+        logger.warning("TV genre map failed — show items will not be enriched this run.")
 
     items = (
         session.query(Item)
@@ -145,11 +149,17 @@ def enrich_tmdb_items(
     for item in items:
         safe_meta = item.meta or {}
         year: int | None = safe_meta.get("release_year") or None
+        # Prefer title_normalized for search if present; item.name is the fallback.
+        # We deliberately avoid the fully-lowercased normalized form here because TMDB
+        # search performs better with natural-case titles that include punctuation.
+        query_title = safe_meta.get("title_normalized") or item.name
         genre_map = movie_genres if item.item_type == "film" else tv_genres
-        genres = fetch_tmdb_genres(item.name, year, item.item_type, api_key, http, genre_map)
+        genres = fetch_tmdb_genres(query_title, year, item.item_type, api_key, http, genre_map)
 
         if genres:
             item.meta = {**safe_meta, "genres": genres}
+            # Commit per-item so a crash mid-run doesn't lose all progress; the
+            # HTTP rate limit (0.25 s between calls) means commit frequency is low.
             session.commit()
             enriched += 1
             logger.info("Enriched %r (%s): %s", item.name, item.item_type, genres)

@@ -8,26 +8,7 @@ from unittest.mock import MagicMock
 
 import httpx
 
-
-class _SequenceTransport(httpx.BaseTransport):
-    def __init__(self, responses: list[httpx.Response]) -> None:
-        self._responses = list(responses)
-        self._idx = 0
-
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
-        if self._idx >= len(self._responses):
-            raise RuntimeError("No more mock responses")
-        resp = self._responses[self._idx]
-        self._idx += 1
-        return resp
-
-
-def _http(responses: list[httpx.Response]) -> httpx.Client:
-    return httpx.Client(transport=_SequenceTransport(responses))
-
-
-def _json(body: dict, status: int = 200) -> httpx.Response:  # type: ignore[type-arg]
-    return httpx.Response(status, json=body)
+from tests.http_helpers import json_response, make_http, make_session
 
 
 def _make_artist(name: str = "Nick Cave", meta: dict | None = None) -> SimpleNamespace:  # type: ignore[type-arg]
@@ -39,12 +20,6 @@ def _make_artist(name: str = "Nick Cave", meta: dict | None = None) -> SimpleNam
         service="lastfm",
         meta=meta if meta is not None else {},
     )
-
-
-def _make_session(items: list) -> MagicMock:
-    session = MagicMock()
-    session.query.return_value.filter.return_value.all.return_value = items
-    return session
 
 
 _ARTIST_TAGS_RESPONSE = {
@@ -70,19 +45,19 @@ from scripts.enrich_lastfm_metadata import enrich_lastfm_items, fetch_lastfm_tag
 
 
 def test_fetch_lastfm_tags_returns_tag_names() -> None:
-    http = _http([_json(_ARTIST_TAGS_RESPONSE)])
+    http = make_http([json_response(_ARTIST_TAGS_RESPONSE)])
     result = fetch_lastfm_tags("Nick Cave", "test-api-key", http)
     assert result == ["post-punk", "gothic rock", "alternative"]
 
 
 def test_fetch_lastfm_tags_returns_none_on_artist_not_found() -> None:
-    http = _http([_json(_ARTIST_NOT_FOUND_RESPONSE)])
+    http = make_http([json_response(_ARTIST_NOT_FOUND_RESPONSE)])
     result = fetch_lastfm_tags("Unknown Artist", "test-api-key", http)
     assert result is None
 
 
 def test_fetch_lastfm_tags_returns_none_on_http_error() -> None:
-    http = _http([httpx.Response(500)])
+    http = make_http([httpx.Response(500)])
     result = fetch_lastfm_tags("Nick Cave", "test-api-key", http)
     assert result is None
 
@@ -97,14 +72,14 @@ def test_fetch_lastfm_tags_returns_none_on_network_error() -> None:
 
 def test_fetch_lastfm_tags_returns_none_when_no_tags() -> None:
     body = {"artist": {"name": "Obscure Artist", "tags": {"tag": []}}}
-    http = _http([_json(body)])
+    http = make_http([json_response(body)])
     result = fetch_lastfm_tags("Obscure Artist", "test-api-key", http)
     assert result is None
 
 
 def test_fetch_lastfm_tags_caps_at_five_tags() -> None:
     body = {"artist": {"tags": {"tag": [{"name": f"tag{i}", "url": ""} for i in range(10)]}}}
-    http = _http([_json(body)])
+    http = make_http([json_response(body)])
     result = fetch_lastfm_tags("Some Artist", "test-api-key", http)
     assert result is not None
     assert len(result) == 5
@@ -112,8 +87,8 @@ def test_fetch_lastfm_tags_caps_at_five_tags() -> None:
 
 def test_enrich_lastfm_items_updates_meta() -> None:
     item = _make_artist()
-    session = _make_session([item])
-    http = _http([_json(_ARTIST_TAGS_RESPONSE)])
+    session = make_session([item])
+    http = make_http([json_response(_ARTIST_TAGS_RESPONSE)])
 
     count = enrich_lastfm_items(session, "test-api-key", http, sleep_s=0.0)
 
@@ -124,8 +99,8 @@ def test_enrich_lastfm_items_updates_meta() -> None:
 
 def test_enrich_lastfm_items_skips_on_not_found() -> None:
     item = _make_artist("Unknown")
-    session = _make_session([item])
-    http = _http([_json(_ARTIST_NOT_FOUND_RESPONSE)])
+    session = make_session([item])
+    http = make_http([json_response(_ARTIST_NOT_FOUND_RESPONSE)])
 
     count = enrich_lastfm_items(session, "test-api-key", http, sleep_s=0.0)
 
@@ -135,8 +110,8 @@ def test_enrich_lastfm_items_skips_on_not_found() -> None:
 
 def test_enrich_lastfm_items_preserves_existing_meta() -> None:
     item = _make_artist(meta={"mbid": "abc-123"})
-    session = _make_session([item])
-    http = _http([_json(_ARTIST_TAGS_RESPONSE)])
+    session = make_session([item])
+    http = make_http([json_response(_ARTIST_TAGS_RESPONSE)])
 
     enrich_lastfm_items(session, "test-api-key", http, sleep_s=0.0)
 
@@ -146,9 +121,9 @@ def test_enrich_lastfm_items_preserves_existing_meta() -> None:
 
 def test_enrich_lastfm_items_continues_after_failure() -> None:
     items = [_make_artist("Artist A"), _make_artist("Artist B")]
-    session = _make_session(items)
+    session = make_session(items)
     success_body = {"artist": {"tags": {"tag": [{"name": "jazz", "url": ""}]}}}
-    http = _http([_json(_ARTIST_NOT_FOUND_RESPONSE), _json(success_body)])
+    http = make_http([json_response(_ARTIST_NOT_FOUND_RESPONSE), json_response(success_body)])
 
     count = enrich_lastfm_items(session, "test-api-key", http, sleep_s=0.0)
 
@@ -158,8 +133,8 @@ def test_enrich_lastfm_items_continues_after_failure() -> None:
 
 
 def test_enrich_lastfm_items_empty_returns_zero() -> None:
-    session = _make_session([])
-    http = _http([])
+    session = make_session([])
+    http = make_http([])
 
     count = enrich_lastfm_items(session, "test-api-key", http, sleep_s=0.0)
 

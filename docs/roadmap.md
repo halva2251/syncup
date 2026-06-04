@@ -473,7 +473,7 @@ New dep: `sentence-transformers>=3.0` in `pyproject.toml`.
 - All future AniList syncs automatically include genres; historical items get genres on the next user re-sync
 
 **Fix B — Steam genre/tag enrichment script:**
-- `scripts/enrich_steam_metadata.py`: queries Steam Store `appdetails` API (`https://store.steampowered.com/api/appdetails?appids={appid}&filters=genres,categories`) per game, stores `genres` (list of genre names) in `items.metadata`
+- `scripts/enrich_steam_metadata.py`: queries Steam Store `appdetails` API (`https://store.steampowered.com/api/appdetails?appids={appid}&filters=genres`) per game, stores `genres` (list of genre names) in `items.metadata`; Steam `categories` (e.g. "Single-player", "Achievements") are not fetched — they are not genre signals and do not improve embedding quality
 - Rate-limited: ~200 requests per 5 minutes — script paces itself with `time.sleep(1.5)` between calls
 - Incremental: skips games where `metadata["genres"]` already set; safe to re-run
 - Run once after first sync; new items get genres on next enrichment pass
@@ -488,9 +488,10 @@ New dep: `sentence-transformers>=3.0` in `pyproject.toml`.
 - Note: Last.fm tracks are not enriched here — track embeddings use `"track_name by artist — music"` which is sufficient since genre is captured at the artist level
 
 **Fix D — TMDB film/show genre enrichment:**
-- `scripts/enrich_tmdb_metadata.py`: for all items with `item_type IN ('film', 'show')` where `metadata["genres"]` is absent, calls TMDB search API (`/search/movie` or `/search/tv` with `query=title_normalized&year=release_year`), takes the top result's genre list
+- `scripts/enrich_tmdb_metadata.py`: for all items with `item_type IN ('film', 'show')` where `metadata["genres"]` is absent, calls TMDB search API (`/search/movie` or `/search/tv` with `query=item.name&year=release_year`), takes the top result's genre list; a title-match guard (`_normalize_for_match`) rejects false positives
 - New dep: `httpx` (already present), new config: `Settings.tmdb_api_key: str | None = None`
 - If `tmdb_api_key` is unset, script is skipped — films embed with name+year only (acceptable fallback)
+- Search uses `metadata["title_normalized"]` when present, falling back to `item.name`; TMDB search is case-insensitive and handles punctuation — do NOT pass the fully-lowercased normalized form as that degrades match quality
 - Incremental: skips items already enriched; safe to re-run
 
 **Item population script:**

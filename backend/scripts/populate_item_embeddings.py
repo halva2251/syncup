@@ -52,9 +52,8 @@ def populate_item_embeddings(session: Session, *, batch_size: int = 256) -> int:
         # Filter items whose text collapses to only dashes/whitespace — these
         # arise when both name and item_type are empty and produce near-zero
         # embeddings that corrupt cosine similarity scores.
-        valid_pairs = [
-            (item, item_to_text(item)) for item in batch if item_to_text(item).strip(" ——")
-        ]
+        all_pairs = [(item, item_to_text(item)) for item in batch]
+        valid_pairs = [(item, text) for item, text in all_pairs if text.strip() not in ("", "—")]
         if len(valid_pairs) < len(batch):
             logger.warning(
                 "Skipped %d item(s) with degenerate text — check name/item_type fields.",

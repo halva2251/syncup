@@ -88,6 +88,8 @@ def enrich_steam_items(
         if genres:
             safe_meta = item.meta or {}
             item.meta = {**safe_meta, "genres": genres}
+            # Commit per-item so a crash mid-run doesn't lose all progress; the
+            # HTTP rate limit (1.5 s between calls) makes commit frequency negligible.
             session.commit()
             enriched += 1
             logger.info("Enriched %r (%s): %s", item.name, item.external_id, genres)

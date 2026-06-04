@@ -8,26 +8,7 @@ from unittest.mock import MagicMock
 
 import httpx
 
-
-class _SequenceTransport(httpx.BaseTransport):
-    def __init__(self, responses: list[httpx.Response]) -> None:
-        self._responses = list(responses)
-        self._idx = 0
-
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
-        if self._idx >= len(self._responses):
-            raise RuntimeError("No more mock responses")
-        resp = self._responses[self._idx]
-        self._idx += 1
-        return resp
-
-
-def _http(responses: list[httpx.Response]) -> httpx.Client:
-    return httpx.Client(transport=_SequenceTransport(responses))
-
-
-def _json(body: dict, status: int = 200) -> httpx.Response:  # type: ignore[type-arg]
-    return httpx.Response(status, json=body)
+from tests.http_helpers import json_response, make_http, make_session
 
 
 def _make_film(
@@ -56,12 +37,6 @@ def _make_show(
     )
 
 
-def _make_session(items: list) -> MagicMock:
-    session = MagicMock()
-    session.query.return_value.filter.return_value.all.return_value = items
-    return session
-
-
 # TMDB API responses
 _GENRE_MAP_MOVIE = {
     "genres": [{"id": 878, "name": "Science Fiction"}, {"id": 27, "name": "Horror"}]
@@ -83,7 +58,7 @@ from scripts.enrich_tmdb_metadata import (
 
 
 def test_fetch_tmdb_genres_returns_genre_names_for_film() -> None:
-    http = _http([_json(_MOVIE_SEARCH_RESPONSE)])
+    http = make_http([json_response(_MOVIE_SEARCH_RESPONSE)])
     genre_map = {878: "Science Fiction", 27: "Horror"}
 
     result = fetch_tmdb_genres("Annihilation", 2018, "film", "test-key", http, genre_map)
@@ -92,7 +67,7 @@ def test_fetch_tmdb_genres_returns_genre_names_for_film() -> None:
 
 
 def test_fetch_tmdb_genres_returns_genre_names_for_show() -> None:
-    http = _http([_json(_TV_SEARCH_RESPONSE)])
+    http = make_http([json_response(_TV_SEARCH_RESPONSE)])
     genre_map = {18: "Drama", 9648: "Mystery"}
 
     result = fetch_tmdb_genres("Twin Peaks", 1990, "show", "test-key", http, genre_map)
@@ -101,7 +76,7 @@ def test_fetch_tmdb_genres_returns_genre_names_for_show() -> None:
 
 
 def test_fetch_tmdb_genres_returns_none_on_no_results() -> None:
-    http = _http([_json(_EMPTY_SEARCH_RESPONSE)])
+    http = make_http([json_response(_EMPTY_SEARCH_RESPONSE)])
     genre_map: dict[int, str] = {}
 
     result = fetch_tmdb_genres("Nonexistent Film", None, "film", "test-key", http, genre_map)
@@ -110,7 +85,7 @@ def test_fetch_tmdb_genres_returns_none_on_no_results() -> None:
 
 
 def test_fetch_tmdb_genres_returns_none_on_http_error() -> None:
-    http = _http([httpx.Response(401)])
+    http = make_http([httpx.Response(401)])
     genre_map: dict[int, str] = {}
 
     result = fetch_tmdb_genres("Annihilation", 2018, "film", "test-key", http, genre_map)
@@ -130,7 +105,7 @@ def test_fetch_tmdb_genres_returns_none_on_network_error() -> None:
 
 
 def test_fetch_tmdb_genres_works_without_year() -> None:
-    http = _http([_json(_MOVIE_SEARCH_RESPONSE)])
+    http = make_http([json_response(_MOVIE_SEARCH_RESPONSE)])
     genre_map = {878: "Science Fiction", 27: "Horror"}
 
     result = fetch_tmdb_genres("Annihilation", None, "film", "test-key", http, genre_map)
@@ -140,9 +115,15 @@ def test_fetch_tmdb_genres_works_without_year() -> None:
 
 def test_enrich_tmdb_items_updates_film_meta() -> None:
     item = _make_film()
-    session = _make_session([item])
+    session = make_session([item])
     # genre list fetch + search
-    http = _http([_json(_GENRE_MAP_MOVIE), _json(_GENRE_MAP_TV), _json(_MOVIE_SEARCH_RESPONSE)])
+    http = make_http(
+        [
+            json_response(_GENRE_MAP_MOVIE),
+            json_response(_GENRE_MAP_TV),
+            json_response(_MOVIE_SEARCH_RESPONSE),
+        ]
+    )
 
     count = enrich_tmdb_items(session, "test-key", http, sleep_s=0.0)
 
@@ -153,8 +134,14 @@ def test_enrich_tmdb_items_updates_film_meta() -> None:
 
 def test_enrich_tmdb_items_updates_show_meta() -> None:
     item = _make_show()
-    session = _make_session([item])
-    http = _http([_json(_GENRE_MAP_MOVIE), _json(_GENRE_MAP_TV), _json(_TV_SEARCH_RESPONSE)])
+    session = make_session([item])
+    http = make_http(
+        [
+            json_response(_GENRE_MAP_MOVIE),
+            json_response(_GENRE_MAP_TV),
+            json_response(_TV_SEARCH_RESPONSE),
+        ]
+    )
 
     count = enrich_tmdb_items(session, "test-key", http, sleep_s=0.0)
 
@@ -164,8 +151,14 @@ def test_enrich_tmdb_items_updates_show_meta() -> None:
 
 def test_enrich_tmdb_items_skips_on_no_results() -> None:
     item = _make_film("Unknown Film")
-    session = _make_session([item])
-    http = _http([_json(_GENRE_MAP_MOVIE), _json(_GENRE_MAP_TV), _json(_EMPTY_SEARCH_RESPONSE)])
+    session = make_session([item])
+    http = make_http(
+        [
+            json_response(_GENRE_MAP_MOVIE),
+            json_response(_GENRE_MAP_TV),
+            json_response(_EMPTY_SEARCH_RESPONSE),
+        ]
+    )
 
     count = enrich_tmdb_items(session, "test-key", http, sleep_s=0.0)
 
@@ -175,8 +168,14 @@ def test_enrich_tmdb_items_skips_on_no_results() -> None:
 
 def test_enrich_tmdb_items_preserves_existing_meta() -> None:
     item = _make_film(meta={"release_year": 2018, "title_normalized": "annihilation"})
-    session = _make_session([item])
-    http = _http([_json(_GENRE_MAP_MOVIE), _json(_GENRE_MAP_TV), _json(_MOVIE_SEARCH_RESPONSE)])
+    session = make_session([item])
+    http = make_http(
+        [
+            json_response(_GENRE_MAP_MOVIE),
+            json_response(_GENRE_MAP_TV),
+            json_response(_MOVIE_SEARCH_RESPONSE),
+        ]
+    )
 
     enrich_tmdb_items(session, "test-key", http, sleep_s=0.0)
 
@@ -187,13 +186,13 @@ def test_enrich_tmdb_items_preserves_existing_meta() -> None:
 def test_enrich_tmdb_items_continues_after_failure() -> None:
     # First item gets no results; second is "Annihilation" which matches the mock response title.
     items = [_make_film("Film A"), _make_film("Annihilation")]
-    session = _make_session(items)
-    http = _http(
+    session = make_session(items)
+    http = make_http(
         [
-            _json(_GENRE_MAP_MOVIE),
-            _json(_GENRE_MAP_TV),
-            _json(_EMPTY_SEARCH_RESPONSE),  # Film A: no result
-            _json(_MOVIE_SEARCH_RESPONSE),  # Annihilation: success
+            json_response(_GENRE_MAP_MOVIE),
+            json_response(_GENRE_MAP_TV),
+            json_response(_EMPTY_SEARCH_RESPONSE),  # Film A: no result
+            json_response(_MOVIE_SEARCH_RESPONSE),  # Annihilation: success
         ]
     )
 
@@ -205,8 +204,8 @@ def test_enrich_tmdb_items_continues_after_failure() -> None:
 
 
 def test_enrich_tmdb_items_empty_returns_zero() -> None:
-    session = _make_session([])
-    http = _http([_json(_GENRE_MAP_MOVIE), _json(_GENRE_MAP_TV)])
+    session = make_session([])
+    http = make_http([json_response(_GENRE_MAP_MOVIE), json_response(_GENRE_MAP_TV)])
 
     count = enrich_tmdb_items(session, "test-key", http, sleep_s=0.0)
 
@@ -220,9 +219,8 @@ def test_normalize_for_match_strips_punctuation_and_lowercases() -> None:
 
 
 def test_fetch_tmdb_genres_returns_none_on_title_mismatch() -> None:
-    # Search returns a result but the title doesn't match our query.
     wrong_title_response = {"results": [{"id": 9999, "title": "Annihilation", "genre_ids": [878]}]}
-    http = _http([_json(wrong_title_response)])
+    http = make_http([json_response(wrong_title_response)])
     genre_map = {878: "Science Fiction"}
 
     result = fetch_tmdb_genres("Interstellar", 2014, "film", "test-key", http, genre_map)
@@ -231,10 +229,9 @@ def test_fetch_tmdb_genres_returns_none_on_title_mismatch() -> None:
 
 
 def test_enrich_tmdb_items_aborts_when_both_genre_maps_fail() -> None:
-    # Both genre list endpoints return 500 — enrich_tmdb_items should return 0 immediately.
     item = _make_film()
-    session = _make_session([item])
-    http = _http([httpx.Response(500), httpx.Response(500)])
+    session = make_session([item])
+    http = make_http([httpx.Response(500), httpx.Response(500)])
 
     count = enrich_tmdb_items(session, "test-key", http, sleep_s=0.0)
 
@@ -245,8 +242,14 @@ def test_enrich_tmdb_items_aborts_when_both_genre_maps_fail() -> None:
 def test_enrich_tmdb_items_handles_null_meta() -> None:
     item = _make_film(meta=None)
     item.meta = None  # Simulate a row where the JSONB column returned NULL at the Python layer.
-    session = _make_session([item])
-    http = _http([_json(_GENRE_MAP_MOVIE), _json(_GENRE_MAP_TV), _json(_MOVIE_SEARCH_RESPONSE)])
+    session = make_session([item])
+    http = make_http(
+        [
+            json_response(_GENRE_MAP_MOVIE),
+            json_response(_GENRE_MAP_TV),
+            json_response(_MOVIE_SEARCH_RESPONSE),
+        ]
+    )
 
     count = enrich_tmdb_items(session, "test-key", http, sleep_s=0.0)
 
