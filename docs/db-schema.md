@@ -93,7 +93,7 @@ CREATE TABLE items (
     external_id            TEXT NOT NULL,
     name                   TEXT NOT NULL,
     metadata               JSONB NOT NULL DEFAULT '{}',  -- shape documented below
-    embedding              vector(128),
+    embedding              vector(384),
     embedding_computed_at  TIMESTAMPTZ,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (service, item_type, external_id)
@@ -101,7 +101,7 @@ CREATE TABLE items (
 
 CREATE INDEX idx_items_service_type ON items(service, item_type);
 CREATE INDEX idx_items_embedding ON items USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100);
+    WITH (lists = 200);
 
 -- =============================================================
 -- User items: per-user engagement with catalog items
@@ -179,7 +179,7 @@ CREATE TABLE user_dimension_weights (
 CREATE TABLE user_embeddings (
     user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     service      TEXT NOT NULL,        -- 'steam'|'lastfm'|'spotify'|'letterboxd'|'anilist'|'trakt'|'reddit'|'rateyourmusic'|'combined'
-    embedding    vector(128) NOT NULL,
+    embedding    vector(384) NOT NULL,
     computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, service)
 );
@@ -187,7 +187,7 @@ CREATE TABLE user_embeddings (
 -- Partial index for the combined-vector nearest-neighbour search
 CREATE INDEX idx_user_embeddings_combined
     ON user_embeddings USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 100)
+    WITH (lists = 200)
     WHERE service = 'combined';
 
 -- =============================================================
@@ -227,7 +227,7 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 
 ## Open questions (to resolve during implementation)
 
-- **Embedding dimension** — sketched at `vector(128)`. Might drop to 64 or bump to 256 depending on what the trained model produces.
+- **Embedding dimension** — resolved: `vector(384)`. `all-MiniLM-L6-v2` outputs 384-dim vectors. Migration `20260520_0010` applied this change. IVFFlat `lists=200` is appropriate for 384-dim vectors.
 - **Token encryption** — `BYTEA` columns assume symmetric encryption (AES-GCM) with a key from env. Decide key rotation strategy later.
 - **Match cache TTL** — initial target: invalidate on any embedding update for either user; hard-expire after 24h.
 - **`items.metadata` shape** — free JSONB, but the following keys are load-bearing and must stay stable:

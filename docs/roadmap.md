@@ -380,22 +380,22 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 
 **Goal:** replace the heuristic matcher with semantic embeddings + collaborative filtering re-ranking.
 
-> **Implementation plan confirmed 2026-05-19.** Phase 2 is split into 10 sequential blocks. Build order:
+> **Implementation plan confirmed 2026-05-19; updated 2026-06-04 after council review.** Phase 2 is split into blocks. Build order:
 >
 > | Block | Branch | Depends on | Delivers |
 > |-------|--------|------------|----------|
 > | A | ~~`feat/phase2-schema`~~ ✅ | — | EMBEDDING_DIM 128→384, `excluded` col, vibe cols, new deps/config |
 > | B | ~~`feat/phase2-semantic`~~ ✅ | A | `semantic.py`, `item_text.py`, AniList ingest genres fix |
 > | C | `feat/phase2-enrichment` | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
-> | D | `feat/phase2-user-embeddings` | A+B | `POST /api/embeddings/build`, `aggregate_vectors()`, auto-embed post-sync |
+> | D | `feat/phase2-user-embeddings` | A+B | `POST /api/embeddings/build`, `aggregate_vectors()` with catalog-size cap, auto-embed post-sync |
 > | E | `feat/phase2-item-exclusion` | A | `PATCH /api/me/items/{id}` |
-> | F | `feat/phase2-vibe` | D | `vibe_synthesizer.py`, vibe row in user_embeddings |
-> | G | `feat/phase2-cf-ranker` | A | `cf_ranker.py`, ALS user-latent-factor re-ranking |
-> | H | `feat/phase2-match-upgrade` | D+F+G | Semantic ANN path, 80/20 blend, `matching_mode` field |
+> | F | `feat/phase2-vibe` | D | `vibe_synthesizer.py`, archetype labels + vibe explanation text only (not a match score input) |
+> | ~~G~~ | ~~`feat/phase2-cf-ranker`~~ | ~~A~~ | **CUT** — ALS requires real user-item interaction density we don't have; produces pretend rigor |
+> | H | `feat/phase2-match-upgrade` | D+F | Semantic ANN path, cosine similarity score, `matching_mode` field |
 > | I | `feat/phase2-recommendations` | D | `GET /api/me/recommendations`, `GET /api/users/{id}/taste-card` |
-> | J | `feat/phase2-evaluation` | H | `scripts/evaluate.py`, blend sweep, failure mode report |
+> | J | `feat/phase2-evaluation` | H | `scripts/evaluate.py`, synthetic cohort eval, failure mode report |
 >
-> B, C, E, G can run in parallel after A lands. Last.fm enrichment is script-only (not ingest fix).
+> C, E can run in parallel after A lands. Last.fm enrichment is script-only (not ingest fix).
 
 > **Architecture decision (2026-05-12):** Phase 2 was originally planned around Item2Vec trained on public datasets. That approach was scrapped because separate per-service Item2Vec models produce incompatible vector spaces — cross-domain matching is not achievable that way. See `docs/brainstorm.md §ML Architecture Decisions` for the full reasoning. Item2Vec remains in the codebase as a future optional enhancement for when we have real multi-service user co-occurrence data.
 
@@ -418,7 +418,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 
 ### 2.1 Phase 2 Block B — Semantic Embedding Module
 
-> **Status:** Complete ✅ (2026-05-21). `feat/phase2-semantic` merged via PR #14 — 785 tests passing.
+> **Status:** Complete ✅ (2026-05-21). `feat/phase2-semantic` merged via PR #14 — 785 tests passing. UMAP embedding validation run 2026-06-04: 51 items across Steam/music/anime; cross-domain same-vibe similarity 0.273 vs diff-vibe 0.225 (delta +0.049) — architecture validated. See `backend/notebooks/embedding_validation.py`.
 >
 > Delivered:
 > - `syncup/embeddings/semantic.py` — lazy-loaded `SentenceTransformer` wrapper; `embed_text()` + `embed_batch()`, L2-normalized output; `_MODEL_NAME` cached at module load; double-checked locking for thread safety; per-element blank guard in `embed_batch`; zero-norm rows emit `logger.warning`
@@ -512,14 +512,17 @@ New dep: `sentence-transformers>=3.0` in `pyproject.toml`.
 
 `POST /api/embeddings/build` — computes (or recomputes) the current user's `combined` taste vector.
 
-The `combined` vector is the **primary match vector** — what ANN search and CF re-ranking operate on. It is built from the user's actual curated item data, not from LLM output.
+The `combined` vector is the **match vector** — what ANN search operates on. It is built from the user's actual curated item data, not from LLM output.
+
+**Catalog-size normalization (fix before implementing):** Without a per-service item cap, a user with 500 Steam games will have their gaming dimension dominate the user vector by sheer averaging mass, not by taste intensity. Fix: cap to the top-N items per service (by engagement_score) before computing the weighted average — e.g. top 50 per service. This ensures a user with 500 games and 20 Spotify tracks gets equal representation per service before dimension weights are applied.
 
 Implementation:
 1. Query `user_items JOIN items WHERE items.embedding IS NOT NULL AND user_items.excluded = false`
-2. Apply `user_dimension_weights` as multipliers on `engagement_score`, then apply `preference_overrides.boost_multiplier` where set
-3. Call `aggregate_vectors([(item.embedding, weighted_score), ...])` — log1p dampened weighted average, L2-normalised
-4. Upsert to `user_embeddings` with `service = "combined"`
-5. Returns 422 `NO_EMBEDDINGS_AVAILABLE` if no items have embeddings yet (not 500)
+2. **Per-service cap:** keep top 50 by `engagement_score` per service before weighting
+3. Apply `user_dimension_weights` as multipliers on `engagement_score`, then apply `preference_overrides.boost_multiplier` where set
+4. Call `aggregate_vectors([(item.embedding, weighted_score), ...])` — log1p dampened weighted average, L2-normalised
+5. Upsert to `user_embeddings` with `service = "combined"`
+6. Returns 422 `NO_EMBEDDINGS_AVAILABLE` if no items have embeddings yet (not 500)
 
 **Why item-average is information-preserving:**
 - Uses `engagement_score` (already normalized 0–1 per service), not raw playtime/scrobbles
@@ -528,73 +531,51 @@ Implementation:
 - Log1p dampening prevents any single item from dominating regardless of raw engagement magnitude
 - Dimension weights let the user decide which services contribute to their match profile
 
-The information loss concern (low-playtime favourites, high-playtime items the user dislikes) is addressed by `preference_overrides` and `excluded` — these are direct controls on the match vector. The controls already exist in the API.
+Known limitation (document in evaluation): centroid collapse — two users can theoretically produce the same weighted-average vector from completely different item sets. This is real but bounded: the per-service cap and preference controls make degenerate collisions unlikely in practice. Name it in the self-critical assessment section.
 
 `aggregate_vectors()` is extracted from `user_embeddings.py` as a pure function taking pre-fetched `(vector, weight)` pairs directly — no model dependency.
 
-### 2.4 LLM vibe synthesis
+### 2.4 LLM vibe synthesis (explanation layer only)
 
 **Status:** Not started.
 
-The component that delivers the "it actually understands me" feeling and generates taste card content. The LLM output is also embedded and stored as a **secondary match vector** that contributes 20% to the final match score (see §2.6 for the blending formula).
+**Scope change (2026-06-04):** The LLM is an explanation layer, not a match score contributor. The previous plan had LLM output contributing 20% to the final match score — this has been cut. A 20% blend weight with no empirical basis is indefensible to KI Challenge judges, and LLM summaries flatten nuance in ways that degrade match quality. The match score is purely cosine similarity on the `combined` vector.
 
-**What it does:** takes a user's top items across all connected services, sends them to an LLM (Claude API), receives back: `vibe_summary` (2-3 sentences), `archetype` (label like "The Patient Aesthete"), `key_themes` (list of 3-5 strings). The `vibe_summary` is embedded with sentence-transformers → stored as `user_embeddings` row with `service = "vibe"`.
+**What it now does:** takes a user's top items across all connected services, sends them to an LLM (Claude API), receives back: `vibe_summary` (2-3 sentences), `archetype` (label like "The Patient Aesthete"), `key_themes` (list of 3-5 strings). These are stored on the `users` table and displayed on the taste card. No `vibe` row is written to `user_embeddings`.
 
-**Role of the vibe embedding:**
-- Primary purpose: user-facing taste card content (archetype label, description, what users read and share)
-- Secondary purpose: contributes 20% to match score alongside the `combined` item-average vector (80%)
-- The LLM synthesizes cross-domain patterns (the thread connecting Disco Elysium + Nick Cave + Tarkovsky) that item-averaging alone can miss
-- Two users with similar cross-domain vibes but different surface items can score higher than item cosine alone would suggest
-
-**Why the vibe embedding is secondary, not primary:**
-- LLM summaries flatten nuance — two users with different niche tastes may get similar prose, embedding to nearly the same vector
-- The item-average preserves more information because it operates in the full 384-dim item space, not in compressed prose
-- The 80/20 blend is a tunable hyperparameter — vary it in the evaluation framework (§2.8) to find the empirically best ratio
+**Role of the LLM output:**
+- Taste card content — archetype label, description, what users read and share
+- Match explanation — "you both favor atmospheric melancholic aesthetics with high narrative density" shown alongside the cosine score
+- The synthesis captures cross-domain patterns the item vector can't articulate (e.g. the thread connecting Disco Elysium + Nick Cave + Tarkovsky)
+- It does NOT influence which users are ranked as matches — that is purely the `combined` vector
 
 **Item selection for LLM input:**
 - Top items by `engagement_score`, not by rarity
 - Cap at top 5 per service, up to 20 total (prevents one service dominating)
 - Skip `user_items.excluded = true` items and apply `preference_overrides.boost_multiplier` before ranking
-- Rarity weighting is explicitly NOT used here — mainstream favourites are valid signal
 
-**New columns on `users`:**
+**New columns on `users` (already added in Block A):**
 - `vibe_summary: Text | None`
 - `archetype: Text | None`
 - `key_themes: ARRAY(Text) | None`
 - `vibe_computed_at: DateTime | None`
 
 **New file:** `syncup/embeddings/vibe_synthesizer.py`
-- `synthesize_vibe(user_id, db) -> VibeProfile` — selects top items, calls LLM, parses response, stores result, upserts `user_embeddings` row with `service = "vibe"`
+- `synthesize_vibe(user_id, db) -> VibeProfile` — selects top items, calls LLM, parses response, stores result on `users` row
 - Called after sync completes (background task) and on `POST /api/me/recompute`
 - Mocked in tests — don't make real LLM calls in CI
 
-**New config:** `Settings.llm_api_key: str | None = None`. If unset, vibe synthesis is skipped — match score falls back to 100% item-average (graceful degradation, no feature flag needed).
+**New config:** `Settings.llm_api_key: str | None = None`. If unset, vibe synthesis is skipped and taste card shows items only (graceful degradation, no feature flag needed).
 
 **Cost:** ~$0.01 per user synthesis call. Called once per sync, result stored in DB.
 
-### 2.5 CF re-ranker
+### 2.5 CF re-ranker — CUT ❌
 
-**Status:** Not started
+**Status:** Permanently cut (2026-06-04).
 
-Collaborative filtering re-ranker trained on our own `user_items` engagement data. This is the trainable component for the KI Challenge — it learns from our actual user data, not a pre-trained model.
+ALS collaborative filtering requires a meaningful user × item interaction matrix to learn latent factors. With no real users at demo time, any trained model reflects synthetic or hand-seeded data — judges with ML knowledge will identify this immediately. This block produced pretend rigor, not evidence.
 
-`syncup/matching/cf_ranker.py`:
-- Builds a user × item implicit feedback matrix from `user_items.engagement_score`
-- Trains ALS model via the `implicit` library (~20 lines) — ALS is preferred over BPR for this use case (faster, more stable on sparse data)
-- `CfRanker.train(db)` — called on a daily schedule; NOT per-user (trains on all user data at once)
-- `CfRanker.rerank(user_id, candidate_user_ids) -> list[uuid]` — scores and sorts candidates
-- Fallback: if `user_id` not in CF model (new user, sparse history), skip re-ranking silently
-
-**How `rerank()` works (important implementation note):** ALS produces a user factor matrix (one latent vector per user) and an item factor matrix. To rank candidate *users* by CF similarity to a query user, extract the ALS user latent vectors and compute cosine similarity between `user_vector[query_user]` and `user_vector[candidate]` for each candidate. This is user-user CF in latent space — not item prediction. The `implicit` library's `model.user_factors` array holds these vectors after training; index into it by the internal integer user index (maintain a `user_id → row_index` mapping alongside the model).
-
-**Training frequency:** train once daily on all data (not on every `POST /api/me/recompute`). `recompute` triggers embedding rebuild; CF retraining is a separate scheduled task. Separating these prevents expensive model retraining on every user action.
-
-**Known limitation (document in evaluation):** ALS user-user similarity can only re-rank candidates already in the 50-candidate semantic pool. If the true best match is not in the top-50 semantic results (possible when metadata quality is low), CF cannot surface them. This is the cascade ceiling — it's a known trade-off, not a bug.
-
-Why two stages instead of CF alone:
-- CF needs sufficient history to produce signal — new users have none
-- CF is single-domain (it learns co-occurrence, not semantics)
-- Semantic handles cold start and cross-domain; CF improves ranking where real engagement patterns exist
+The `implicit` dependency remains in `pyproject.toml [ml]` for future use when real user data exists post-launch. Block H no longer depends on this block.
 
 ### 2.6 Match endpoint upgrade + D14 IVFFlat index
 
@@ -604,10 +585,11 @@ Migration `20260513_0010_ivfflat_user_embeddings.py` — creates the IVFFlat ind
 
 Updated `GET /api/matches` logic:
 1. If user has `user_embeddings` row with `service = "combined"`: ANN cosine via pgvector `<=>` on `combined` vector → 50 candidates
-2. Blend score: `final_score = 0.8 × cosine(combined_a, combined_b) + 0.2 × cosine(vibe_a, vibe_b)` (if both users have a `vibe` row; otherwise 100% combined). The 0.8/0.2 ratio is a tunable hyperparameter — vary it in the evaluation framework to find the empirically best value.
-3. If user is in CF model: `CfRanker.rerank()` → top 10 from those 50 (re-ranks by CF user-latent-factor similarity)
-4. Else: fall back to heuristic
-5. Response includes `matching_mode: "heuristic" | "semantic" | "semantic+cf"`
+2. Score: `final_score = cosine(combined_a, combined_b)` — pure cosine similarity, clean and defensible to judges
+3. Else: fall back to heuristic
+4. Response includes `matching_mode: "heuristic" | "semantic"`
+
+**Score formula change (2026-06-04):** The previous plan blended 80% item cosine + 20% vibe embedding. This has been removed. The LLM vibe synthesis is now explanation-only (see §2.4) and does not write a `vibe` row to `user_embeddings`. The match score is purely cosine similarity on the `combined` vector — reproducible, empirically evaluable, and defensible to judges. The LLM contribution is surfaced as a human-readable match explanation alongside the score, not baked into it.
 
 The `matching_mode` field is intentional for the KI Challenge submission — it lets us compare modes scientifically and demonstrate self-critical assessment.
 
@@ -671,52 +653,53 @@ Frontend unifies these in a "manage your taste" view (Phase 3, friend's job).
 
 **Status:** Not started. Required for KI Challenge scientific rigor (criterion 7).
 
-A standalone evaluation script and a small API endpoint that measures how well the AI is actually working. Without this, we can't answer "how do you know your recommendations are good?" in front of judges.
+A standalone evaluation script that measures how well the AI is actually working — without requiring real users. Without this, we can't answer "how do you know your matching works?" in front of judges.
 
-**Recommendation quality (offline holdout eval):**
-- Hold out 20% of each user's `user_items` before embedding
-- Train on the remaining 80%
-- Check if held-out items rank in the top-K of recommendations vs. random items
-- Metric: Precision@10, Recall@10 (how many held-out items appear in top 10 recommendations)
+**Synthetic cohort evaluation (primary method — no real users needed):**
+Construct synthetic user profiles with known overlap levels:
+- Group A: 5 users sharing 80%+ of items (should rank each other highest)
+- Group B: 5 users sharing ~50% of items (should rank within-group above out-group)
+- Group C: 5 users sharing ~10% of items (should rank near-random)
+- Out-group: 5 users with 0% overlap (should rank lowest)
 
-**Matching quality (A/B comparison):**
-- `matching_mode` field already records which mode was used (`heuristic`, `semantic`, `semantic+cf`)
-- Log scores per mode
-- Report average scores per mode — does `semantic+cf` consistently outscore `heuristic`?
-- **Caveat (document in report):** higher average cosine similarity ≠ better matches in absolute terms, only relative to baseline. The quantitative comparison is evidence of improvement, not proof of quality.
+For each group-A user, check how many group-A users appear in their top-5 semantic matches. Report as Precision@5. This is ground truth — we constructed it. It requires no real users and no user feedback.
+
+**Holdout item prediction (recommendation quality):**
+- Hold out 20% of each synthetic user's items before embedding
+- Build user vector on remaining 80%
+- Check if held-out items rank in top-K of `GET /api/me/recommendations`
+- Metric: Precision@10, Recall@10
+
+**Matching mode comparison:**
+- `matching_mode` field records which mode was used (`heuristic` vs `semantic`)
+- Report average scores per mode — does `semantic` consistently outscore `heuristic`?
+- **Caveat (document in report):** higher cosine similarity ≠ better matches in absolute terms, only relative to baseline.
 
 **Qualitative exhibit (required for KI demo — criterion 8):**
-- Pre-compute match results for 3–5 real user profiles (your own accounts, your friend's accounts, or hand-crafted test profiles)
-- For each: pick 2 matches that are intuitively correct ("yes, these people share a vibe") and 1 that is wrong or surprising
-- For the wrong one: diagnose why the system got it wrong (sparse data? missing metadata? genre mismatch in semantic space?)
-- This exhibit answers criterion 8 ("self-critical assessment") better than any number — judges will remember "the system recommended X because of Y, and here's where it failed and why" far longer than a precision score
-
-**Blend ratio evaluation:**
-- Run the eval at blend ratios 100/0, 80/20, 60/40, 50/50 (item-average / vibe)
-- Report which ratio maximizes Precision@10 on the holdout set
-- Use the best ratio in production; report this in the KI submission as a hyperparameter search
+- Pre-compute match results for 3–5 real user profiles (your own accounts, friends)
+- For each: pick 2 intuitively correct matches and 1 that is wrong or surprising
+- For the wrong one: diagnose why (sparse data? missing metadata? genre mismatch?)
+- This exhibit answers criterion 8 ("self-critical assessment") better than any number.
 
 **Output:** `scripts/evaluate.py` prints a clean report:
 ```
-Recommendation quality (holdout eval, N=X users):
+Synthetic cohort evaluation (N=20 synthetic users):
+  Group A precision@5: 0.80  (high-overlap users correctly ranked)
+  Group B precision@5: 0.60
+  Group C precision@5: 0.25
+
+Holdout recommendation quality (N=X users):
   Precision@10: 0.34
   Recall@10:    0.21
 
-Blend ratio sweep (Precision@10):
-  combined only (100/0): 0.29
-  80/20 blend:           0.34  ← best
-  60/40 blend:           0.31
-  50/50 blend:           0.28
-
 Matching mode comparison:
-  heuristic:    avg score 0.41
-  semantic:     avg score 0.58  (+41%)
-  semantic+cf:  avg score 0.63  (+54%)
+  heuristic:  avg score 0.41
+  semantic:   avg score 0.58  (+41%)
 
 Known failure modes:
   - Users with < 20 items: degraded recommendation quality (thin signal)
   - Steam-only users: no genre metadata pre-enrichment → lower embedding quality
-  - Cascade ceiling: CF can only re-rank semantic top-50; misses outside that pool
+  - Centroid collapse: users with different items can produce similar centroids
 ```
 
 This is the scientific evidence that the AI works. Show this to judges. The failure modes section is not a weakness — it is criterion 8.

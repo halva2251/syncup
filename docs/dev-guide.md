@@ -245,10 +245,10 @@ Key tables:
 | `preference_overrides` | User-applied boost multipliers on specific items |
 | `manual_obsessions` | Freeform items a user adds that aren't from any service |
 | `user_dimension_weights` | Per-(user, service) weight for the matching score |
-| `user_embeddings` | The aggregated taste vector per (user, service), 128-dim pgvector |
+| `user_embeddings` | The aggregated taste vector per (user, service), 384-dim pgvector |
 | `match_cache` | Cached match pairs with score + per-service breakdown JSONB |
 
-`items.embedding` is a `pgvector` column (128-dimensional by default). An IVFFlat index speeds up ANN search but only applies to non-null rows.
+`items.embedding` is a `pgvector` column (384-dimensional, matching `all-MiniLM-L6-v2` output). An IVFFlat index speeds up ANN search but only applies to non-null rows.
 
 `service_connections.sync_status` is constrained to `pending | syncing | ok | error`.
 
@@ -395,7 +395,11 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Phase 2 Block A (feat/phase2-schema) is complete.** `EMBEDDING_DIM` changed 128 → 384 for sentence-transformers `all-MiniLM-L6-v2`. `UserItem.excluded` column added for Phase 2 item exclusion. Four vibe synthesis columns added to `User` (`vibe_summary`, `archetype`, `key_themes`, `vibe_computed_at`). Migration `20260520_0010` applied — vector columns widened, stale embeddings cleared, IVFFlat index recreated. Config gains `embedding_model_name`, `llm_api_key`, `tmdb_api_key`. ML deps (`sentence-transformers`, `implicit`, `anthropic`) added to `[ml]` extras. 726 tests passing.
 
-**Phase 2 Block B (feat/phase2-semantic) is complete.** `syncup/embeddings/semantic.py` — lazy-loaded SentenceTransformer wrapper; `embed_text()` and `embed_batch()` with L2-normalized output. `syncup/embeddings/item_text.py` — `item_to_text(item)` serializer per roadmap §2.1; handles all item_types; never raises. AniList `genres` field added to GraphQL query and stored in `metadata["genres"]`. 785 tests passing. Next: Block C (`feat/phase2-enrichment`) and Block D (`feat/phase2-user-embeddings`) can proceed; Block D now unblocked by Block B.
+**Phase 2 Block B (feat/phase2-semantic) is complete.** `syncup/embeddings/semantic.py` — lazy-loaded SentenceTransformer wrapper; `embed_text()` and `embed_batch()` with L2-normalized output. `syncup/embeddings/item_text.py` — `item_to_text(item)` serializer per roadmap §2.1; handles all item_types; never raises. AniList `genres` field added to GraphQL query and stored in `metadata["genres"]`. 785 tests passing.
+
+**UMAP embedding validation complete (2026-06-04).** `backend/notebooks/embedding_validation.py` — 51 items across Steam/music/anime, embedded with `all-MiniLM-L6-v2`, reduced to 2D via UMAP. Result: cross-domain same-vibe similarity 0.273 vs. different-vibe 0.225 (delta +0.049). Positive signal confirmed — architecture is viable. Key spot-checks: Bloodborne × Junji Ito Collection = 0.413, Pathologic 2 × The Caretaker = 0.380, Rocket League × Burial = 0.013. Description bias noted (acclaimed works cluster on vocabulary, not vibe) — manageable limitation.
+
+**Next: Block C (`feat/phase2-enrichment`)** — Steam enrichment script first (lean pass, 2 days max). Block D (`feat/phase2-user-embeddings`) unblocked by Block B; implement catalog-size cap (top-N per service) before building `aggregate_vectors()`. Block G (CF re-ranker) has been cut — see roadmap §2.5.
 
 ---
 

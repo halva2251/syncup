@@ -30,6 +30,8 @@ ml = [
     "sentence-transformers>=3.0",
     "implicit>=0.7",
     "anthropic>=0.25",
+    "umap-learn>=0.5.12",
+    "matplotlib>=3.10.9",
 ]
 dev = [
     "pytest>=8.0",
