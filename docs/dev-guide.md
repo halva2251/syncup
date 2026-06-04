@@ -52,6 +52,7 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | GET | `/api/matches` | Top matches (heuristic scorer); requires auth + `is_matchable=true`. Returns empty on cache miss, refreshes in background. |
 | GET | `/api/matches/{user_id}` | Single match detail with `shared_highlights`; requires auth + `is_matchable=true`. |
 | POST | `/api/me/recompute` | Force match cache refresh; requires auth. Returns 204 immediately. Rate-limited to 1/hour. |
+| POST | `/api/embeddings/build` | Compute (or recompute) the current user's combined 384-dim taste vector from all non-excluded items with embeddings; applies per-service cap (top 50), dimension weights, and boost multipliers; upserts `user_embeddings` with `service='combined'`; requires auth. Rate-limited to 5/min. Returns 422 `NO_EMBEDDINGS_AVAILABLE` if no items have embeddings yet. *(Phase 2 Block D)* |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 

@@ -13,6 +13,7 @@ Why log1p dampening: raw play counts are wildly skewed. A user with
 library effectively replaced by one single game; log1p keeps the big
 signal dominant without erasing the rest.
 """
+
 from __future__ import annotations
 
 import math
@@ -22,6 +23,60 @@ from typing import cast
 import numpy as np
 
 from syncup.embeddings.item2vec import Item2VecModel
+
+
+def aggregate_vectors(
+    pairs: list[tuple[list[float], float]],
+) -> list[float]:
+    """Pure function: weighted average of (vector, weight) pairs, L2-normalised.
+
+    Weights are log1p-dampened before accumulation so no single high-engagement
+    item can erase the rest of the taste signal.
+
+    Args:
+        pairs: pre-fetched (embedding_vector, weight) pairs from the DB.
+            Weights must be >= 0. Zero-weight pairs are skipped.
+
+    Returns:
+        L2-normalised float vector of the same dimension as the inputs.
+
+    Raises:
+        ValueError: if pairs is empty, any weight is negative, the accumulated
+            vector has zero norm, or no pairs contributed (all zero weights).
+    """
+    if not pairs:
+        raise ValueError("aggregate_vectors requires a non-empty list of pairs")
+
+    expected_dim = len(pairs[0][0])
+    for _vec, weight in pairs:
+        if weight < 0:
+            raise ValueError(f"Weights must be non-negative, got {weight}")
+
+    for vec, _weight in pairs:
+        if len(vec) != expected_dim:
+            raise ValueError(
+                f"All vectors must have the same dimension ({expected_dim}), "
+                f"got {len(vec)}"
+            )
+
+    accumulator: np.ndarray | None = None
+    for vec, weight in pairs:
+        if weight == 0:
+            continue
+        dampened = math.log1p(weight)
+        contribution = np.asarray(vec, dtype=np.float64) * dampened
+        accumulator = contribution if accumulator is None else accumulator + contribution
+
+    if accumulator is None:
+        raise ValueError("No pairs contributed to the user vector — all weights were zero.")
+
+    norm = float(np.linalg.norm(accumulator))
+    if norm == 0.0:
+        raise ValueError(
+            "Aggregated vector has zero norm; cannot L2-normalize. "
+            "Check that input vectors are non-zero."
+        )
+    return cast(list[float], (accumulator / norm).tolist())
 
 
 def build_user_vector(
@@ -51,9 +106,7 @@ def build_user_vector(
 
     for item_id, weight in interactions.items():
         if weight < 0:
-            raise ValueError(
-                f"Weights must be non-negative, got {weight} for {item_id!r}"
-            )
+            raise ValueError(f"Weights must be non-negative, got {weight} for {item_id!r}")
 
     accumulator: np.ndarray | None = None
     for item_id, weight in interactions.items():
@@ -65,9 +118,7 @@ def build_user_vector(
             continue
         dampened = math.log1p(weight)
         contribution = np.asarray(vec, dtype=np.float64) * dampened
-        accumulator = (
-            contribution if accumulator is None else accumulator + contribution
-        )
+        accumulator = contribution if accumulator is None else accumulator + contribution
 
     if accumulator is None:
         raise ValueError(
@@ -77,7 +128,5 @@ def build_user_vector(
 
     norm = float(np.linalg.norm(accumulator))
     if norm == 0.0:
-        raise ValueError(
-            "Aggregated user vector has zero norm; cannot L2-normalize."
-        )
+        raise ValueError("Aggregated user vector has zero norm; cannot L2-normalize.")
     return cast(list[float], (accumulator / norm).tolist())
