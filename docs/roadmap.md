@@ -68,6 +68,11 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `RateYourMusicClient` registered in `register_default_clients` | `syncup/ingest/registry.py` |
 | RateYourMusic added to `GET /api/me/taste` — renders `services.rateyourmusic.top_albums` | `syncup/api/routes/taste.py` |
 | 620 passing tests | `backend/tests/` |
+| `enrich_steam_metadata.py` — Steam Store appdetails enrichment; incremental, rate-limited to ~200 req/5 min | `backend/scripts/enrich_steam_metadata.py` |
+| `enrich_lastfm_metadata.py` — Last.fm `artist.getInfo` tag enrichment; incremental, 5 req/s | `backend/scripts/enrich_lastfm_metadata.py` |
+| `enrich_tmdb_metadata.py` — TMDB search genre enrichment for films/shows; title-match guard; aborts if genre maps fail | `backend/scripts/enrich_tmdb_metadata.py` |
+| `populate_item_embeddings.py` — batch-embeds all items `WHERE embedding IS NULL` in chunks of 256; degenerate text guard | `backend/scripts/populate_item_embeddings.py` |
+| 831 passing tests | `backend/tests/` |
 
 ---
 
@@ -386,7 +391,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > |-------|--------|------------|----------|
 > | A | ~~`feat/phase2-schema`~~ ✅ | — | EMBEDDING_DIM 128→384, `excluded` col, vibe cols, new deps/config |
 > | B | ~~`feat/phase2-semantic`~~ ✅ | A | `semantic.py`, `item_text.py`, AniList ingest genres fix |
-> | C | `feat/phase2-enrichment` | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
+> | C | ~~`feat/phase2-enrichment`~~ ✅ | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
 > | D | `feat/phase2-user-embeddings` | A+B | `POST /api/embeddings/build`, `aggregate_vectors()` with catalog-size cap, auto-embed post-sync |
 > | E | `feat/phase2-item-exclusion` | A | `PATCH /api/me/items/{id}` |
 > | F | `feat/phase2-vibe` | D | `vibe_synthesizer.py`, archetype labels + vibe explanation text only (not a match score input) |
@@ -458,7 +463,7 @@ New dep: `sentence-transformers>=3.0` in `pyproject.toml`.
 
 ### 2.2 Metadata enrichment + item population script + auto-embed post-sync
 
-**Status:** Not started
+**Status:** Scripts complete ✅ (2026-06-04). `feat/phase2-enrichment` — 831 tests passing. Auto-embed post-sync lands in Block F.
 
 **Metadata enrichment must run before embedding.** Embedding quality is directly limited by what's in `items.metadata`. Four enrichment fixes land in this block:
 
