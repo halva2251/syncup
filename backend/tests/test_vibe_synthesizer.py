@@ -107,7 +107,7 @@ class TestSelectTopItems:
         result = _select_top_items(db, uuid.uuid4())
 
         steam = [r for r in result if r.service == "steam"]
-        assert len(steam) <= 5
+        assert len(steam) == 5
 
     def test_takes_highest_scored_items_within_service(self) -> None:
         db = MagicMock()
@@ -152,7 +152,7 @@ class TestSelectTopItems:
 
         result = _select_top_items(db, uuid.uuid4())
 
-        assert len(result) <= 20
+        assert len(result) == 20
 
     def test_returns_vibe_items(self) -> None:
         db = MagicMock()
@@ -164,6 +164,41 @@ class TestSelectTopItems:
         assert isinstance(result[0], VibeItem)
         assert result[0].name == "Disco Elysium"
         assert result[0].service == "steam"
+
+    def test_excluded_items_are_skipped_by_query(self) -> None:
+        """L2 regression: excluded items must not reach the ranking logic."""
+        db = MagicMock()
+        db.execute.return_value.all.return_value = [
+            _make_row("Included", service="steam", engagement_score=0.9)
+        ]
+        result = _select_top_items(db, uuid.uuid4())
+        assert len(result) == 1
+        assert result[0].name == "Included"
+        # Verify the SQL query contains the exclusion filter
+        query = db.execute.call_args[0][0]
+        assert "excluded" in str(query).lower()
+
+    def test_boost_multiplier_none_is_neutral(self) -> None:
+        db = MagicMock()
+        rows = [
+            _make_row("A", service="steam", engagement_score=0.9, boost_multiplier=None),
+            _make_row("B", service="steam", engagement_score=0.8, boost_multiplier=1.0),
+        ]
+        db.execute.return_value.all.return_value = rows
+        result = _select_top_items(db, uuid.uuid4())
+        names = [r.name for r in result]
+        assert names == ["A", "B"]
+
+    def test_boost_multiplier_zero_demotes_item(self) -> None:
+        db = MagicMock()
+        rows = [
+            _make_row("A", service="steam", engagement_score=0.9, boost_multiplier=0.0),
+            _make_row("B", service="steam", engagement_score=0.5, boost_multiplier=1.0),
+        ]
+        db.execute.return_value.all.return_value = rows
+        result = _select_top_items(db, uuid.uuid4())
+        names = [r.name for r in result]
+        assert names == ["B", "A"]
 
 
 # ---------------------------------------------------------------------------
@@ -326,4 +361,6 @@ class TestSynthesizeVibe:
             )
 
         _, kwargs = mock_llm.call_args
-        assert kwargs.get("llm_api_key") or mock_llm.call_args.args[1] == "sk-real"
+        assert kwargs["llm_api_key"] == "sk-real"
+        assert kwargs["llm_base_url"] == "https://api.deepseek.com"
+        assert kwargs["llm_model"] == "deepseek-chat"

@@ -111,7 +111,9 @@ def _select_top_items(db: DbSession, user_id: uuid.UUID) -> list[VibeItem]:
     # Group by service, compute effective score, sort within each service
     by_service: dict[str, list[tuple[float, VibeItem]]] = defaultdict(list)
     for row in rows:
-        effective = row.engagement_score * (row.boost_multiplier or 1.0)
+        effective = row.engagement_score * (
+            row.boost_multiplier if row.boost_multiplier is not None else 1.0
+        )
         by_service[row.service].append(
             (effective, VibeItem(name=row.name, item_type=row.item_type, service=row.service))
         )

@@ -550,3 +550,98 @@ def test_set_sync_error_only_catches_sqla_errors() -> None:
 
     with pytest.raises(RuntimeError, match="programming bug"):
         _set_sync_error(session, uuid.uuid4(), "steam", "some error")
+
+
+# ---------------------------------------------------------------------------
+# M2 — _embed_new_items
+# ---------------------------------------------------------------------------
+
+
+def test_embed_new_items_embeds_and_commits(mock_session: MagicMock) -> None:
+    """Items without embeddings are passed to embed_batch and committed."""
+    from syncup.api.routes.sync import _embed_new_items
+    from syncup.db.models import Item
+
+    item1 = MagicMock(spec=Item)
+    item1.embedding = None
+    item2 = MagicMock(spec=Item)
+    item2.embedding = None
+    mock_session.scalars.return_value.all.return_value = [item1, item2]
+
+    fake_embeddings = [[0.1] * 384, [0.2] * 384]
+    with patch("syncup.embeddings.semantic.embed_batch", return_value=fake_embeddings):
+        _embed_new_items(mock_session, uuid.uuid4(), "steam")
+
+    assert item1.embedding == [0.1] * 384
+    assert item2.embedding == [0.2] * 384
+    assert item1.embedding_computed_at is not None
+    assert item2.embedding_computed_at is not None
+    mock_session.commit.assert_called()
+
+
+def test_embed_new_items_logs_on_embed_batch_failure(mock_session: MagicMock) -> None:
+    """embed_batch failure is logged; embeddings remain untouched."""
+    from syncup.api.routes.sync import _embed_new_items
+    from syncup.db.models import Item
+
+    item1 = MagicMock(spec=Item)
+    item1.embedding = None
+    mock_session.scalars.return_value.all.return_value = [item1]
+
+    with patch(
+        "syncup.embeddings.semantic.embed_batch", side_effect=RuntimeError("model down")
+    ):
+        _embed_new_items(mock_session, uuid.uuid4(), "steam")
+
+    assert item1.embedding is None
+    mock_session.commit.assert_not_called()
+
+
+def test_embed_new_items_noop_when_all_embedded(mock_session: MagicMock) -> None:
+    """No items need embedding → no work and no commit."""
+    from syncup.api.routes.sync import _embed_new_items
+
+    mock_session.scalars.return_value.all.return_value = []
+    _embed_new_items(mock_session, uuid.uuid4(), "steam")
+    mock_session.commit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# M2 — background task scheduling
+# ---------------------------------------------------------------------------
+
+
+def test_do_sync_generic_schedules_vibe_when_key_present(
+    mock_db_factory: MagicMock,
+    mock_session: MagicMock,
+) -> None:
+    conn = _make_connection("steam", "76561198000000000")
+    mock_session.scalar.return_value = conn
+    client = _mock_client([_raw_item("730")])
+
+    with (
+        patch("syncup.api.routes.sync.get_client", return_value=client),
+        patch("syncup.api.routes.sync.synthesize_vibe") as mock_vibe,
+    ):
+        _do_sync_generic(
+            mock_db_factory, uuid.uuid4(), "steam", llm_api_key="sk-real"
+        )
+
+    mock_vibe.assert_called_once()
+
+
+def test_do_sync_generic_skips_vibe_when_no_key(
+    mock_db_factory: MagicMock,
+    mock_session: MagicMock,
+) -> None:
+    conn = _make_connection("steam", "76561198000000000")
+    mock_session.scalar.return_value = conn
+    client = _mock_client([_raw_item("730")])
+
+    with (
+        patch("syncup.api.routes.sync.get_client", return_value=client),
+        patch("syncup.api.routes.sync.synthesize_vibe") as mock_vibe,
+    ):
+        _do_sync_generic(mock_db_factory, uuid.uuid4(), "steam", llm_api_key=None)
+
+    mock_vibe.assert_not_called()

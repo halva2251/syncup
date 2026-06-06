@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,7 +12,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.db.models import MatchCache, User
-
 
 # ---------------------------------------------------------------------------
 # Builders
@@ -373,6 +373,62 @@ def test_recompute_invalidates_cache_and_returns_204(
         resp = client.post("/api/me/recompute")
     assert resp.status_code == 204
     mock_refresh.assert_called_once()
+
+
+def _noop_limiter(*args: Any, **kwargs: Any) -> Any:
+    return lambda f: f
+
+
+def test_recompute_schedules_vibe_when_key_present(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    client, _ = match_client
+    from syncup.api.app import app
+    from syncup.limiter import limiter
+
+    limiter._storage.reset()
+
+    fake_settings = MagicMock()
+    fake_settings.llm_api_key = "sk-real"
+    fake_settings.llm_base_url = "https://api.deepseek.com"
+    fake_settings.llm_model = "deepseek-chat"
+
+    with patch.object(app.state, "settings", fake_settings):
+        with (
+            patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh,
+            patch("syncup.api.routes.matches.synthesize_vibe") as mock_vibe,
+        ):
+            resp = client.post("/api/me/recompute")
+
+    assert resp.status_code == 204
+    mock_refresh.assert_called_once()
+    mock_vibe.assert_called_once()
+
+
+def test_recompute_skips_vibe_when_no_key(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    client, _ = match_client
+    from syncup.api.app import app
+    from syncup.limiter import limiter
+
+    limiter._storage.reset()
+
+    fake_settings = MagicMock()
+    fake_settings.llm_api_key = None
+
+    with patch.object(app.state, "settings", fake_settings):
+        with (
+            patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh,
+            patch("syncup.api.routes.matches.synthesize_vibe") as mock_vibe,
+        ):
+            resp = client.post("/api/me/recompute")
+
+    assert resp.status_code == 204
+    mock_refresh.assert_called_once()
+    mock_vibe.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

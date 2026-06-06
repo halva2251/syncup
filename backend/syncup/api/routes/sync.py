@@ -168,7 +168,7 @@ def _embed_new_items(session: DbSession, user_id: uuid.UUID, service: str) -> No
     texts = [item_to_text(item) for item in items]
     try:
         embeddings = embed_batch(texts)
-    except (ValueError, RuntimeError):
+    except Exception:
         logger.warning("Auto-embed skipped for user %s/%s: embed_batch failed", user_id, service)
         return
 
