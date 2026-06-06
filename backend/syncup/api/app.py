@@ -24,6 +24,7 @@ from syncup.api.routes.connect import router as connect_router  # noqa: E402
 from syncup.api.routes.connect import spotify_auth_router  # noqa: E402
 from syncup.api.routes.dimensions import router as dimensions_router  # noqa: E402
 from syncup.api.routes.embeddings import router as embeddings_router  # noqa: E402
+from syncup.api.routes.items import router as items_router  # noqa: E402
 from syncup.api.routes.matches import _cleanup_stale_match_cache  # noqa: E402
 from syncup.api.routes.matches import router as matches_router
 from syncup.api.routes.me import router as me_router  # noqa: E402
@@ -242,3 +243,4 @@ app.include_router(dimensions_router)
 app.include_router(matches_router)
 app.include_router(onboarding_router)
 app.include_router(embeddings_router)
+app.include_router(items_router)
