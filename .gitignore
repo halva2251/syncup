@@ -53,3 +53,9 @@ Thumbs.db
 .idea/
 *.swp
 *~
+
+# Generated analysis artifacts
+graphify-out/
+
+# Ephemeral manual test scripts (keep untracked; generate per-session if needed)
+backend/manual_test_block_*.py

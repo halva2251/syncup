@@ -392,7 +392,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > | A | ~~`feat/phase2-schema`~~ ✅ | — | EMBEDDING_DIM 128→384, `excluded` col, vibe cols, new deps/config |
 > | B | ~~`feat/phase2-semantic`~~ ✅ | A | `semantic.py`, `item_text.py`, AniList ingest genres fix |
 > | C | ~~`feat/phase2-enrichment`~~ ✅ | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
-> | D | `feat/phase2-user-embeddings` | A+B | `POST /api/embeddings/build`, `aggregate_vectors()` with catalog-size cap, auto-embed post-sync |
+> | D | ~~`feat/phase2-user-embeddings`~~ ✅ | A+B | `POST /api/embeddings/build`, `aggregate_vectors()` with catalog-size cap, auto-embed post-sync |
 > | E | `feat/phase2-item-exclusion` | A | `PATCH /api/me/items/{id}` |
 > | F | `feat/phase2-vibe` | D | `vibe_synthesizer.py`, archetype labels + vibe explanation text only (not a match score input) |
 > | ~~G~~ | ~~`feat/phase2-cf-ranker`~~ | ~~A~~ | **CUT** — ALS requires real user-item interaction density we don't have; produces pretend rigor |
@@ -514,7 +514,7 @@ New dep: `sentence-transformers>=3.0` in `pyproject.toml`.
 
 ### 2.3 User embedding builder
 
-**Status:** Not started
+**Status:** Complete ✅ (2026-06-04). `feat/phase2-user-embeddings` — 868 tests passing.
 
 `POST /api/embeddings/build` — computes (or recomputes) the current user's `combined` taste vector.
 

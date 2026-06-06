@@ -282,7 +282,34 @@ Valid services: any service registered in `ServiceRegistry` (currently `steam`, 
 
 ---
 
-## 7. Matches — Live ✅
+## 7. Embeddings — Live ✅
+
+### `POST /embeddings/build` — Live ✅ *(Phase 2 Block D)*
+
+Compute (or recompute) the current user's combined 384-dim taste vector. Aggregates all non-excluded `user_items` that have item embeddings, applies per-service cap (top 50 by `engagement_score`), dimension weights, and preference override boost multipliers, then writes a single L2-normalised vector to `user_embeddings` with `service='combined'`.
+
+Rate-limited to 5/min per user.
+
+```json
+// res 200
+{
+  "service": "combined",
+  "item_count": 42,
+  "computed_at": "2026-06-04T20:00:00Z"
+}
+
+// res 422 — no items have embeddings yet
+{ "error": { "code": "NO_EMBEDDINGS_AVAILABLE", "message": "No embedded items found. Run the enrichment and populate scripts first, or sync a connected service." } }
+```
+
+**Weight formula:** `effective_weight = log1p(engagement_score) × dim_weight × boost_multiplier`
+- `dim_weight` defaults to 1.0 if no `user_dimension_weights` row exists for the service
+- `boost_multiplier` defaults to 1.0 if no `preference_overrides` row exists for the item
+- `excluded = true` items are skipped entirely
+
+---
+
+## 8. Matches — Live ✅
 
 **Preconditions:**
 - `is_matchable = true`
@@ -324,7 +351,7 @@ Forces refresh of the user's match cache. Rate-limited to 1/hour. Returns 204 im
 
 ---
 
-## 8. Onboarding helpers — Sketch
+## 9. Onboarding helpers — Sketch
 
 ### `GET /onboarding/status` — Live ✅
 What the user still needs to do before becoming matchable.
