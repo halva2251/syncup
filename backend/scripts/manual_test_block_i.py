@@ -114,7 +114,7 @@ def test_happy_path_recommendations() -> None:
         all_items = owned + catalog
         texts = []
         for item in all_items:
-            genres = ", ".join(item.metadata.get("genres", []))
+            genres = ", ".join(item.meta.get("genres", []))
             texts.append(f"{item.name} — {item.item_type}" + (f", {genres}" if genres else ""))
 
         embeddings = embed_batch(texts)
@@ -251,7 +251,7 @@ def test_no_embedding_returns_422() -> None:
                 item_type=None,
                 limit=10,
             )
-            assert False, "Should have raised SyncUpError"
+            raise AssertionError("Should have raised SyncUpError")
         except SyncUpError as exc:
             assert exc.status_code == 422, f"Expected 422, got {exc.status_code}"
             assert exc.code == "NO_EMBEDDING_AVAILABLE"

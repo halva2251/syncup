@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/me", tags=["recommendations"])
 _RECOMMENDATION_LIMIT_MAX = 50
 
 
-class ItemTypeFilter(str, Enum):
+class ItemTypeFilter(StrEnum):
     """Allowlist of valid item_type values accepted by the recommendations endpoint."""
 
     game = "game"
@@ -84,7 +84,8 @@ def get_recommendations(
     if embedding is None:
         raise SyncUpError(
             "NO_EMBEDDING_AVAILABLE",
-            "Build your taste vector first via POST /api/embeddings/build or POST /api/me/recompute.",
+            "Build your taste vector first via POST /api/embeddings/build"
+            " or POST /api/me/recompute.",
             422,
         )
 

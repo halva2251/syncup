@@ -73,7 +73,7 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `enrich_tmdb_metadata.py` — TMDB search genre enrichment for films/shows; title-match guard; aborts if genre maps fail | `backend/scripts/enrich_tmdb_metadata.py` |
 | `populate_item_embeddings.py` — batch-embeds all items `WHERE embedding IS NULL` in chunks of 256; degenerate text guard | `backend/scripts/populate_item_embeddings.py` |
 | 831 passing tests | `backend/tests/` |
-| `GET /api/me/recommendations` — cross-domain item recs from combined taste vector; `item_type` filter allowlist (9 types); `NOT EXISTS` ownership check; `similarity_score = 1 - cosine_distance` clamped to `[0, 1]`; 503 `NO_EMBEDDING_AVAILABLE` guard | `syncup/api/routes/recommendations.py` |
+| `GET /api/me/recommendations` — cross-domain item recs from combined taste vector; `item_type` filter allowlist (9 types); `NOT EXISTS` ownership check; `similarity_score = 1 - cosine_distance` clamped to `[0, 1]`; 422 `NO_EMBEDDING_AVAILABLE` guard | `syncup/api/routes/recommendations.py` |
 | 947 passing tests | `backend/tests/` |
 
 ---
@@ -636,7 +636,7 @@ Implementation:
 2. ANN search on `items.embedding <=> user_embedding` WHERE item NOT IN user's `user_items`
 3. Optional `item_type` filter (game, artist, track, film, anime, album, etc.)
 4. Returns top N with `item_name`, `service`, `item_type`, `similarity_score`
-5. Falls back 503 `NO_EMBEDDING_AVAILABLE` if user has no combined embedding yet
+5. Returns 422 `NO_EMBEDDING_AVAILABLE` if user has no combined embedding yet
 
 Cross-domain is automatic: combined taste vector spans all services, so asking for `item_type=film` surfaces recommendations informed by gaming and music taste too. This is the most user-visible AI feature — "here are 5 games you'd probably love" is the demo moment.
 

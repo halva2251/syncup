@@ -257,7 +257,7 @@ Query params:
 - `similarity_score` = `1 - cosine_distance`, clamped to `[0.0, 1.0]`. Items with `score <= 0` (antipodal vectors) are excluded.
 - Only items NOT already in `user_items` are returned.
 - Cross-domain by default: the combined vector spans all services, so `item_type=film` returns films informed by gaming and music taste.
-- 503 `NO_EMBEDDING_AVAILABLE` if the user has no `combined` embedding yet — build one via `POST /api/embeddings/build`.
+- 422 `NO_EMBEDDING_AVAILABLE` if the user has no `combined` embedding yet — build one via `POST /api/embeddings/build`.
 - Rate-limited: 30/min per IP.
 
 ---
