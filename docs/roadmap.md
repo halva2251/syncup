@@ -396,7 +396,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > | E | ~~`feat/phase2-item-exclusion`~~ ✅ | A | `PATCH /api/me/items/{id}` |
 > | F | ~~`feat/phase2-vibe`~~ ✅ | D | `vibe_synthesizer.py`, archetype labels + vibe explanation text only (not a match score input) |
 > | ~~G~~ | ~~`feat/phase2-cf-ranker`~~ | ~~A~~ | **CUT** — ALS requires real user-item interaction density we don't have; produces pretend rigor |
-> | H | `feat/phase2-match-upgrade` | D+F | Semantic ANN path, cosine similarity score, `matching_mode` field |
+> | H | ~~`feat/phase2-match-upgrade`~~ ✅ | D+F | Semantic ANN path, cosine similarity score, `matching_mode` field |
 > | I | `feat/phase2-recommendations` | D | `GET /api/me/recommendations`, `GET /api/users/{id}/taste-card` |
 > | J | `feat/phase2-evaluation` | H | `scripts/evaluate.py`, synthetic cohort eval, failure mode report |
 >
@@ -593,26 +593,33 @@ ALS collaborative filtering requires a meaningful user × item interaction matri
 
 The `implicit` dependency remains in `pyproject.toml [ml]` for future use when real user data exists post-launch. Block H no longer depends on this block.
 
-### 2.6 Match endpoint upgrade + D14 IVFFlat index
+### 2.6 Match endpoint upgrade + ANN index
 
-**Status:** Not started (D14 was deferred from Branch 3)
+**Status:** ✅ Complete (2026-06-06, PR `feat/phase2-match-upgrade`, 931 tests passing)
 
-Migration `20260513_0010_ivfflat_user_embeddings.py` — creates the IVFFlat index on `user_embeddings.embedding` (already defined in `models.py`, just needs the migration).
+Migration `20260606_0011_phase2_match_upgrade.py`:
+- Adds `matching_mode TEXT NOT NULL DEFAULT 'heuristic'` column to `match_cache`
+- Recreates the ANN index on `user_embeddings.embedding WHERE service='combined'` as **HNSW** (not IVFFlat — HNSW requires no lists-tuning and performs well from single-digit to millions of rows)
 
-Updated `GET /api/matches` logic:
-1. If user has `user_embeddings` row with `service = "combined"`: ANN cosine via pgvector `<=>` on `combined` vector → 50 candidates
-2. Score: `final_score = cosine(combined_a, combined_b)` — pure cosine similarity, clean and defensible to judges
-3. Else: fall back to heuristic
-4. Response includes `matching_mode: "heuristic" | "semantic"`
+`_refresh_match_cache` path selection:
+1. If user has a `user_embeddings` row with `service='combined'`: runs HNSW ANN search via pgvector `<=>` → 50 candidates → `score = 1 - cosine_distance`, candidates with `score <= 0` filtered (antipodal vectors) → `matching_mode="semantic"`
+2. Else: falls back to heuristic item-overlap scorer → `matching_mode="heuristic"`
 
-**Score formula change (2026-06-04):** The previous plan blended 80% item cosine + 20% vibe embedding. This has been removed. The LLM vibe synthesis is now explanation-only (see §2.4) and does not write a `vibe` row to `user_embeddings`. The match score is purely cosine similarity on the `combined` vector — reproducible, empirically evaluable, and defensible to judges. The LLM contribution is surfaced as a human-readable match explanation alongside the score, not baked into it.
+`POST /api/me/recompute` now queues `_build_embedding_bg` before `_refresh_match_cache` so the embedding is always up-to-date before matching runs.
 
-The `matching_mode` field is intentional for the KI Challenge submission — it lets us compare modes scientifically and demonstrate self-critical assessment.
+Response field `matching_mode: "heuristic" | "semantic"` on `GET /api/matches` and `GET /api/matches/{id}`.
+
+**Score formula:** pure cosine similarity on the `combined` vector — reproducible, empirically evaluable, defensible to judges. Candidates with negative cosine similarity (distance > 1.0) are filtered out rather than floored to 0, preventing antipodal users from appearing in match results.
+
+**Known issues / deferred:**
+- `_write_match_results` uses `db.merge()` in a loop (not atomic). Concurrent refreshes of the same user pair can unique-violate. Fix: bulk `ON CONFLICT DO UPDATE` upsert.
+- Heuristic refresh can overwrite a semantic row for the same symmetric pair (e.g., B's heuristic overwrites A's semantic). Fix needed: mode precedence policy or per-direction mode storage.
+- Semantic `pop_rows` are computed over 51 users (self + 50 candidates) vs 500 in heuristic. `top_shared_highlights` rarity weighting is slightly inconsistent between modes.
 
 ### Match Cache + Staleness (carried from original 2.4)
 
 - Already partially implemented (hourly cleanup job, `POST /api/me/recompute`)
-- `POST /api/me/recompute` now also triggers `POST /api/embeddings/build` + CF retraining
+- `POST /api/me/recompute` now also triggers `POST /api/embeddings/build` before cache refresh
 - Hard-expire after 24h (existing behaviour)
 - Invalidate when either user's embedding updates
 

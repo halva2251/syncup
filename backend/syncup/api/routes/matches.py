@@ -5,7 +5,7 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
@@ -16,7 +16,7 @@ from sqlalchemy.orm import sessionmaker
 
 from syncup.api.routes.embeddings import build_user_embedding  # noqa: E402
 from syncup.auth.router import RequireAuth
-from syncup.db.models import Item, MatchCache, User, UserEmbedding, UserItem
+from syncup.db.models import EMBEDDING_DIM, Item, MatchCache, User, UserEmbedding, UserItem
 from syncup.db.session import get_db
 from syncup.embeddings.vibe_synthesizer import synthesize_vibe
 from syncup.exceptions import SyncUpError
@@ -61,7 +61,7 @@ class MatchOut(BaseModel):
     breakdown: dict[str, float]
     shared_highlights: list[SharedHighlightOut]
     computed_at: datetime
-    matching_mode: str
+    matching_mode: Literal["heuristic", "semantic"]
 
 
 class MatchListOut(BaseModel):
@@ -317,12 +317,13 @@ def _read_semantic_data(
         ann_rows = list(
             db.execute(
                 text(
-                    """
-                    SELECT user_id, embedding <=> CAST(:vec AS vector) AS distance
+                    f"""
+                    SELECT user_id, embedding <=> CAST(:vec AS vector({EMBEDDING_DIM})) AS distance
                     FROM user_embeddings
                     WHERE service = 'combined'
                       AND user_id != :user_id
-                    ORDER BY embedding <=> CAST(:vec AS vector)
+                      AND user_id IN (SELECT id FROM users WHERE is_matchable = true)
+                    ORDER BY embedding <=> CAST(:vec AS vector({EMBEDDING_DIM}))
                     LIMIT :limit
                     """
                 ),
@@ -389,7 +390,11 @@ def _compute_semantic_scores(
 
     results: list[MatchCache] = []
     for other_id, distance in candidate_pairs:
-        score = max(0.0, min(1.0, 1.0 - distance))
+        raw_similarity = 1.0 - distance
+        if raw_similarity <= 0.0:
+            # cosine distance > 1.0 means opposite or unrelated taste vectors — skip
+            continue
+        score = min(1.0, raw_similarity)
 
         other_data = user_data.get(other_id, {})
         other_by_service = {svc: frozenset(items.keys()) for svc, items in other_data.items()}
@@ -446,7 +451,7 @@ def _refresh_match_cache(db_factory: sessionmaker[DbSession], user_id: uuid.UUID
         results = _compute_semantic_scores(user_id, candidate_pairs, item_rows, pop_rows, now)
         if results:
             _write_match_results(db_factory, results)
-        return
+            return
 
     data = _read_match_data(db_factory, user_id)
     if data is None:
@@ -541,7 +546,7 @@ def get_matches(
                 breakdown=row.breakdown,
                 shared_highlights=[SharedHighlightOut(**h) for h in row.highlights],
                 computed_at=row.computed_at,
-                matching_mode=row.matching_mode,
+                matching_mode=cast(Literal["heuristic", "semantic"], row.matching_mode),
             )
         )
 
@@ -577,7 +582,7 @@ def get_match_detail(
         breakdown=row.breakdown,
         shared_highlights=[SharedHighlightOut(**h) for h in row.highlights],
         computed_at=row.computed_at,
-        matching_mode=row.matching_mode,
+        matching_mode=cast(Literal["heuristic", "semantic"], row.matching_mode),
     )
 
 

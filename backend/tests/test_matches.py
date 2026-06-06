@@ -379,6 +379,10 @@ def test_recompute_invalidates_cache_and_returns_204(
     mock_db: MagicMock,
 ) -> None:
     client, _ = match_client
+    from syncup.limiter import limiter
+
+    limiter._storage.reset()
+
     with patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
         resp = client.post("/api/me/recompute")
     assert resp.status_code == 204

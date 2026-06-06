@@ -357,9 +357,8 @@ class UserEmbedding(Base):
         Index(
             "idx_user_embeddings_combined",
             "embedding",
-            postgresql_using="ivfflat",
+            postgresql_using="hnsw",
             postgresql_ops={"embedding": "vector_cosine_ops"},
-            postgresql_with={"lists": 100},
             postgresql_where="service = 'combined'",
         ),
     )

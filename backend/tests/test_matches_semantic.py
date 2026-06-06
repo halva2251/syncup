@@ -221,16 +221,22 @@ def test_compute_semantic_scores_clamps_score_above_one() -> None:
     assert results[0].score == pytest.approx(1.0)
 
 
-def test_compute_semantic_scores_clamps_score_below_zero() -> None:
-    """Distance > 1 (edge case) is clamped so score >= 0."""
+def test_compute_semantic_scores_filters_non_positive_similarity() -> None:
+    """Candidates with distance >= 1.0 (cosine similarity <= 0) are filtered out."""
     from syncup.api.routes.matches import _compute_semantic_scores
 
     user_id = uuid.uuid4()
     other_id = uuid.uuid4()
-    # distance=1.5 → 1 - 1.5 = -0.5 → clamped to 0.0
-    results = _compute_semantic_scores(user_id, [(other_id, 1.5)], [], [], datetime.now(UTC))
+    good_id = uuid.uuid4()
+    # distance=1.5 → raw_similarity=-0.5 → filtered
+    # distance=1.0 → raw_similarity=0.0 → filtered (boundary)
+    # distance=0.0 → kept with score=1.0
+    results = _compute_semantic_scores(
+        user_id, [(other_id, 1.5), (good_id, 0.0), (uuid.uuid4(), 1.0)], [], [], datetime.now(UTC)
+    )
 
-    assert results[0].score == pytest.approx(0.0)
+    assert len(results) == 1
+    assert results[0].score == pytest.approx(1.0)
 
 
 def test_compute_semantic_scores_multiple_candidates() -> None:
@@ -449,6 +455,57 @@ def test_read_semantic_data_always_closes_session_on_error() -> None:
     result = _read_semantic_data(factory, user_id)
 
     assert result is None
+    db.close.assert_called_once()
+
+
+def test_read_semantic_data_happy_path() -> None:
+    """_read_semantic_data returns candidate pairs, item rows, and pop rows."""
+    from syncup.api.routes.matches import _read_semantic_data
+
+    user_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    factory = MagicMock()
+    db = MagicMock(spec=DbSession)
+    factory.return_value = db
+
+    # First execute: scalar_one_or_none returns the embedding
+    # Second execute: ANN query returns candidates
+    # Third execute: item rows
+    # Fourth execute: pop rows
+    embed_scalar = MagicMock()
+    embed_scalar.scalar_one_or_none.return_value = [0.1] * 384
+
+    ann_row = MagicMock()
+    ann_row.user_id = str(other_id)
+    ann_row.distance = 0.25
+    ann_result = MagicMock()
+    ann_result.all.return_value = [ann_row]
+
+    item_row = MagicMock()
+    item_row.user_id = user_id
+    item_row.item_id = uuid.uuid4()
+    item_row.service = "steam"
+    item_row.name = "Disco Elysium"
+    item_result = MagicMock()
+    item_result.all.return_value = [item_row]
+
+    pop_row = MagicMock()
+    pop_row.item_id = item_row.item_id
+    pop_row.pop = 2
+    pop_result = MagicMock()
+    pop_result.all.return_value = [pop_row]
+
+    db.execute.side_effect = [embed_scalar, ann_result, item_result, pop_result]
+
+    result = _read_semantic_data(factory, user_id)
+
+    assert result is not None
+    candidate_pairs, item_rows, pop_rows = result
+    assert len(candidate_pairs) == 1
+    assert candidate_pairs[0][0] == other_id
+    assert candidate_pairs[0][1] == pytest.approx(0.25)
+    assert len(item_rows) == 1
+    assert len(pop_rows) == 1
     db.close.assert_called_once()
 
 

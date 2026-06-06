@@ -36,15 +36,16 @@ def upgrade() -> None:
         "matching_mode IN ('heuristic', 'semantic')",
     )
 
-    # Recreate IVFFlat index on user_embeddings(embedding) WHERE service='combined'.
-    # Was intentionally dropped in migration 0010 to allow Block H to set lists=100
-    # based on expected user volume at production scale.
+    # Recreate ANN index on user_embeddings(embedding) WHERE service='combined'.
+    # Intentionally dropped in migration 0010; recreated here as HNSW (not IVFFlat).
+    # HNSW is preferred over IVFFlat for this table: no lists-tuning required,
+    # performs well from single-digit to millions of rows, and handles the
+    # low-volume early-stage case without planner bypassing the index.
     op.execute(
         """
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_user_embeddings_combined
+        CREATE INDEX IF NOT EXISTS idx_user_embeddings_combined
         ON user_embeddings
-        USING ivfflat (embedding vector_cosine_ops)
-        WITH (lists = 100)
+        USING hnsw (embedding vector_cosine_ops)
         WHERE service = 'combined'
         """
     )
