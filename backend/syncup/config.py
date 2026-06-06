@@ -59,9 +59,13 @@ class Settings(BaseSettings):
     # all-MiniLM-L6-v2 outputs 384-dim vectors; must match EMBEDDING_DIM.
     embedding_model_name: str = "all-MiniLM-L6-v2"
 
-    # Anthropic API key for vibe synthesis (Claude). Optional — if unset,
-    # vibe synthesis is skipped and match score falls back to 100% item-average.
+    # LLM settings for vibe synthesis. Optional — if llm_api_key is unset,
+    # vibe synthesis is skipped and the taste card shows items only.
+    # Defaults to DeepSeek (OpenAI-compatible). Point llm_base_url at any
+    # OpenAI-compatible provider (e.g. "https://api.openai.com" for GPT).
     llm_api_key: str | None = None
+    llm_base_url: str = "https://api.deepseek.com"
+    llm_model: str = "deepseek-chat"
 
     # TMDB API key for film/show genre enrichment. Optional — if unset,
     # films embed with name+year only (acceptable fallback).

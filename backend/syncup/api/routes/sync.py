@@ -1,4 +1,5 @@
 """Sync routes: POST /api/sync/{service} — trigger background data pull."""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +19,7 @@ from sqlalchemy.orm import sessionmaker
 from syncup.auth.router import RequireAuth
 from syncup.db.models import Item, ServiceConnection, UserItem
 from syncup.db.session import get_db
+from syncup.embeddings.vibe_synthesizer import synthesize_vibe
 from syncup.exceptions import SyncUpError
 from syncup.ingest.crypto import encrypt_token
 from syncup.ingest.protocol import SyncClientError
@@ -116,9 +118,7 @@ def _safe_error_message(exc: Exception) -> str:
     return "Sync failed — please retry"
 
 
-def _set_sync_error(
-    session: DbSession, user_id: uuid.UUID, service: str, error: str
-) -> None:
+def _set_sync_error(session: DbSession, user_id: uuid.UUID, service: str, error: str) -> None:
     """Write sync_status=error after a failed sync; safe to call after rollback."""
     try:
         session.execute(
@@ -132,9 +132,7 @@ def _set_sync_error(
         session.commit()
     except SQLAlchemyError:
         session.rollback()
-        logger.exception(
-            "Failed to write sync error status for user %s / %s", user_id, service
-        )
+        logger.exception("Failed to write sync error status for user %s / %s", user_id, service)
 
 
 # ---------------------------------------------------------------------------
@@ -142,12 +140,56 @@ def _set_sync_error(
 # ---------------------------------------------------------------------------
 
 
+def _embed_new_items(session: DbSession, user_id: uuid.UUID, service: str) -> None:
+    """Embed items from this sync that don't have embeddings yet.
+
+    Called within the sync session after a successful commit. Embedding failures
+    are logged but do not roll back the sync — items can be embedded by the
+    populate script later.
+    """
+    from syncup.embeddings.item_text import item_to_text
+    from syncup.embeddings.semantic import embed_batch
+
+    items = list(
+        session.scalars(
+            select(Item)
+            .join(UserItem, UserItem.item_id == Item.id)
+            .where(
+                UserItem.user_id == user_id,
+                Item.service == service,
+                Item.embedding.is_(None),
+            )
+        ).all()
+    )
+
+    if not items:
+        return
+
+    texts = [item_to_text(item) for item in items]
+    try:
+        embeddings = embed_batch(texts)
+    except Exception:
+        logger.warning("Auto-embed skipped for user %s/%s: embed_batch failed", user_id, service)
+        return
+
+    now = datetime.now(UTC)
+    for item, emb in zip(items, embeddings, strict=True):
+        item.embedding = emb
+        item.embedding_computed_at = now
+    session.commit()
+    logger.info("Auto-embedded %d items for user %s / %s", len(items), user_id, service)
+
+
 def _do_sync_generic(
     db_factory: sessionmaker[DbSession],
     user_id: uuid.UUID,
     service: str,
+    llm_api_key: str | None = None,
+    llm_base_url: str = "https://api.deepseek.com",
+    llm_model: str = "deepseek-chat",
 ) -> None:
     session = db_factory()
+    sync_ok = False
     try:
         conn = session.scalar(
             select(ServiceConnection).where(
@@ -197,6 +239,11 @@ def _do_sync_generic(
         conn.sync_error = None
         session.commit()
         logger.info("%s sync done for user %s: %d items", service, user_id, items_synced)
+        sync_ok = True
+        try:
+            _embed_new_items(session, user_id, service)
+        except Exception:
+            logger.warning("Auto-embed failed for user %s/%s — sync preserved", user_id, service)
 
     except Exception as exc:
         logger.exception("%s sync failed for user %s", service, user_id)
@@ -205,6 +252,9 @@ def _do_sync_generic(
 
     finally:
         session.close()
+
+    if sync_ok and llm_api_key:
+        synthesize_vibe(db_factory, user_id, llm_api_key, llm_base_url, llm_model)
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +304,15 @@ def trigger_sync(
     db.commit()
 
     db_factory: sessionmaker[DbSession] = request.app.state.db
-    background_tasks.add_task(_do_sync_generic, db_factory, user.id, service)
+    settings = request.app.state.settings
+    background_tasks.add_task(
+        _do_sync_generic,
+        db_factory,
+        user.id,
+        service,
+        settings.llm_api_key,
+        settings.llm_base_url,
+        settings.llm_model,
+    )
 
     return SyncTriggeredOut(status="syncing", service=service, poll_url="/api/me")

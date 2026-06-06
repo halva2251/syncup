@@ -1,4 +1,5 @@
 """GET /api/matches, GET /api/matches/{user_id}, POST /api/me/recompute."""
+
 from __future__ import annotations
 
 import base64
@@ -10,14 +11,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import and_, delete as sa_delete
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
 
 from syncup.auth.router import RequireAuth
 from syncup.db.models import Item, MatchCache, User, UserItem
 from syncup.db.session import get_db
+from syncup.embeddings.vibe_synthesizer import synthesize_vibe
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
 from syncup.matching.heuristic import (
@@ -140,7 +142,9 @@ def _load_cached_matches(
         db.scalars(
             select(MatchCache)
             .where(*base_filter)
-            .order_by(desc(MatchCache.score), MatchCache.user_a_id.asc(), MatchCache.user_b_id.asc())
+            .order_by(
+                desc(MatchCache.score), MatchCache.user_a_id.asc(), MatchCache.user_b_id.asc()
+            )
             .limit(limit + 1)
         ).all()
     )
@@ -280,9 +284,7 @@ def _write_match_results(
         db.close()
 
 
-def _refresh_match_cache(
-    db_factory: sessionmaker[DbSession], user_id: uuid.UUID
-) -> None:
+def _refresh_match_cache(db_factory: sessionmaker[DbSession], user_id: uuid.UUID) -> None:
     """Compute heuristic scores vs all matchable users and write to match_cache.
 
     Runs as a BackgroundTask. Splits into read / compute / write phases so that
@@ -363,12 +365,9 @@ def get_matches(
         _encode_cursor(last_row.score, last_row.user_a_id, last_row.user_b_id) if has_more else None
     )
 
-    other_user_ids = [
-        row.user_b_id if row.user_a_id == user.id else row.user_a_id for row in page
-    ]
+    other_user_ids = [row.user_b_id if row.user_a_id == user.id else row.user_a_id for row in page]
     other_users = {
-        u.id: u
-        for u in db.scalars(select(User).where(User.id.in_(other_user_ids))).all()
+        u.id: u for u in db.scalars(select(User).where(User.id.in_(other_user_ids))).all()
     }
 
     items = []
@@ -432,4 +431,14 @@ def recompute_matches(
 ) -> Response:
     """Force recompute of the user's match cache. Rate-limited to 1/hour."""
     background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
+    settings = request.app.state.settings
+    if settings.llm_api_key:
+        background_tasks.add_task(
+            synthesize_vibe,
+            request.app.state.db,
+            user.id,
+            settings.llm_api_key,
+            settings.llm_base_url,
+            settings.llm_model,
+        )
     return Response(status_code=204)
