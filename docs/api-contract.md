@@ -309,7 +309,40 @@ Rate-limited to 5/min per user.
 
 ---
 
-## 8. Matches — Live ✅
+## 8. Item exclusion — Live ✅ *(Phase 2 Block E)*
+
+### `PATCH /me/items/{item_id}` — Live ✅
+
+Toggle the `excluded` flag on a `user_items` row. Excluded items are skipped in embedding builds (`POST /embeddings/build`), LLM vibe synthesis, and recommendations. Rate-limited to 60/min.
+
+`{item_id}` is the `user_items.id` UUID (not `items.id`). Returns 404 whether the row doesn't exist or belongs to another user.
+
+```json
+// req body
+{ "excluded": true }
+
+// res 200
+{
+  "id": "<user_items.id>",
+  "excluded": true,
+  "engagement_score": 0.85,
+  "item": {
+    "id": "<items.id>",
+    "name": "Disco Elysium",
+    "service": "steam",
+    "item_type": "game"
+  }
+}
+
+// res 404
+{ "error": { "code": "NOT_FOUND", "message": "Item not found" } }
+```
+
+Setting `excluded: false` re-includes the item. Both directions are idempotent.
+
+---
+
+## 9. Matches — Live ✅
 
 **Preconditions:**
 - `is_matchable = true`
@@ -351,7 +384,7 @@ Forces refresh of the user's match cache. Rate-limited to 1/hour. Returns 204 im
 
 ---
 
-## 9. Onboarding helpers — Sketch
+## 10. Onboarding helpers — Sketch
 
 ### `GET /onboarding/status` — Live ✅
 What the user still needs to do before becoming matchable.

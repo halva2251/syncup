@@ -393,7 +393,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > | B | ~~`feat/phase2-semantic`~~ ✅ | A | `semantic.py`, `item_text.py`, AniList ingest genres fix |
 > | C | ~~`feat/phase2-enrichment`~~ ✅ | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
 > | D | ~~`feat/phase2-user-embeddings`~~ ✅ | A+B | `POST /api/embeddings/build`, `aggregate_vectors()` with catalog-size cap, auto-embed post-sync |
-> | E | `feat/phase2-item-exclusion` | A | `PATCH /api/me/items/{id}` |
+> | E | ~~`feat/phase2-item-exclusion`~~ ✅ | A | `PATCH /api/me/items/{id}` |
 > | F | `feat/phase2-vibe` | D | `vibe_synthesizer.py`, archetype labels + vibe explanation text only (not a match score input) |
 > | ~~G~~ | ~~`feat/phase2-cf-ranker`~~ | ~~A~~ | **CUT** — ALS requires real user-item interaction density we don't have; produces pretend rigor |
 > | H | `feat/phase2-match-upgrade` | D+F | Semantic ANN path, cosine similarity score, `matching_mode` field |
@@ -638,7 +638,7 @@ Unblocks the frontend shareable taste card (Phase 3.4). The visual rendering is 
 
 ### 2.9 User-controlled taste profile (item exclusion)
 
-**Status:** Not started.
+**Status:** Complete ✅ (2026-06-06). `feat/phase2-item-exclusion` — 880 tests passing.
 
 `user_items.excluded: bool, default False` — new column + migration.
 
