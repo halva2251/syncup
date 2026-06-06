@@ -394,7 +394,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 > | C | ~~`feat/phase2-enrichment`~~ ✅ | A | Steam/Last.fm/TMDB enrichment scripts + populate script |
 > | D | ~~`feat/phase2-user-embeddings`~~ ✅ | A+B | `POST /api/embeddings/build`, `aggregate_vectors()` with catalog-size cap, auto-embed post-sync |
 > | E | ~~`feat/phase2-item-exclusion`~~ ✅ | A | `PATCH /api/me/items/{id}` |
-> | F | `feat/phase2-vibe` | D | `vibe_synthesizer.py`, archetype labels + vibe explanation text only (not a match score input) |
+> | F | ~~`feat/phase2-vibe`~~ ✅ | D | `vibe_synthesizer.py`, archetype labels + vibe explanation text only (not a match score input) |
 > | ~~G~~ | ~~`feat/phase2-cf-ranker`~~ | ~~A~~ | **CUT** — ALS requires real user-item interaction density we don't have; produces pretend rigor |
 > | H | `feat/phase2-match-upgrade` | D+F | Semantic ANN path, cosine similarity score, `matching_mode` field |
 > | I | `feat/phase2-recommendations` | D | `GET /api/me/recommendations`, `GET /api/users/{id}/taste-card` |
@@ -406,7 +406,7 @@ See [product-strategy.md §Phase 0](product-strategy.md) for the cold-start rati
 
 > **No hard gate:** unlike the original plan, Phase 2 does not depend on offline training or public datasets. Semantic embeddings work from day one on existing item data.
 
-> **Trigger gap:** syncing a service does NOT automatically trigger user embedding computation. `POST /api/embeddings/build` must be called explicitly after sync (or via `POST /api/me/recompute`). Auto-triggering post-sync is Block F.
+> **Trigger gap (resolved in Block F):** `POST /api/sync/{service}` now auto-embeds new items and auto-synthesizes vibe (if `llm_api_key` is set) as background tasks after sync completes. User embedding (`POST /api/embeddings/build`) still requires an explicit call or `POST /api/me/recompute`.
 
 ### 2.0 Phase 2 Block A — Schema & Config
 
@@ -566,14 +566,24 @@ Known limitation (document in evaluation): centroid collapse — two users can t
 - `key_themes: ARRAY(Text) | None`
 - `vibe_computed_at: DateTime | None`
 
+**Status:** Complete ✅ (2026-06-06). `feat/phase2-vibe` — 898 tests passing.
+
 **New file:** `syncup/embeddings/vibe_synthesizer.py`
-- `synthesize_vibe(user_id, db) -> VibeProfile` — selects top items, calls LLM, parses response, stores result on `users` row
-- Called after sync completes (background task) and on `POST /api/me/recompute`
-- Mocked in tests — don't make real LLM calls in CI
+- `synthesize_vibe(db_factory, user_id, llm_api_key, llm_base_url, llm_model) -> VibeResult | None`
+- Selects top 5 items per service (up to 20 total), applies `boost_multiplier` before ranking, skips `excluded=true` items
+- Calls DeepSeek (or any OpenAI-compatible provider) via `httpx` with tool-use forced JSON
+- Returns and persists `VibeResult(vibe_summary, archetype, key_themes)` to `users` row
+- Called after sync completes (background task via `_do_sync_generic`) and on `POST /api/me/recompute`
+- Mocked in tests — no real LLM calls in CI
 
-**New config:** `Settings.llm_api_key: str | None = None`. If unset, vibe synthesis is skipped and taste card shows items only (graceful degradation, no feature flag needed).
+**Auto-embed post-sync (also Block F):**
+- `_embed_new_items(session, user_id, service)` added to `sync.py`
+- After successful sync commit, embeds any `items WHERE embedding IS NULL` for that service
+- Embedding failure is logged but does NOT roll back the sync commit
 
-**Cost:** ~$0.01 per user synthesis call. Called once per sync, result stored in DB.
+**New config:** `Settings.llm_api_key: str | None = None` (existing). `Settings.llm_base_url: str = "https://api.deepseek.com"`, `Settings.llm_model: str = "deepseek-chat"` added. Provider-agnostic: point `llm_base_url` at any OpenAI-compatible endpoint. If `llm_api_key` is unset, vibe synthesis is skipped and taste card shows items only (graceful degradation, no feature flag needed).
+
+**Cost:** ~$0.01 per user synthesis call with DeepSeek. Called once per sync, result stored in DB.
 
 ### 2.5 CF re-ranker — CUT ❌
 

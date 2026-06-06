@@ -380,7 +380,11 @@ Top matches for the current user. Returns empty immediately on cache miss; match
 Single match detail — same shape as one `items` entry above.
 
 ### `POST /me/recompute` — Live ✅
-Forces refresh of the user's match cache. Rate-limited to 1/hour. Returns 204 immediately; computation runs in background.
+Forces refresh of the user's match cache **and** (if `LLM_API_KEY` is set) triggers vibe synthesis. Rate-limited to 1/hour. Returns 204 immediately; both tasks run in background.
+
+Background tasks triggered:
+1. `_refresh_match_cache` — recomputes heuristic scores vs all matchable users
+2. `synthesize_vibe` — regenerates `vibe_summary`, `archetype`, `key_themes` on `users` row (skipped if `LLM_API_KEY` unset)
 
 ---
 
