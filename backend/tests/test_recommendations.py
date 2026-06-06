@@ -2,7 +2,7 @@
 
 Covers:
 - 401 when unauthenticated
-- 503 NO_EMBEDDING_AVAILABLE when user has no combined embedding
+- 422 NO_EMBEDDING_AVAILABLE when user has no combined embedding
 - Happy path: returns list with correct schema (item_name, service, item_type, similarity_score)
 - Default limit is 10; custom limit respected; limit > 50 rejected
 - item_type filter passed through to query
@@ -137,7 +137,7 @@ def test_requires_auth(unauth_client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 503 NO_EMBEDDING_AVAILABLE
+# 422 NO_EMBEDDING_AVAILABLE
 # ---------------------------------------------------------------------------
 
 
