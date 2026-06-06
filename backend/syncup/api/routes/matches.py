@@ -1,7 +1,5 @@
 """GET /api/matches, GET /api/matches/{user_id}, POST /api/me/recompute."""
 
-from __future__ import annotations
-
 import base64
 import logging
 import uuid
@@ -11,13 +9,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import and_, desc, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
 
+from syncup.api.routes.embeddings import build_user_embedding  # noqa: E402
 from syncup.auth.router import RequireAuth
-from syncup.db.models import Item, MatchCache, User, UserItem
+from syncup.db.models import Item, MatchCache, User, UserEmbedding, UserItem
 from syncup.db.session import get_db
 from syncup.embeddings.vibe_synthesizer import synthesize_vibe
 from syncup.exceptions import SyncUpError
@@ -33,6 +32,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["matches"])
 
 _CACHE_MAX_AGE_HOURS = 24
+_SEMANTIC_CANDIDATE_LIMIT = 50
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +61,7 @@ class MatchOut(BaseModel):
     breakdown: dict[str, float]
     shared_highlights: list[SharedHighlightOut]
     computed_at: datetime
+    matching_mode: str
 
 
 class MatchListOut(BaseModel):
@@ -261,6 +262,7 @@ def _compute_match_scores(
                 breakdown=breakdown,
                 highlights=[{"service": h.service, "item_name": h.item_name} for h in highlights],
                 computed_at=now,
+                matching_mode="heuristic",
             )
         )
 
@@ -284,12 +286,168 @@ def _write_match_results(
         db.close()
 
 
-def _refresh_match_cache(db_factory: sessionmaker[DbSession], user_id: uuid.UUID) -> None:
-    """Compute heuristic scores vs all matchable users and write to match_cache.
+def _format_vec(vec: list[float]) -> str:
+    """Format a float vector as a pgvector literal string."""
+    return "[" + ",".join(f"{v:.8f}" for v in vec) + "]"
 
-    Runs as a BackgroundTask. Splits into read / compute / write phases so that
-    the write transaction is as short as possible.
+
+def _read_semantic_data(
+    db_factory: sessionmaker[DbSession],
+    user_id: uuid.UUID,
+) -> tuple[list[tuple[uuid.UUID, float]], list, list] | None:
+    """Load the user's combined embedding and run ANN search.
+
+    Returns (candidate_pairs, item_rows, pop_rows) or None when the user has no
+    combined embedding or no ANN neighbours are found.
     """
+    db = db_factory()
+    try:
+        embedding = db.execute(
+            select(UserEmbedding.embedding).where(
+                UserEmbedding.user_id == user_id,
+                UserEmbedding.service == "combined",
+            )
+        ).scalar_one_or_none()
+
+        if embedding is None:
+            return None
+
+        vec_str = _format_vec(list(embedding))
+
+        ann_rows = list(
+            db.execute(
+                text(
+                    """
+                    SELECT user_id, embedding <=> CAST(:vec AS vector) AS distance
+                    FROM user_embeddings
+                    WHERE service = 'combined'
+                      AND user_id != :user_id
+                    ORDER BY embedding <=> CAST(:vec AS vector)
+                    LIMIT :limit
+                    """
+                ),
+                {"vec": vec_str, "user_id": str(user_id), "limit": _SEMANTIC_CANDIDATE_LIMIT},
+            ).all()
+        )
+
+        if not ann_rows:
+            return None
+
+        candidate_pairs = [(uuid.UUID(str(r.user_id)), float(r.distance)) for r in ann_rows]
+        candidate_ids = [pair[0] for pair in candidate_pairs]
+        all_user_ids = [user_id, *candidate_ids]
+
+        item_rows = list(
+            db.execute(
+                select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
+                .join(Item, UserItem.item_id == Item.id)
+                .where(UserItem.user_id.in_(all_user_ids))
+            ).all()
+        )
+
+        pop_rows = list(
+            db.execute(
+                select(UserItem.item_id, func.count(UserItem.user_id).label("pop"))
+                .where(UserItem.user_id.in_(all_user_ids))
+                .group_by(UserItem.item_id)
+            ).all()
+        )
+
+        return candidate_pairs, item_rows, pop_rows
+
+    except Exception:
+        logger.exception("Semantic data read failed for user %s", user_id)
+        return None
+    finally:
+        db.close()
+
+
+def _compute_semantic_scores(
+    user_id: uuid.UUID,
+    candidate_pairs: list[tuple[uuid.UUID, float]],
+    item_rows: list,
+    pop_rows: list,
+    now: datetime,
+) -> list[MatchCache]:
+    """Compute semantic match rows from ANN distances. Score = 1 - distance, clamped to [0, 1]."""
+    if not candidate_pairs:
+        return []
+
+    popularity: dict[uuid.UUID, int] = {r.item_id: r.pop for r in pop_rows}
+
+    user_data: dict[uuid.UUID, dict[str, dict[uuid.UUID, str]]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
+    for row in item_rows:
+        user_data[row.user_id][row.service][row.item_id] = row.name
+
+    my_data = user_data.get(user_id, {})
+    my_by_service = {svc: frozenset(items.keys()) for svc, items in my_data.items()}
+    my_item_names: dict[uuid.UUID, str] = {}
+    for svc_items in my_data.values():
+        my_item_names.update(svc_items)
+
+    results: list[MatchCache] = []
+    for other_id, distance in candidate_pairs:
+        score = max(0.0, min(1.0, 1.0 - distance))
+
+        other_data = user_data.get(other_id, {})
+        other_by_service = {svc: frozenset(items.keys()) for svc, items in other_data.items()}
+
+        item_names = {**my_item_names}
+        for svc_items in other_data.values():
+            item_names.update(svc_items)
+
+        highlights = top_shared_highlights(my_by_service, other_by_service, item_names, popularity)
+
+        a_id = min(user_id, other_id)
+        b_id = max(user_id, other_id)
+        results.append(
+            MatchCache(
+                user_a_id=a_id,
+                user_b_id=b_id,
+                score=score,
+                breakdown={"combined": score},
+                highlights=[{"service": h.service, "item_name": h.item_name} for h in highlights],
+                computed_at=now,
+                matching_mode="semantic",
+            )
+        )
+
+    return results
+
+
+def _build_embedding_bg(db_factory: sessionmaker[DbSession], user_id: uuid.UUID) -> None:
+    """Build the user's combined embedding. Swallows NO_EMBEDDINGS_AVAILABLE gracefully."""
+    db = db_factory()
+    try:
+        build_user_embedding(db, user_id)
+    except SyncUpError:
+        logger.debug("No item embeddings for user %s — skipping embedding build", user_id)
+    except Exception:
+        logger.exception("Unexpected error building embedding for user %s", user_id)
+    finally:
+        db.close()
+
+
+def _refresh_match_cache(db_factory: sessionmaker[DbSession], user_id: uuid.UUID) -> None:
+    """Recompute match scores and write to match_cache.
+
+    Tries the semantic ANN path first (requires a combined embedding). Falls back
+    to the heuristic item-overlap path when no embedding exists.
+    Runs as a BackgroundTask; splits into read / compute / write phases so the
+    write transaction is as short as possible.
+    """
+    semantic_data = _read_semantic_data(db_factory, user_id)
+
+    if semantic_data is not None:
+        candidate_pairs, item_rows, pop_rows = semantic_data
+        now = datetime.now(UTC)
+        results = _compute_semantic_scores(user_id, candidate_pairs, item_rows, pop_rows, now)
+        if results:
+            _write_match_results(db_factory, results)
+        return
+
     data = _read_match_data(db_factory, user_id)
     if data is None:
         return
@@ -383,6 +541,7 @@ def get_matches(
                 breakdown=row.breakdown,
                 shared_highlights=[SharedHighlightOut(**h) for h in row.highlights],
                 computed_at=row.computed_at,
+                matching_mode=row.matching_mode,
             )
         )
 
@@ -418,6 +577,7 @@ def get_match_detail(
         breakdown=row.breakdown,
         shared_highlights=[SharedHighlightOut(**h) for h in row.highlights],
         computed_at=row.computed_at,
+        matching_mode=row.matching_mode,
     )
 
 
@@ -430,6 +590,7 @@ def recompute_matches(
     user: RequireAuth,
 ) -> Response:
     """Force recompute of the user's match cache. Rate-limited to 1/hour."""
+    background_tasks.add_task(_build_embedding_bg, request.app.state.db, user.id)
     background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
     settings = request.app.state.settings
     if settings.llm_api_key:

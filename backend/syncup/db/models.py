@@ -386,9 +386,13 @@ class MatchCache(Base):
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    matching_mode: Mapped[str] = mapped_column(
+        Text, nullable=False, default="heuristic", server_default="heuristic"
+    )
 
     __table_args__ = (
         CheckConstraint("user_a_id < user_b_id", name="ck_match_cache_order"),
+        CheckConstraint("matching_mode IN ('heuristic', 'semantic')", name="ck_match_cache_mode"),
         Index("idx_match_cache_a", "user_a_id", desc("score")),
         Index("idx_match_cache_b", "user_b_id", desc("score")),
         Index("idx_match_cache_computed_at", "computed_at"),  # D1 — cleanup job range scan
