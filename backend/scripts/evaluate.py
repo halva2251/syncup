@@ -115,6 +115,7 @@ def overlap_fraction(a: set[Any], b: set[Any]) -> float:
 # Text fed to sentence-transformers: "{name} — {item_type}, {genres}"
 
 _POOL_A: list[tuple[str, str, str]] = [
+    # Shared base (indices 0–7): all Group A users get these
     ("Disco Elysium", "game", "narrative RPG, philosophical, noir"),
     ("Planescape: Torment", "game", "narrative RPG, philosophical, dark fantasy"),
     ("Baldur's Gate 3", "game", "narrative RPG, fantasy, turn-based"),
@@ -123,43 +124,66 @@ _POOL_A: list[tuple[str, str, str]] = [
     ("Pillars of Eternity", "game", "narrative RPG, fantasy, introspective"),
     ("Fallout: New Vegas", "game", "narrative RPG, post-apocalyptic, open world"),
     ("Divinity: Original Sin 2", "game", "narrative RPG, fantasy, cooperative"),
+    # Unique items (indices 8–14): one per user, assigned in order
     ("Shadowrun: Dragonfall", "game", "narrative RPG, cyberpunk, noir"),
     ("Torment: Tides of Numenera", "game", "narrative RPG, sci-fantasy, philosophical"),
     ("Wasteland 3", "game", "narrative RPG, post-apocalyptic, tactical"),
     ("Knights of the Old Republic 2", "game", "narrative RPG, sci-fi, philosophical"),
+    ("Disco Elysium: The Final Cut", "game", "narrative RPG, philosophical, expanded"),
+    ("Pentiment", "game", "narrative RPG, historical, artistic"),
+    ("Citizen Sleeper", "game", "narrative RPG, sci-fi, dice mechanics"),
 ]
 
 _POOL_B: list[tuple[str, str, str]] = [
+    # Shared base (indices 0–4): all Group B users get these
     ("Hades", "game", "roguelike, action, mythology"),
     ("Dead Cells", "game", "roguelike, action, metroidvania"),
     ("Hollow Knight", "game", "metroidvania, action, dark"),
-    ("Celeste", "game", "platformer, precision, indie"),
     ("Enter the Gungeon", "game", "roguelike, bullet hell, action"),
     ("Risk of Rain 2", "game", "roguelike, third-person shooter, action"),
+    # Unique items (indices 5–14): two per user, assigned in order
     ("Returnal", "game", "roguelike, third-person shooter, sci-fi"),
-    ("Neon Abyss", "game", "roguelike, action, bullet hell"),
-    ("Dead Arcanist", "game", "roguelike, action, magic"),
+    ("Celeste", "game", "platformer, precision, indie"),
     ("Rogue Legacy 2", "game", "roguelike, platformer, action"),
     ("Spelunky 2", "game", "roguelike, platformer, adventure"),
     ("Isaac: Afterbirth+", "game", "roguelike, bullet hell, dark"),
+    ("Neon Abyss", "game", "roguelike, action, bullet hell"),
+    ("Vampire Survivors", "game", "roguelike, bullet hell, casual"),
+    ("Slay the Spire", "game", "roguelike, deckbuilder, strategy"),
+    ("Monster Train", "game", "roguelike, deckbuilder, tower defense"),
+    ("Curse of the Dead Gods", "game", "roguelike, action, dark fantasy"),
 ]
 
 _POOL_C: list[tuple[str, str, str]] = [
+    # Each Group C user gets 1 shared item + 4 unique items from a diverse sports pool.
+    # Shared (index 0):
+    ("Rocket League", "game", "sports, vehicular, competitive"),
+    # Unique items (indices 1–21, 4 per user for up to 5 users):
     ("FIFA 24", "game", "sports, football, simulation"),
     ("NBA 2K24", "game", "sports, basketball, simulation"),
-    ("Rocket League", "game", "sports, vehicular, competitive"),
-    ("EA Sports FC", "game", "sports, football, competitive"),
+    ("Madden NFL 25", "game", "sports, american football, simulation"),
+    ("NHL 24", "game", "sports, ice hockey, simulation"),
     ("WWE 2K24", "game", "sports, wrestling, simulation"),
     ("PGA Tour 2K25", "game", "sports, golf, simulation"),
-    ("NHL 24", "game", "sports, ice hockey, simulation"),
     ("F1 24", "game", "sports, racing, simulation"),
     ("Tony Hawk Pro Skater 1+2", "game", "sports, skateboarding, action"),
-    ("Madden NFL 25", "game", "sports, american football, simulation"),
     ("MLB The Show 24", "game", "sports, baseball, simulation"),
     ("UFC 5", "game", "sports, fighting, simulation"),
+    ("Gran Turismo 7", "game", "sports, racing, simulation"),
+    ("Forza Motorsport", "game", "sports, racing, open world"),
+    ("Football Manager 2024", "game", "sports, management, simulation"),
+    ("Cricket 22", "game", "sports, cricket, simulation"),
+    ("Riders Republic", "game", "sports, extreme sports, open world"),
+    ("Skate 3", "game", "sports, skateboarding, sandbox"),
+    ("EA Sports College Football 25", "game", "sports, american football, simulation"),
+    ("Tennis World Tour 2", "game", "sports, tennis, simulation"),
+    ("AO Tennis 2", "game", "sports, tennis, simulation"),
+    ("Olympic Games Tokyo 2020", "game", "sports, multi-sport, party"),
+    ("Steep", "game", "sports, extreme sports, open world"),
 ]
 
 _POOL_OUT: list[tuple[str, str, str]] = [
+    # Shared base (indices 0–7): all Out-group users get these
     ("Daft Punk", "artist", "electronic, french house, synth"),
     ("Aphex Twin", "artist", "electronic, ambient, IDM"),
     ("Boards of Canada", "artist", "electronic, ambient, IDM"),
@@ -168,15 +192,31 @@ _POOL_OUT: list[tuple[str, str, str]] = [
     ("Massive Attack", "artist", "trip-hop, electronic, ambient"),
     ("Portishead", "artist", "trip-hop, electronic, dark"),
     ("Bonobo", "artist", "electronic, chillout, jazz"),
+    # Unique items (indices 8–14): one per user
     ("Flying Lotus", "artist", "electronic, jazz, hip-hop"),
     ("Bicep", "artist", "electronic, house, techno"),
     ("Jon Hopkins", "artist", "electronic, ambient, post-classical"),
     ("Nicolas Jaar", "artist", "electronic, ambient, minimal techno"),
+    ("Objekt", "artist", "electronic, techno, experimental"),
+    ("Floating Points", "artist", "electronic, jazz, ambient"),
+    ("Ross from Friends", "artist", "electronic, house, lo-fi"),
 ]
 
-# Number of items per user in each pool (all pools must have >= ITEMS_PER_USER)
-ITEMS_PER_USER = 10
-HOLDOUT_FRACTION = 0.2  # 2 held out, 8 training
+# Per-group config: (shared_count, unique_per_user)
+# Jaccard(i,j) = shared / (shared + unique_per_user + unique_per_user - shared)
+#              = shared / (2 * unique_per_user + shared) ... no:
+#              = shared / (items_per_user_i + items_per_user_j - shared)
+# Group A: 8 shared + 1 unique  → items=9,  J = 8/(9+9-8) = 8/10 = 0.80
+# Group B: 5 shared + 2 unique  → items=7,  J = 5/(7+7-5) = 5/9  ≈ 0.56
+# Group C: 1 shared + 4 unique  → items=5,  J = 1/(5+5-1) = 1/9  ≈ 0.11
+# Out:     8 shared + 1 unique  → items=9,  J = 8/10 = 0.80 (within out-group)
+_GROUP_CONFIGS: dict[str, tuple[int, int, list[tuple[str, str, str]]]] = {
+    # group → (n_shared, n_unique_per_user, pool)
+    "A": (8, 1, _POOL_A),
+    "B": (5, 2, _POOL_B),
+    "C": (1, 4, _POOL_C),
+    "out": (8, 1, _POOL_OUT),
+}
 
 
 @dataclass
@@ -213,7 +253,7 @@ def _insert_items(
 
     item_ids: list[uuid.UUID] = []
     now = datetime.now(UTC)
-    for (name, item_type, genres), emb in zip(pool[:ITEMS_PER_USER], embeddings):
+    for (name, item_type, genres), emb in zip(pool, embeddings):
         item = Item(
             id=uuid.uuid4(),
             service="eval_synthetic",
@@ -301,10 +341,12 @@ def _ann_matching_query(
         return []
 
     vec_str = _format_vec(list(row))
+    # Restrict to synthetic cohort users only (excludes real users from the DB)
     sql = text(
         f"SELECT user_id FROM user_embeddings"
         f" WHERE service = 'combined'"
         f"   AND user_id != :uid"
+        f"   AND user_id IN (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
         f" ORDER BY embedding <=> CAST(:vec AS vector({EMBEDDING_DIM}))"
         f" LIMIT :lim"
     )
@@ -435,65 +477,74 @@ def _cleanup_synthetic(session: Any, user_ids: list[uuid.UUID]) -> None:
 def build_cohort(session: Any, users_per_group: int = 5) -> list[SyntheticUser]:
     """Construct synthetic cohort and persist to DB.
 
-    Each user gets ITEMS_PER_USER items from their group pool.
-    Training/holdout split happens before building embeddings so that
-    holdout items are never in user_items.
+    Within-group item overlap is deliberately varied:
+    - Group A: 7 train-shared + 1 holdout-shared + 1 unique  → train Jaccard ≈ 7/9 ≈ 78%
+    - Group B: 4 train-shared + 1 holdout-shared + 2 unique  → train Jaccard ≈ 4/7 ≈ 57%
+    - Group C: 0 train-shared + 1 holdout-shared + 4 unique  → train Jaccard ≈ 0/9 ≈ 0%
+    - Out-group: 7 train-shared + 1 holdout-shared + 1 unique (EDM, 0% cross-group overlap)
+
+    Holdout: shared_ids[-1] is held out for all users in the group — it is in the `items`
+    table with an embedding but NOT in any user_items, so it appears as a recommendation
+    candidate. All users within a group share the same holdout item.
     """
     from syncup.embeddings.semantic import embed_batch
 
-    pools = {
-        "A": _POOL_A,
-        "B": _POOL_B,
-        "C": _POOL_C,
-        "out": _POOL_OUT,
-    }
-
-    # Embed all items once (batched for efficiency)
-    print("  Embedding synthetic item pools (4 × 10 items)...")
+    # Pool size per group: n_shared + n_unique * users_per_group
     all_texts: list[str] = []
     pool_offsets: dict[str, tuple[int, int]] = {}
-    for group, pool in pools.items():
+    for group, (n_shared, n_unique, pool) in _GROUP_CONFIGS.items():
+        pool_size = n_shared + n_unique * users_per_group
         start = len(all_texts)
-        all_texts += [_make_item_text(n, t, g) for n, t, g in pool[:ITEMS_PER_USER]]
+        all_texts += [_make_item_text(n, t, g) for n, t, g in pool[:pool_size]]
         pool_offsets[group] = (start, len(all_texts))
 
+    total_items = len(all_texts)
+    print(f"  Embedding synthetic item pools ({total_items} items across 4 groups)...")
     all_embeddings = embed_batch(all_texts)
-    print(f"  Embedded {len(all_texts)} items.")
+    print(f"  Embedded {total_items} items.")
 
-    # Insert items (one set per pool, shared across all users in that group)
+    # Insert all pool items into DB
     pool_item_ids: dict[str, list[uuid.UUID]] = {}
-    for group, pool in pools.items():
+    for group, (n_shared, n_unique, pool) in _GROUP_CONFIGS.items():
         start, end = pool_offsets[group]
-        item_ids = _insert_items(session, pool, all_embeddings[start:end])
-        pool_item_ids[group] = item_ids
+        pool_size = end - start
+        ids = _insert_items(session, pool[:pool_size], all_embeddings[start:end])
+        pool_item_ids[group] = ids
     session.commit()
 
     # Create users and assign items
     synthetic_users: list[SyntheticUser] = []
     for group in ("A", "B", "C", "out"):
+        n_shared, n_unique, _ = _GROUP_CONFIGS[group]
+        all_pool_ids = pool_item_ids[group]
+
+        # shared_ids[-1] is the group-wide holdout; shared_ids[:-1] go to training
+        shared_ids = all_pool_ids[:n_shared]
+        holdout_item = shared_ids[-1]  # same for every user in this group
+        train_shared = shared_ids[:-1]  # n_shared - 1 items used for training
+
         for i in range(users_per_group):
             user_id = _insert_user(session, group, i)
-            item_ids = pool_item_ids[group]
 
-            train_ids, holdout_ids = split_holdout(
-                item_ids, fraction=HOLDOUT_FRACTION, seed=i + ord(group)
-            )
+            unique_start = n_shared + i * n_unique
+            unique_ids = all_pool_ids[unique_start : unique_start + n_unique]
+            training_ids = train_shared + unique_ids
 
-            _assign_items_to_user(session, user_id, train_ids, excluded=False)
-            # Holdout items are NOT in user_items — they appear as candidates
+            _assign_items_to_user(session, user_id, training_ids, excluded=False)
+            # holdout_item is in `items` but NOT in user_items → appears as candidate
 
             su = SyntheticUser(
                 user_id=user_id,
                 group=group,
-                training_item_ids=train_ids,
-                holdout_item_ids=holdout_ids,
+                training_item_ids=list(training_ids),
+                holdout_item_ids=[holdout_item],
                 email=f"eval-synthetic-{group}{i}@syncup.internal",
             )
             synthetic_users.append(su)
 
     session.commit()
 
-    # Build user embeddings from training items
+    # Build user embeddings from training items only
     print(f"  Building embeddings for {len(synthetic_users)} synthetic users...")
     for su in synthetic_users:
         _build_embedding_for_user(session, su.user_id)
@@ -677,14 +728,25 @@ def main() -> None:
     users_per_group = args.cohort_size
     synthetic_users: list[SyntheticUser] = []
 
-    with factory() as session:
-        try:
-            # Clean up any leftover synthetic data from a previous run
-            session.execute(
-                __import__("sqlalchemy").text("DELETE FROM items WHERE service = 'eval_synthetic'")
-            )
-            session.commit()
+    import sqlalchemy as sa
 
+    with factory() as session:
+        # Pre-cleanup: remove leftover synthetic data from any previous run
+        session.execute(
+            sa.text(
+                "DELETE FROM user_embeddings WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
+            )
+        )
+        session.execute(
+            sa.text(
+                "DELETE FROM user_items WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
+            )
+        )
+        session.execute(sa.text("DELETE FROM users WHERE email LIKE 'eval-synthetic-%'"))
+        session.execute(sa.text("DELETE FROM items WHERE service = 'eval_synthetic'"))
+        session.commit()
+
+        try:
             print(f"\nBuilding synthetic cohort ({users_per_group} users/group)...")
             synthetic_users = build_cohort(session, users_per_group=users_per_group)
 
@@ -702,6 +764,10 @@ def main() -> None:
         finally:
             if not args.no_cleanup:
                 print("\nCleaning up synthetic data...")
+                try:
+                    session.rollback()
+                except Exception:
+                    pass
                 _cleanup_synthetic(session, [su.user_id for su in synthetic_users])
                 print("Done.")
             else:
