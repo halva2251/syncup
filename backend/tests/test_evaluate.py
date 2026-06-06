@@ -58,7 +58,6 @@ import pytest
 
 precision_at_k = _eval_mod.precision_at_k
 recall_at_k = _eval_mod.recall_at_k
-split_holdout = _eval_mod.split_holdout
 overlap_fraction = _eval_mod.overlap_fraction
 
 
@@ -144,54 +143,6 @@ class TestRecallAtK:
         retrieved = ["a", "b", "c"]
         relevant = {"a", "b"}
         assert recall_at_k(retrieved, relevant, k=1) == pytest.approx(0.5)
-
-
-# ──────────────────────────────────────────────────────────────────────
-# split_holdout
-# ──────────────────────────────────────────────────────────────────────
-
-
-class TestSplitHoldout:
-    def test_splits_correct_sizes(self):
-        ids = list(range(10))
-        train, holdout = split_holdout(ids, fraction=0.2)
-        assert len(train) == 8
-        assert len(holdout) == 2
-
-    def test_no_overlap(self):
-        ids = list(range(20))
-        train, holdout = split_holdout(ids, fraction=0.2)
-        assert set(train) & set(holdout) == set()
-
-    def test_all_ids_present(self):
-        ids = list(range(20))
-        train, holdout = split_holdout(ids, fraction=0.2)
-        assert set(train) | set(holdout) == set(ids)
-
-    def test_fraction_zero_all_train(self):
-        ids = list(range(5))
-        train, holdout = split_holdout(ids, fraction=0.0)
-        assert len(holdout) == 0
-        assert set(train) == set(ids)
-
-    def test_fraction_one_all_holdout(self):
-        ids = list(range(5))
-        train, holdout = split_holdout(ids, fraction=1.0)
-        assert len(train) == 0
-        assert set(holdout) == set(ids)
-
-    def test_deterministic_with_seed(self):
-        ids = list(range(100))
-        train1, holdout1 = split_holdout(ids, fraction=0.2, seed=42)
-        train2, holdout2 = split_holdout(ids, fraction=0.2, seed=42)
-        assert train1 == train2
-        assert holdout1 == holdout2
-
-    def test_different_seeds_differ(self):
-        ids = list(range(100))
-        _, holdout1 = split_holdout(ids, fraction=0.2, seed=1)
-        _, holdout2 = split_holdout(ids, fraction=0.2, seed=2)
-        assert holdout1 != holdout2
 
 
 # ──────────────────────────────────────────────────────────────────────

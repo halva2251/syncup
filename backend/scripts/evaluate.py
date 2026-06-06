@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import random
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -73,28 +72,6 @@ def recall_at_k(
     top_k = retrieved[:k]
     hits = sum(1 for item in top_k if item in relevant)
     return hits / len(relevant)
-
-
-def split_holdout(
-    item_ids: list[Any],
-    fraction: float,
-    seed: int = 42,
-) -> tuple[list[Any], list[Any]]:
-    """Split item IDs into training and holdout sets.
-
-    Args:
-        item_ids: List of item identifiers to split.
-        fraction: Fraction to place in holdout (0.0 = all train, 1.0 = all holdout).
-        seed: Random seed for reproducibility.
-
-    Returns:
-        (train_ids, holdout_ids) — disjoint, together exhausting item_ids.
-    """
-    rng = random.Random(seed)
-    shuffled = list(item_ids)
-    rng.shuffle(shuffled)
-    n_holdout = int(len(shuffled) * fraction)
-    return shuffled[n_holdout:], shuffled[:n_holdout]
 
 
 def overlap_fraction(a: set[Any], b: set[Any]) -> float:
@@ -205,14 +182,20 @@ _POOL_OUT: list[tuple[str, str, str]] = [
     ("Ross from Friends", "artist", "electronic, house, lo-fi"),
 ]
 
-# Per-group config: (shared_count, unique_per_user)
-# shared_ids[-1] is withheld as holdout (not in user_items), so training Jaccard
-# uses only (n_shared - 1) train-shared items:
-#   training_J(i,j) = train_shared / (train_per_user_i + train_per_user_j - train_shared)
-# Group A: 7 train-shared + 1 unique  → train items=8, J = 7/(8+8-7) = 7/9  ≈ 0.78
-# Group B: 4 train-shared + 2 unique  → train items=6, J = 4/(6+6-4) = 4/8  = 0.50
-# Group C: 0 train-shared + 4 unique  → train items=4, J = 0/(4+4-0) = 0/8  = 0.00
-# Out:     7 train-shared + 1 unique  → train items=8, J = 7/9 ≈ 0.78 (within out-group)
+# Per-group config: (n_shared, n_unique_per_user, pool)
+#
+# Holdout strategy per group:
+#   A / B / Out: shared_ids[-1] is the group-wide holdout (all users share it)
+#                training uses n_shared-1 shared + n_unique unique items
+#   C:           last unique item per user is the holdout (unique per user)
+#                training uses all n_shared shared + (n_unique-1) unique items
+#
+# Training Jaccard  J = shared_train / (items_i + items_j - shared_train):
+#   Group A:   7 train-shared + 1 unique  → items=8,  J = 7/(8+8-7) = 7/9  ≈ 0.78
+#   Group B:   4 train-shared + 2 unique  → items=6,  J = 4/(6+6-4) = 4/8  = 0.50
+#   Group C:   1 train-shared + 3 unique  → items=4,  J = 1/(4+4-1) = 1/7  ≈ 0.14
+#              (4th unique item per user is the holdout; each user has different holdout)
+#   Out-group: 7 train-shared + 1 unique  → items=8,  J = 7/9 ≈ 0.78 (EDM cluster)
 _GROUP_CONFIGS: dict[str, tuple[int, int, list[tuple[str, str, str]]]] = {
     # group → (n_shared, n_unique_per_user, pool)
     "A": (8, 1, _POOL_A),
@@ -256,7 +239,7 @@ def _insert_items(
 
     item_ids: list[uuid.UUID] = []
     now = datetime.now(UTC)
-    for (name, item_type, genres), emb in zip(pool, embeddings):
+    for (name, item_type, genres), emb in zip(pool, embeddings, strict=True):
         item = Item(
             id=uuid.uuid4(),
             service="eval_synthetic",
@@ -284,7 +267,7 @@ def _insert_user(session: Any, group: str, index: int) -> uuid.UUID:
         email=f"eval-synthetic-{group}{index}@syncup.internal",
         display_name=f"Eval {group}{index}",
         password_hash="$2b$12$fakehash_eval",  # noqa: S106
-        is_matchable=False,  # prevent synthetic users appearing in real match results
+        is_matchable=True,  # synthetic users must be matchable to mirror production ANN path
         onboarded=True,
         created_at=now,
         updated_at=now,
@@ -297,18 +280,23 @@ def _insert_user(session: Any, group: str, index: int) -> uuid.UUID:
 def _assign_items_to_user(
     session: Any,
     user_id: uuid.UUID,
-    item_ids: list[uuid.UUID],
+    item_scores: list[tuple[uuid.UUID, float]],
     excluded: bool = False,
 ) -> None:
+    """Insert user_items rows. item_scores is a list of (item_id, engagement_score) pairs.
+
+    Varying engagement scores across items exercises the log1p dampening path in
+    build_user_embedding; constant scores would collapse to unweighted averaging.
+    """
     from syncup.db.models import UserItem
 
     now = datetime.now(UTC)
-    for item_id in item_ids:
+    for item_id, engagement_score in item_scores:
         ui = UserItem(
             id=uuid.uuid4(),
             user_id=user_id,
             item_id=item_id,
-            engagement_score=0.8,
+            engagement_score=engagement_score,
             raw_value=100.0,
             raw_type="consumption",
             fetched_at=now,
@@ -344,12 +332,17 @@ def _ann_matching_query(
         return []
 
     vec_str = _format_vec(list(row))
-    # Restrict to synthetic cohort users only (excludes real users from the DB)
+    # Mirror production ANN filter: is_matchable=true restricts to real candidates.
+    # Email filter further restricts to synthetic cohort (no real user contamination).
     sql = text(
         f"SELECT user_id FROM user_embeddings"
         f" WHERE service = 'combined'"
         f"   AND user_id != :uid"
-        f"   AND user_id IN (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
+        f"   AND user_id IN ("
+        f"       SELECT id FROM users"
+        f"       WHERE is_matchable = true"
+        f"         AND email LIKE 'eval-synthetic-%'"
+        f"   )"
         f" ORDER BY embedding <=> CAST(:vec AS vector({EMBEDDING_DIM}))"
         f" LIMIT :lim"
     )
@@ -377,10 +370,11 @@ def _ann_item_query(
         return []
 
     vec_str = _format_vec(list(row))
+    # Search the full item catalog (not just synthetic items) to match production
+    # behaviour — the holdout item must compete against all real items.
     sql = text(
         f"SELECT i.id FROM items i"
         f" WHERE i.embedding IS NOT NULL"
-        f"   AND i.service = 'eval_synthetic'"
         f"   AND NOT EXISTS ("
         f"       SELECT 1 FROM user_items ui"
         f"       WHERE ui.user_id = :uid AND ui.item_id = i.id"
@@ -494,14 +488,17 @@ def build_cohort(session: Any, users_per_group: int = 5) -> list[SyntheticUser]:
     """Construct synthetic cohort and persist to DB.
 
     Within-group item overlap is deliberately varied:
-    - Group A: 7 train-shared + 1 holdout-shared + 1 unique  → train Jaccard ≈ 7/9 ≈ 78%
-    - Group B: 4 train-shared + 1 holdout-shared + 2 unique  → train Jaccard ≈ 4/7 ≈ 57%
-    - Group C: 0 train-shared + 1 holdout-shared + 4 unique  → train Jaccard ≈ 0/9 ≈ 0%
-    - Out-group: 7 train-shared + 1 holdout-shared + 1 unique (EDM, 0% cross-group overlap)
+    - Group A: 7 train-shared + 1 unique  → train Jaccard = 7/(8+8-7) = 7/9 ≈ 0.78
+              (holdout = shared_ids[-1], same for all A users)
+    - Group B: 4 train-shared + 2 unique  → train Jaccard = 4/(6+6-4) = 4/8 = 0.50
+              (holdout = shared_ids[-1], same for all B users)
+    - Group C: 1 train-shared + 3 unique  → train Jaccard = 1/(4+4-1) = 1/7 ≈ 0.14
+              (holdout = last unique item per user — each user has a distinct holdout)
+    - Out-group: 7 train-shared + 1 unique  → train Jaccard = 7/9 ≈ 0.78 (EDM)
+              (holdout = shared_ids[-1], same for all Out users)
 
-    Holdout: shared_ids[-1] is held out for all users in the group — it is in the `items`
-    table with an embedding but NOT in any user_items, so it appears as a recommendation
-    candidate. All users within a group share the same holdout item.
+    Engagement scores are varied 0.2–1.0 across items (seeded per user) so that
+    the log1p dampening in build_user_embedding has discriminative effect.
     """
     from syncup.embeddings.semantic import embed_batch
 
@@ -521,39 +518,58 @@ def build_cohort(session: Any, users_per_group: int = 5) -> list[SyntheticUser]:
 
     # Insert all pool items into DB
     pool_item_ids: dict[str, list[uuid.UUID]] = {}
-    for group, (n_shared, n_unique, pool) in _GROUP_CONFIGS.items():
+    for group, (_n_shared, _n_unique, pool) in _GROUP_CONFIGS.items():
         start, end = pool_offsets[group]
         pool_size = end - start
         ids = _insert_items(session, pool[:pool_size], all_embeddings[start:end])
         pool_item_ids[group] = ids
     session.commit()
 
+    _group_seed = {"A": 100, "B": 200, "C": 300, "out": 400}
+
     # Create users and assign items
     synthetic_users: list[SyntheticUser] = []
     for group in ("A", "B", "C", "out"):
         n_shared, n_unique, _ = _GROUP_CONFIGS[group]
         all_pool_ids = pool_item_ids[group]
-
-        # shared_ids[-1] is the group-wide holdout; shared_ids[:-1] go to training
         shared_ids = all_pool_ids[:n_shared]
-        holdout_item = shared_ids[-1]  # same for every user in this group
-        train_shared = shared_ids[:-1]  # n_shared - 1 items used for training
+
+        # A/B/Out: group-wide shared holdout (shared_ids[-1]); Group C: per-user holdout
+        if group != "C":
+            group_holdout = shared_ids[-1]
+            train_shared = shared_ids[:-1]
+        else:
+            group_holdout = None  # set per-user below
+            train_shared = list(shared_ids)  # all shared items in training for C
 
         for i in range(users_per_group):
             user_id = _insert_user(session, group, i)
 
             unique_start = n_shared + i * n_unique
             unique_ids = all_pool_ids[unique_start : unique_start + n_unique]
-            training_ids = train_shared + unique_ids
 
-            _assign_items_to_user(session, user_id, training_ids, excluded=False)
-            # holdout_item is in `items` but NOT in user_items → appears as candidate
+            if group == "C":
+                this_holdout = unique_ids[-1]
+                training_ids = list(train_shared) + list(unique_ids[:-1])
+            else:
+                this_holdout = group_holdout  # type: ignore[assignment]
+                training_ids = list(train_shared) + list(unique_ids)
+
+            # Vary engagement scores 0.2–1.0 (seeded per user for reproducibility)
+            rng = random.Random(_group_seed[group] + i)
+            n_items = len(training_ids)
+            scores = [0.2 + 0.8 * (j / max(n_items - 1, 1)) for j in range(n_items)]
+            rng.shuffle(scores)
+            item_scores = list(zip(training_ids, scores, strict=True))
+
+            _assign_items_to_user(session, user_id, item_scores)
+            # this_holdout is in `items` but NOT in user_items → appears as candidate
 
             su = SyntheticUser(
                 user_id=user_id,
                 group=group,
                 training_item_ids=list(training_ids),
-                holdout_item_ids=[holdout_item],
+                holdout_item_ids=[this_holdout],
                 email=f"eval-synthetic-{group}{i}@syncup.internal",
             )
             synthetic_users.append(su)
@@ -579,10 +595,12 @@ def run_matching_evaluation(
     session: Any,
     synthetic_users: list[SyntheticUser],
 ) -> dict[str, float]:
-    """Compute Precision@5 per group.
+    """Compute Recall@5 per group.
 
-    For each user in a group, query top-5 ANN matches and check how many
-    belong to the same group. Ground truth: same-group users are "relevant".
+    For each user in a group, query top-5 ANN matches and measure what fraction
+    of the other same-group members appear. Recall@5 avoids the structural
+    ceiling of P@5: with 5 users/group each user has 4 relevant members, so
+    P@5 maxes at 4/5=0.80 regardless of ranking quality; Recall@5 maxes at 1.0.
     """
     by_group: dict[str, list[SyntheticUser]] = {}
     for su in synthetic_users:
@@ -591,13 +609,12 @@ def run_matching_evaluation(
     results: dict[str, float] = {}
     for group, members in by_group.items():
         member_ids = {su.user_id for su in members}
-        precisions: list[float] = []
+        recalls: list[float] = []
         for su in members:
             relevant = member_ids - {su.user_id}
             top_k = _ann_matching_query(session, su.user_id, limit=5)
-            p = precision_at_k(top_k, relevant, k=5)
-            precisions.append(p)
-        results[group] = sum(precisions) / len(precisions) if precisions else 0.0
+            recalls.append(recall_at_k(top_k, relevant, k=5))
+        results[group] = sum(recalls) / len(recalls) if recalls else 0.0
 
     return results
 
@@ -606,36 +623,54 @@ def run_holdout_evaluation(
     session: Any,
     synthetic_users: list[SyntheticUser],
     k: int = 10,
-) -> dict[str, float]:
-    """Compute Precision@k and Recall@k using held-out items as ground truth.
+) -> dict[str, Any]:
+    """Compute Hit Rate@k using held-out items as ground truth.
 
-    Held-out items are in the `items` table with embeddings but are NOT in
-    the user's user_items, so they appear as recommendation candidates.
+    Each user has exactly 1 holdout item; recall_at_k with a single relevant item
+    is binary (0 or 1). The mean is therefore Hit Rate@k — the fraction of users
+    whose held-out item appears in their top-k recommendations. This is the
+    standard metric name for this setting; calling it Recall@k would imply a
+    multi-item relevance set.
     """
-    all_precision: list[float] = []
-    all_recall: list[float] = []
-    group_recall: dict[str, list[float]] = {}
+    hits: list[float] = []
+    group_hits: dict[str, list[float]] = {}
 
     for su in synthetic_users:
         if not su.holdout_item_ids:
             continue
         relevant = set(su.holdout_item_ids)
         retrieved = _ann_item_query(session, su.user_id, limit=k)
-        p = precision_at_k(retrieved, relevant, k=k)
-        r = recall_at_k(retrieved, relevant, k=k)
-        all_precision.append(p)
-        all_recall.append(r)
-        group_recall.setdefault(su.group, []).append(r)
+        hit = recall_at_k(retrieved, relevant, k=k)  # binary when |relevant|=1
+        hits.append(hit)
+        group_hits.setdefault(su.group, []).append(hit)
 
-    n = len(all_precision)
-    per_group = {g: sum(vals) / len(vals) for g, vals in group_recall.items() if vals}
+    n = len(hits)
+    per_group = {g: sum(vals) / len(vals) for g, vals in group_hits.items() if vals}
     return {
-        "precision_at_k": sum(all_precision) / n if n else 0.0,
-        "recall_at_k": sum(all_recall) / n if n else 0.0,
+        "hit_rate_at_k": sum(hits) / n if n else 0.0,
         "k": k,
         "n_users": n,
-        "recall_per_group": per_group,
+        "hit_rate_per_group": per_group,
     }
+
+
+def _spearman_r(xs: list[float], ys: list[float]) -> float:
+    """Spearman rank correlation coefficient (pure Python, no scipy)."""
+    n = len(xs)
+    if n < 2:
+        return float("nan")
+
+    def _rank(vals: list[float]) -> list[float]:
+        order = sorted(range(n), key=lambda i: vals[i])
+        result = [0.0] * n
+        for r, idx in enumerate(order, 1):
+            result[idx] = float(r)
+        return result
+
+    rx, ry = _rank(xs), _rank(ys)
+    d2 = sum((a - b) ** 2 for a, b in zip(rx, ry, strict=True))
+    denom = n * (n * n - 1)
+    return float("nan") if denom == 0 else 1.0 - 6.0 * d2 / denom
 
 
 def _build_cohort_popularity(
@@ -666,38 +701,53 @@ def _build_cohort_popularity(
 def run_mode_comparison(
     session: Any,
     synthetic_users: list[SyntheticUser],
-) -> dict[str, float]:
-    """Compare average semantic vs heuristic scores across Group A pairs.
+) -> dict[str, Any]:
+    """Compare semantic vs heuristic scores for within-group pairs (A, B, out).
 
-    Group A users have the most overlap so scores are most meaningful there.
-    Popularity is built from the full synthetic cohort so that items shared by
-    all 5 Group A users receive count=5 (lower rarity) rather than count=2
-    (the degenerate per-pair value that makes the heuristic score constant).
+    Group C is excluded — near-zero training Jaccard means all heuristic scores
+    would be 0 and the comparison would be degenerate.
+
+    Reports per-group averages and the Spearman rank correlation between
+    heuristic and semantic rankings across all pairs.  A high positive Spearman r
+    confirms the two metrics agree directionally; a large delta in means confirms
+    semantic is quantitatively stronger.
     """
-    group_a = [su for su in synthetic_users if su.group == "A"]
-
-    # Precompute cohort-wide popularity once; pass to every pair
     cohort_popularity = _build_cohort_popularity(session, synthetic_users)
 
-    semantic_scores: list[float] = []
-    heuristic_scores: list[float] = []
+    all_semantic: list[float] = []
+    all_heuristic: list[float] = []
+    group_results: dict[str, dict[str, float]] = {}
 
-    for i, ua in enumerate(group_a):
-        for ub in group_a[i + 1 :]:
-            semantic_scores.append(_semantic_score_for_pair(session, ua.user_id, ub.user_id))
-            heuristic_scores.append(
-                _heuristic_score_for_pair(
+    for group in ("A", "B", "out"):
+        members = [su for su in synthetic_users if su.group == group]
+        sem: list[float] = []
+        heu: list[float] = []
+        for i, ua in enumerate(members):
+            for ub in members[i + 1 :]:
+                s = _semantic_score_for_pair(session, ua.user_id, ub.user_id)
+                h = _heuristic_score_for_pair(
                     session, ua.user_id, ub.user_id, popularity=cohort_popularity
                 )
-            )
+                sem.append(s)
+                heu.append(h)
+                all_semantic.append(s)
+                all_heuristic.append(h)
+        n = len(sem)
+        group_results[group] = {
+            "semantic_avg": sum(sem) / n if n else 0.0,
+            "heuristic_avg": sum(heu) / n if n else 0.0,
+            "n_pairs": float(n),
+        }
 
     def _avg(xs: list[float]) -> float:
         return sum(xs) / len(xs) if xs else 0.0
 
     return {
-        "semantic_avg": _avg(semantic_scores),
-        "heuristic_avg": _avg(heuristic_scores),
-        "n_pairs": len(semantic_scores),
+        "group_results": group_results,
+        "semantic_avg": _avg(all_semantic),
+        "heuristic_avg": _avg(all_heuristic),
+        "n_pairs": len(all_semantic),
+        "spearman_r": _spearman_r(all_heuristic, all_semantic),
     }
 
 
@@ -708,8 +758,8 @@ def run_mode_comparison(
 
 def print_report(
     matching: dict[str, float],
-    holdout: dict[str, float],
-    modes: dict[str, float],
+    holdout: dict[str, Any],
+    modes: dict[str, Any],
     users_per_group: int,
 ) -> None:
     """Print evaluation report matching roadmap §2.8 format."""
@@ -726,22 +776,21 @@ def print_report(
             "out": "zero-overlap out-group ranked",
         }[group]
         score = matching.get(group, 0.0)
-        print(f"  Group {group} precision@5: {score:.2f}  ({label})")
+        print(f"  Group {group} recall@5: {score:.2f}  ({label})")
 
     k = holdout["k"]
     print()
     print(f"Holdout recommendation quality (N={holdout['n_users']} users, k={k}):")
-    print(f"  Precision@{k} (pooled): {holdout['precision_at_k']:.2f}")
-    print(f"  Recall@{k}    (pooled): {holdout['recall_at_k']:.2f}")
-    per_group: dict[str, float] = holdout.get("recall_per_group", {})
+    print(f"  Hit Rate@{k} (pooled): {holdout['hit_rate_at_k']:.2f}")
+    per_group: dict[str, float] = holdout.get("hit_rate_per_group", {})
     if per_group:
-        print(f"  Recall@{k} by group:")
+        print(f"  Hit Rate@{k} by group:")
         for g in ("A", "B", "C", "out"):
             if g in per_group:
                 note = {
                     "A": "high overlap — sanity check",
                     "B": "medium overlap",
-                    "C": "0% training overlap — structural upper bound",
+                    "C": "unique holdout per user — hardest group",
                     "out": "cross-domain — sanity check",
                 }.get(g, "")
                 print(f"    Group {g}: {per_group[g]:.2f}  ({note})")
@@ -749,23 +798,40 @@ def print_report(
     sem = modes["semantic_avg"]
     heu = modes["heuristic_avg"]
     delta_pct = ((sem - heu) / heu * 100) if heu > 0 else float("inf")
+    n_pairs = modes["n_pairs"]
+    spearman = modes["spearman_r"]
     print()
-    print("Matching mode comparison (Group A pairs):")
-    print(f"  heuristic:  avg score {heu:.2f}  (rarity-weighted overlap, cohort-wide popularity)")
+    print(f"Matching mode comparison (Groups A/B/out, {n_pairs} pairs):")
+    print(f"  heuristic:  avg score {heu:.3f}  (rarity-weighted overlap, cohort-wide popularity)")
     if heu > 0:
-        print(f"  semantic:   avg score {sem:.2f}  ({delta_pct:+.0f}% vs heuristic)")
+        print(f"  semantic:   avg score {sem:.3f}  ({delta_pct:+.0f}% vs heuristic)")
     else:
-        print(f"  semantic:   avg score {sem:.2f}")
+        print(f"  semantic:   avg score {sem:.3f}")
+    if not (spearman != spearman):  # nan check
+        print(f"  Spearman r (heuristic vs semantic rankings): {spearman:.3f}")
+    group_results: dict[str, dict[str, float]] = modes.get("group_results", {})
+    if group_results:
+        print("  Per-group breakdown:")
+        for g in ("A", "B", "out"):
+            if g in group_results:
+                gr = group_results[g]
+                n_g = int(gr["n_pairs"])
+                g_sem = gr["semantic_avg"]
+                g_heu = gr["heuristic_avg"]
+                g_delta = ((g_sem - g_heu) / g_heu * 100) if g_heu > 0 else float("inf")
+                print(
+                    f"    Group {g}: heuristic {g_heu:.3f}  semantic {g_sem:.3f}"
+                    f"  ({g_delta:+.0f}%)  n={n_g} pairs"
+                )
 
     print()
     print("Evaluation caveats (self-critical assessment):")
-    print("  - Synthetic cohort uses constant engagement_score=0.8 → log1p weighting")
-    print("    is uniform; user vectors are unweighted item centroids. Real users with")
-    print("    varied engagement will exercise the log1p dampening path.")
-    print("  - Recall@k pooled across groups is not directly comparable: Group C and")
-    print("    Out-group use items from a tight semantic cluster so recall is high by")
-    print("    construction. Group A/B recall is the more informative signal.")
-    print("  - Precision@5 for Out-group is trivially 1.0 (same EDM cluster). It")
+    print("  - Synthetic cohort uses seeded engagement scores (0.2–1.0); log1p dampening")
+    print("    is exercised but items are still from a narrow eval vocabulary.")
+    print("  - Hit Rate@k pooled across groups is not directly comparable: Group C uses")
+    print("    unique holdouts per user (hardest), Out-group items cluster tightly (easy).")
+    print("    Group A/B hit rate is the most informative signal.")
+    print("  - Recall@5 for Out-group is trivially 1.0 (same EDM cluster). It")
     print("    validates domain separation, not intra-domain ranking quality.")
     print("Known failure modes (production):")
     print("  - Users with < 20 items: degraded recommendation quality (thin signal)")
