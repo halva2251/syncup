@@ -233,33 +233,32 @@ Paginated raw items for a service/type.
 
 ---
 
-## 5. Recommendations — Deferred (post-Item2Vec)
+## 5. Recommendations — Live ✅
 
-> **Archetype** (`label`, `description`) is deferred until after Item2Vec training. The taste card will ship without it initially.
+### `GET /me/recommendations` — Live ✅ (Phase 2 Block I)
 
-### `GET /me/recommendations` — Sketch (blocked on Phase 2.1)
+Cross-domain item recommendations powered by the user's `combined` taste vector.
 
-Cross-domain recommendations based on the user's full taste profile. Deliberately skipped as a service-native API proxy — will be built on top of Item2Vec embeddings so recommendations work across domains (e.g. music suggestions derived from game taste, even if no music service is connected).
+Query params:
+- `item_type` (optional): one of `game | track | artist | film | show | anime | manga | album | community`. Omit for all types. Unknown values → 422.
+- `limit` (optional, default 10, max 50): number of results. `limit < 1` or `limit > 50` → 422.
 
 ```json
+// GET /api/me/recommendations?item_type=game&limit=5
+// res
 {
-  "lastfm": [
-    { "name": "Have a Nice Life", "type": "artist", "reason": "Similar to Grouper" },
-    { "name": "Grouper",          "type": "artist", "reason": "Similar to Planning for Burial" }
-  ],
-  "spotify": [
-    { "name": "Grouper",          "type": "artist", "reason": "Matches your listening profile" },
-    { "name": "The Caretaker",    "type": "artist", "reason": "Matches your listening profile" }
-  ],
-  "steam": null
+  "items": [
+    { "item_name": "Planescape: Torment", "service": "steam", "item_type": "game", "similarity_score": 0.87 },
+    { "item_name": "Disco Elysium",       "service": "steam", "item_type": "game", "similarity_score": 0.84 }
+  ]
 }
 ```
 
-**Implementation plan (Phase 2.1+):**
-- For each of the user's top items, find nearest neighbours in Item2Vec embedding space
-- Filter out items already in `user_items`
-- Cross-domain: game embeddings can surface music recommendations and vice versa
-- `steam: null` until Steam game tag embeddings are trained
+- `similarity_score` = `1 - cosine_distance`, clamped to `[0.0, 1.0]`. Items with `score <= 0` (antipodal vectors) are excluded.
+- Only items NOT already in `user_items` are returned.
+- Cross-domain by default: the combined vector spans all services, so `item_type=film` returns films informed by gaming and music taste.
+- 422 `NO_EMBEDDING_AVAILABLE` if the user has no `combined` embedding yet — build one via `POST /api/embeddings/build`.
+- Rate-limited: 30/min per IP.
 
 ---
 

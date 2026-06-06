@@ -54,10 +54,11 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | POST | `/api/me/recompute` | Force match cache refresh; requires auth. Returns 204 immediately. Rate-limited to 1/hour. |
 | POST | `/api/embeddings/build` | Compute (or recompute) the current user's combined 384-dim taste vector from all non-excluded items with embeddings; applies per-service cap (top 50), dimension weights, and boost multipliers; upserts `user_embeddings` with `service='combined'`; requires auth. Rate-limited to 5/min. Returns 422 `NO_EMBEDDINGS_AVAILABLE` if no items have embeddings yet. *(Phase 2 Block D)* |
 | PATCH | `/api/me/items/{item_id}` | Toggle `excluded` on a `user_items` row; excluded items are skipped in embedding builds, LLM vibe synthesis, and recommendations; requires auth. Rate-limited to 60/min. Returns 404 if item not found or belongs to another user. *(Phase 2 Block E)* |
+| GET | `/api/me/recommendations` | Cross-domain item recommendations from the user's combined taste vector; skips items already in `user_items`; optional `item_type` filter (game/track/artist/film/show/anime/manga/album/community); `limit` 1–50 (default 10); returns `{items: [{item_name, service, item_type, similarity_score}]}`; 422 `NO_EMBEDDING_AVAILABLE` if no combined embedding yet. Rate-limited to 30/min. *(Phase 2 Block I)* |
 
 All error responses use the envelope `{"error": {"code": "...", "message": "..."}}`.
 
-Rate limits: signup 5/min, login 10/min, connect 10/min, sync 5/min, taste 30/min, obsessions 60/min read + 30/min write, overrides 60/min read + 30/min write, dimensions 60/min read + 30/min write, profile GET 60/min + PATCH 30/min, onboarding 60/min, matches 30/min, match detail 60/min, recompute 1/hour (all per IP).
+Rate limits: signup 5/min, login 10/min, connect 10/min, sync 5/min, taste 30/min, obsessions 60/min read + 30/min write, overrides 60/min read + 30/min write, dimensions 60/min read + 30/min write, profile GET 60/min + PATCH 30/min, onboarding 60/min, matches 30/min, match detail 60/min, recompute 1/hour, recommendations 30/min (all per IP).
 
 The rest of the planned API surface is in [api-contract.md](api-contract.md).
 
