@@ -49,7 +49,7 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | GET | `/api/me/dimensions` | Current per-service dimension weights; requires auth. Returns `{"weights": {...}}`. |
 | PATCH | `/api/me/dimensions` | Replace dimension weights; backend normalises to sum 1.0; requires auth. |
 | GET | `/api/onboarding/status` | Onboarding progress for the current user; requires auth. Returns boolean flags + `next_step` hint. |
-| GET | `/api/matches` | Top matches (heuristic scorer); requires auth + `is_matchable=true`. Returns empty on cache miss, refreshes in background. |
+| GET | `/api/matches` | Top matches (semantic ANN or heuristic fallback); requires auth + `is_matchable=true`. Returns empty on cache miss, refreshes in background. Response includes `matching_mode`. |
 | GET | `/api/matches/{user_id}` | Single match detail with `shared_highlights`; requires auth + `is_matchable=true`. |
 | POST | `/api/me/recompute` | Force match cache refresh; requires auth. Returns 204 immediately. Rate-limited to 1/hour. |
 | POST | `/api/embeddings/build` | Compute (or recompute) the current user's combined 384-dim taste vector from all non-excluded items with embeddings; applies per-service cap (top 50), dimension weights, and boost multipliers; upserts `user_embeddings` with `service='combined'`; requires auth. Rate-limited to 5/min. Returns 422 `NO_EMBEDDINGS_AVAILABLE` if no items have embeddings yet. *(Phase 2 Block D)* |
@@ -401,7 +401,9 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **UMAP embedding validation complete (2026-06-04).** `backend/notebooks/embedding_validation.py` — 51 items across Steam/music/anime, embedded with `all-MiniLM-L6-v2`, reduced to 2D via UMAP. Result: cross-domain same-vibe similarity 0.273 vs. different-vibe 0.225 (delta +0.049). Positive signal confirmed — architecture is viable. Key spot-checks: Bloodborne × Junji Ito Collection = 0.413, Pathologic 2 × The Caretaker = 0.380, Rocket League × Burial = 0.013. Description bias noted (acclaimed works cluster on vocabulary, not vibe) — manageable limitation.
 
-**Next: Block C (`feat/phase2-enrichment`)** — Steam enrichment script first (lean pass, 2 days max). Block D (`feat/phase2-user-embeddings`) unblocked by Block B; implement catalog-size cap (top-N per service) before building `aggregate_vectors()`. Block G (CF re-ranker) has been cut — see roadmap §2.5.
+**Phase 2 Block H (feat/phase2-match-upgrade) is complete.** Semantic ANN matching path added alongside the existing heuristic scorer. `_refresh_match_cache` now tries the semantic path first (requires a `combined` user embedding): runs HNSW ANN search via pgvector `<=>` operator on `user_embeddings WHERE service='combined'`, returns up to 50 candidates, scores as `1 - cosine_distance` (candidates with `score <= 0` filtered). Falls back to heuristic item-overlap when no embedding exists. `match_cache` gains `matching_mode TEXT` column (`'heuristic'|'semantic'`). `POST /api/me/recompute` queues `_build_embedding_bg` before `_refresh_match_cache`. Migration `20260606_0011` creates `matching_mode` column and recreates the ANN index as HNSW (replaces planned IVFFlat — HNSW requires no lists-tuning). 931 tests passing.
+
+**Next: Block I (`feat/phase2-recommendations`)** — `GET /api/me/recommendations` endpoint; unblocked by Block H (requires combined user embedding + HNSW item index).
 
 ---
 

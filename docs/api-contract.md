@@ -348,10 +348,12 @@ Setting `excluded: false` re-includes the item. Both directions are idempotent.
 - `is_matchable = true`
 - At least 1 `ok`-status service connection **or** ≥ 3 manual obsessions
 
-> Currently powered by the heuristic matcher (Phase 1.9). Will switch to Item2Vec cosine similarity after Phase 2.1 training.
+> Block H (2026-06-06): semantic ANN path active. `matching_mode` field added to all match responses.
 
 ### `GET /matches?limit=20&cursor=...` — Live ✅
 Top matches for the current user. Returns empty immediately on cache miss; match cache is refreshed in the background.
+
+`matching_mode` is `"semantic"` when the user has a `combined` embedding (HNSW ANN cosine search on 384-dim vector, score = 1 − cosine_distance, candidates with score ≤ 0 filtered). Falls back to `"heuristic"` (item-overlap Jaccard) when no embedding exists.
 ```json
 {
   "items": [
@@ -364,27 +366,31 @@ Top matches for the current user. Returns empty immediately on cache miss; match
         "discord_handle": "sam#9999"
       },
       "score": 0.87,
-      "breakdown": { "steam": 0.72, "lastfm": 0.94, "spotify": 0.81 },
+      "breakdown": { "combined": 0.87 },
       "shared_highlights": [
         { "service": "steam",  "item_name": "Disco Elysium" },
         { "service": "lastfm", "item_name": "Arca" }
       ],
-      "computed_at": "..."
+      "computed_at": "...",
+      "matching_mode": "semantic"
     }
   ],
   "next_cursor": "..."
 }
 ```
 
+`breakdown` is `{"combined": score}` in semantic mode, per-service Jaccard in heuristic mode.
+
 ### `GET /matches/{user_id}` — Live ✅
-Single match detail — same shape as one `items` entry above.
+Single match detail — same shape as one `items` entry above, including `matching_mode`.
 
 ### `POST /me/recompute` — Live ✅
-Forces refresh of the user's match cache **and** (if `LLM_API_KEY` is set) triggers vibe synthesis. Rate-limited to 1/hour. Returns 204 immediately; both tasks run in background.
+Forces refresh of the user's match cache **and** (if `LLM_API_KEY` is set) triggers vibe synthesis. Rate-limited to 1/hour. Returns 204 immediately; all tasks run in background.
 
-Background tasks triggered:
-1. `_refresh_match_cache` — recomputes heuristic scores vs all matchable users
-2. `synthesize_vibe` — regenerates `vibe_summary`, `archetype`, `key_themes` on `users` row (skipped if `LLM_API_KEY` unset)
+Background tasks triggered (in order):
+1. `_build_embedding_bg` — rebuilds the user's `combined` embedding (no-op if no item embeddings; silent)
+2. `_refresh_match_cache` — semantic ANN search if embedding exists, else heuristic
+3. `synthesize_vibe` — regenerates `vibe_summary`, `archetype`, `key_themes` on `users` row (skipped if `LLM_API_KEY` unset)
 
 ---
 

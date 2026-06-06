@@ -1,4 +1,5 @@
 """Tests for GET /api/matches, GET /api/matches/{user_id}, POST /api/me/recompute."""
+
 from __future__ import annotations
 
 import uuid
@@ -46,6 +47,7 @@ def _make_cache_row(
     row.breakdown = {"steam": score}
     row.highlights = [{"service": "steam", "item_name": "Disco Elysium"}]
     row.computed_at = datetime.now(UTC)
+    row.matching_mode = "heuristic"
     return row
 
 
@@ -167,8 +169,10 @@ def test_get_matches_returns_empty_list_when_no_matches(
     match_client: tuple[TestClient, User],
 ) -> None:
     client, _ = match_client
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
-         patch("syncup.api.routes.matches._refresh_match_cache"):
+    with (
+        patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)),
+        patch("syncup.api.routes.matches._refresh_match_cache"),
+    ):
         resp = client.get("/api/matches")
     assert resp.status_code == 200
     assert resp.json() == {"items": [], "next_cursor": None}
@@ -223,8 +227,10 @@ def test_get_matches_does_not_trigger_refresh_on_cache_hit(
     row = _make_cache_row(user.id, other.id)
     mock_db.scalars.return_value.all.return_value = [other]
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], False)), \
-         patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
+    with (
+        patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], False)),
+        patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh,
+    ):
         client.get("/api/matches")
 
     mock_refresh.assert_not_called()
@@ -240,8 +246,10 @@ def test_get_matches_triggers_refresh_on_cache_miss(
 ) -> None:
     client, _ = match_client
     # Any empty page (offset=0 or mid-session expiry) triggers a background refresh.
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
-         patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
+    with (
+        patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)),
+        patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh,
+    ):
         resp = client.get("/api/matches")
 
     mock_refresh.assert_called_once()
@@ -256,8 +264,10 @@ def test_get_matches_triggers_refresh_on_deep_page_cache_expiry(
 
     client, _ = match_client
     deep_cursor = base64.b64encode(b"40").decode()
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
-         patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
+    with (
+        patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)),
+        patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh,
+    ):
         resp = client.get(f"/api/matches?cursor={deep_cursor}")
 
     mock_refresh.assert_called_once()
@@ -369,6 +379,10 @@ def test_recompute_invalidates_cache_and_returns_204(
     mock_db: MagicMock,
 ) -> None:
     client, _ = match_client
+    from syncup.limiter import limiter
+
+    limiter._storage.reset()
+
     with patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh:
         resp = client.post("/api/me/recompute")
     assert resp.status_code == 204
@@ -511,13 +525,14 @@ def test_refresh_match_cache_always_closes_read_session() -> None:
     factory.return_value = db
     db.scalars.return_value.all.return_value = []  # no matchable users
 
-    _refresh_match_cache(factory, uuid.uuid4())
+    with patch("syncup.api.routes.matches._read_semantic_data", return_value=None):
+        _refresh_match_cache(factory, uuid.uuid4())
 
     db.close.assert_called()
 
 
 def test_refresh_match_cache_uses_separate_write_session() -> None:
-    """D7: factory() is called twice — once for read, once for write."""
+    """D7: heuristic path uses separate read and write sessions."""
     from syncup.api.routes.matches import _refresh_match_cache
 
     user_id = uuid.uuid4()
@@ -542,7 +557,8 @@ def test_refresh_match_cache_uses_separate_write_session() -> None:
 
     read_db.execute.return_value.all.side_effect = [[r1, r2], [pop]]
 
-    _refresh_match_cache(factory, user_id)
+    with patch("syncup.api.routes.matches._read_semantic_data", return_value=None):
+        _refresh_match_cache(factory, user_id)
 
     assert factory.call_count == 2  # read session + write session
     read_db.close.assert_called()
@@ -580,13 +596,13 @@ def test_match_cache_uuid_pair_always_has_a_less_than_b() -> None:
 
     read_db.execute.return_value.all.side_effect = [[r1, r2], [pop]]
 
-    _refresh_match_cache(factory, user_id)
+    with patch("syncup.api.routes.matches._read_semantic_data", return_value=None):
+        _refresh_match_cache(factory, user_id)
 
     write_db.merge.assert_called_once()
     merged_row = write_db.merge.call_args[0][0]
     assert merged_row.user_a_id < merged_row.user_b_id, (
-        f"Expected user_a_id < user_b_id but got "
-        f"{merged_row.user_a_id} >= {merged_row.user_b_id}"
+        f"Expected user_a_id < user_b_id but got {merged_row.user_a_id} >= {merged_row.user_b_id}"
     )
 
 
@@ -621,8 +637,10 @@ def test_get_matches_returns_empty_when_only_user_in_pool(
     """When the requesting user is the only matchable user, return empty gracefully."""
     client, _ = match_client
     # Cache miss (empty first page at offset 0) → triggers refresh, returns empty.
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)), \
-         patch("syncup.api.routes.matches._refresh_match_cache"):
+    with (
+        patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)),
+        patch("syncup.api.routes.matches._refresh_match_cache"),
+    ):
         resp = client.get("/api/matches")
 
     assert resp.status_code == 200
@@ -696,8 +714,12 @@ def test_get_matches_passes_decoded_cursor_to_load_function(
     b_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
     cursor_str = base64.b64encode(f"{score:.6f}:{a_id}:{b_id}".encode()).decode()
 
-    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)) as mock_load, \
-         patch("syncup.api.routes.matches._refresh_match_cache"):
+    with (
+        patch(
+            "syncup.api.routes.matches._load_cached_matches", return_value=([], False)
+        ) as mock_load,
+        patch("syncup.api.routes.matches._refresh_match_cache"),
+    ):
         client.get(f"/api/matches?cursor={cursor_str}")
 
     _, kwargs = mock_load.call_args
