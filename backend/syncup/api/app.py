@@ -31,6 +31,7 @@ from syncup.api.routes.me import router as me_router  # noqa: E402
 from syncup.api.routes.obsessions import router as obsessions_router  # noqa: E402
 from syncup.api.routes.onboarding import router as onboarding_router  # noqa: E402
 from syncup.api.routes.overrides import router as overrides_router  # noqa: E402
+from syncup.api.routes.recommendations import router as recommendations_router  # noqa: E402
 from syncup.api.routes.sync import router as sync_router  # noqa: E402
 from syncup.api.routes.taste import router as taste_router  # noqa: E402
 from syncup.auth.router import router as auth_router  # noqa: E402
@@ -244,3 +245,4 @@ app.include_router(matches_router)
 app.include_router(onboarding_router)
 app.include_router(embeddings_router)
 app.include_router(items_router)
+app.include_router(recommendations_router)
