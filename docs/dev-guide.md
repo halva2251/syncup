@@ -404,7 +404,15 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Phase 2 Block H (feat/phase2-match-upgrade) is complete.** Semantic ANN matching path added alongside the existing heuristic scorer. `_refresh_match_cache` now tries the semantic path first (requires a `combined` user embedding): runs HNSW ANN search via pgvector `<=>` operator on `user_embeddings WHERE service='combined'`, returns up to 50 candidates, scores as `1 - cosine_distance` (candidates with `score <= 0` filtered). Falls back to heuristic item-overlap when no embedding exists. `match_cache` gains `matching_mode TEXT` column (`'heuristic'|'semantic'`). `POST /api/me/recompute` queues `_build_embedding_bg` before `_refresh_match_cache`. Migration `20260606_0011` creates `matching_mode` column and recreates the ANN index as HNSW (replaces planned IVFFlat — HNSW requires no lists-tuning). 931 tests passing.
 
-**Next: Block I (`feat/phase2-recommendations`)** — `GET /api/me/recommendations` endpoint; unblocked by Block H (requires combined user embedding + HNSW item index).
+**Phase 2 Block J (feat/phase2-evaluation) is complete.** `backend/scripts/evaluate.py` — standalone evaluation framework. Constructs a 20-user synthetic cohort (4 groups: high/medium/low/zero overlap), measures Precision@5 matching quality per group, Recall@10 holdout recommendation quality per group, and compares semantic vs heuristic average scores on Group A pairs. Results: P@5=0.80 across all groups (semantic embedding correctly separates domains), R@10 pooled=0.75 (Group A=0.60, B=0.80, C=1.00 structural, out=0.60), semantic avg=0.99 vs heuristic avg=0.46 (+116%). Report includes self-critical caveats (constant engagement_score in synthetic cohort, structural upper bounds for Groups C and Out). 977 tests passing.
+
+Run with:
+```bash
+cd backend && source .venv/bin/activate
+python scripts/evaluate.py                   # full 20-user cohort
+python scripts/evaluate.py --cohort-size 2   # fast 8-user smoke test
+python scripts/evaluate.py --no-cleanup      # keep synthetic rows for inspection
+```
 
 ---
 

@@ -54,6 +54,8 @@ for _name, _orig in _originals.items():
     else:
         sys.modules[_name] = _orig
 
+import pytest
+
 precision_at_k = _eval_mod.precision_at_k
 recall_at_k = _eval_mod.recall_at_k
 split_holdout = _eval_mod.split_holdout
@@ -85,8 +87,15 @@ class TestPrecisionAtK:
     def test_k_truncates_list(self):
         retrieved = ["a", "b", "x", "c", "d"]
         relevant = {"a", "b", "c", "d"}
-        # Only top-2 considered → 2/2 = 1.0
+        # Only top-2 considered, 2 hits / k=2 = 1.0
         assert precision_at_k(retrieved, relevant, k=2) == 1.0
+
+    def test_divides_by_k_not_retrieved_length(self):
+        # Verify standard IR definition: denominator is always k
+        retrieved = ["a", "b", "c"]
+        relevant = {"a", "b", "c"}
+        # 3 hits / k=5 = 0.6, NOT 3/3 = 1.0
+        assert precision_at_k(retrieved, relevant, k=5) == pytest.approx(0.6)
 
     def test_empty_retrieved_returns_zero(self):
         assert precision_at_k([], {"a"}, k=5) == 0.0
@@ -97,8 +106,9 @@ class TestPrecisionAtK:
     def test_k_larger_than_retrieved(self):
         retrieved = ["a", "b"]
         relevant = {"a", "b", "c"}
-        # k=10 but only 2 items; 2 relevant / 2 retrieved = 1.0
-        assert precision_at_k(retrieved, relevant, k=10) == 1.0
+        # Standard IR P@k: always divides by k, not by len(retrieved)
+        # 2 hits / k=10 = 0.2 (penalises returning fewer than k items)
+        assert precision_at_k(retrieved, relevant, k=10) == pytest.approx(0.2)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -211,6 +221,3 @@ class TestOverlapFraction:
 
     def test_one_empty_returns_zero(self):
         assert overlap_fraction({1, 2}, set()) == 0.0
-
-
-import pytest

@@ -33,7 +33,10 @@ def precision_at_k(
     relevant: set[Any],
     k: int,
 ) -> float:
-    """Fraction of top-k retrieved items that are relevant.
+    """Fraction of top-k retrieved items that are relevant (standard IR P@k).
+
+    Always divides by k (not by len(retrieved)), so systems returning fewer
+    than k results are penalised. This matches the published IR definition.
 
     Args:
         retrieved: Ordered list of retrieved item IDs.
@@ -43,11 +46,11 @@ def precision_at_k(
     Returns:
         P@k in [0.0, 1.0].
     """
-    if not retrieved or not relevant:
+    if not retrieved or not relevant or k == 0:
         return 0.0
     top_k = retrieved[:k]
     hits = sum(1 for item in top_k if item in relevant)
-    return hits / len(top_k)
+    return hits / k
 
 
 def recall_at_k(
@@ -203,13 +206,13 @@ _POOL_OUT: list[tuple[str, str, str]] = [
 ]
 
 # Per-group config: (shared_count, unique_per_user)
-# Jaccard(i,j) = shared / (shared + unique_per_user + unique_per_user - shared)
-#              = shared / (2 * unique_per_user + shared) ... no:
-#              = shared / (items_per_user_i + items_per_user_j - shared)
-# Group A: 8 shared + 1 unique  → items=9,  J = 8/(9+9-8) = 8/10 = 0.80
-# Group B: 5 shared + 2 unique  → items=7,  J = 5/(7+7-5) = 5/9  ≈ 0.56
-# Group C: 1 shared + 4 unique  → items=5,  J = 1/(5+5-1) = 1/9  ≈ 0.11
-# Out:     8 shared + 1 unique  → items=9,  J = 8/10 = 0.80 (within out-group)
+# shared_ids[-1] is withheld as holdout (not in user_items), so training Jaccard
+# uses only (n_shared - 1) train-shared items:
+#   training_J(i,j) = train_shared / (train_per_user_i + train_per_user_j - train_shared)
+# Group A: 7 train-shared + 1 unique  → train items=8, J = 7/(8+8-7) = 7/9  ≈ 0.78
+# Group B: 4 train-shared + 2 unique  → train items=6, J = 4/(6+6-4) = 4/8  = 0.50
+# Group C: 0 train-shared + 4 unique  → train items=4, J = 0/(4+4-0) = 0/8  = 0.00
+# Out:     7 train-shared + 1 unique  → train items=8, J = 7/9 ≈ 0.78 (within out-group)
 _GROUP_CONFIGS: dict[str, tuple[int, int, list[tuple[str, str, str]]]] = {
     # group → (n_shared, n_unique_per_user, pool)
     "A": (8, 1, _POOL_A),
@@ -281,7 +284,7 @@ def _insert_user(session: Any, group: str, index: int) -> uuid.UUID:
         email=f"eval-synthetic-{group}{index}@syncup.internal",
         display_name=f"Eval {group}{index}",
         password_hash="$2b$12$fakehash_eval",  # noqa: S106
-        is_matchable=True,
+        is_matchable=False,  # prevent synthetic users appearing in real match results
         onboarded=True,
         created_at=now,
         updated_at=now,
@@ -393,6 +396,7 @@ def _heuristic_score_for_pair(
     session: Any,
     user_a: uuid.UUID,
     user_b: uuid.UUID,
+    popularity: dict[uuid.UUID, int] | None = None,
 ) -> float:
     from sqlalchemy import select, text
 
@@ -415,17 +419,20 @@ def _heuristic_score_for_pair(
     if not a_items or not b_items:
         return 0.0
 
-    # Build popularity dict (count occurrences across user_items)
-    all_ids = list(a_items | b_items)
-    pop_rows = session.execute(
-        text(
-            "SELECT item_id, COUNT(*) AS cnt FROM user_items"
-            " WHERE item_id = ANY(:ids)"
-            " GROUP BY item_id"
-        ),
-        {"ids": [str(i) for i in all_ids]},
-    ).all()
-    popularity: dict[uuid.UUID, int] = {uuid.UUID(str(r.item_id)): int(r.cnt) for r in pop_rows}
+    if popularity is None:
+        # Fallback: build popularity from the pair only (degenerate — all shared items
+        # get count=2, unique items get count=1). Prefer passing a cohort-wide
+        # popularity dict from the caller for meaningful rarity scores.
+        all_ids = list(a_items | b_items)
+        pop_rows = session.execute(
+            text(
+                "SELECT item_id, COUNT(*) AS cnt FROM user_items"
+                " WHERE item_id = ANY(:ids)"
+                " GROUP BY item_id"
+            ),
+            {"ids": [str(i) for i in all_ids]},
+        ).all()
+        popularity = {uuid.UUID(str(r.item_id)): int(r.cnt) for r in pop_rows}
 
     return heuristic_score(a_items, b_items, popularity)
 
@@ -449,8 +456,17 @@ def _semantic_score_for_pair(session: Any, user_a: uuid.UUID, user_b: uuid.UUID)
 def _cleanup_synthetic(session: Any, user_ids: list[uuid.UUID]) -> None:
     from sqlalchemy import text
 
-    # Delete in FK-safe order
+    if not user_ids:
+        session.execute(text("DELETE FROM items WHERE service = 'eval_synthetic'"))
+        session.commit()
+        return
+
+    # Delete in FK-safe order; match_cache is explicitly cleared before users
     uid_strs = [str(u) for u in user_ids]
+    session.execute(
+        text("DELETE FROM match_cache WHERE user_a_id = ANY(:ids) OR user_b_id = ANY(:ids)"),
+        {"ids": uid_strs},
+    )
     session.execute(
         text("DELETE FROM user_embeddings WHERE user_id = ANY(:ids)"),
         {"ids": uid_strs},
@@ -598,22 +614,53 @@ def run_holdout_evaluation(
     """
     all_precision: list[float] = []
     all_recall: list[float] = []
+    group_recall: dict[str, list[float]] = {}
 
     for su in synthetic_users:
         if not su.holdout_item_ids:
             continue
         relevant = set(su.holdout_item_ids)
         retrieved = _ann_item_query(session, su.user_id, limit=k)
-        all_precision.append(precision_at_k(retrieved, relevant, k=k))
-        all_recall.append(recall_at_k(retrieved, relevant, k=k))
+        p = precision_at_k(retrieved, relevant, k=k)
+        r = recall_at_k(retrieved, relevant, k=k)
+        all_precision.append(p)
+        all_recall.append(r)
+        group_recall.setdefault(su.group, []).append(r)
 
     n = len(all_precision)
+    per_group = {g: sum(vals) / len(vals) for g, vals in group_recall.items() if vals}
     return {
         "precision_at_k": sum(all_precision) / n if n else 0.0,
         "recall_at_k": sum(all_recall) / n if n else 0.0,
         "k": k,
         "n_users": n,
+        "recall_per_group": per_group,
     }
+
+
+def _build_cohort_popularity(
+    session: Any,
+    synthetic_users: list[SyntheticUser],
+) -> dict[uuid.UUID, int]:
+    """Count how many synthetic users own each item (full-cohort popularity).
+
+    Using only the pair's items would give every shared item count=2, making
+    the rarity term constant and the heuristic score uninformative.  Counting
+    across all cohort users reflects real-world rarity: items shared by all
+    group members score lower rarity than items owned by only one user.
+    """
+    from sqlalchemy import text
+
+    uid_strs = [str(su.user_id) for su in synthetic_users]
+    rows = session.execute(
+        text(
+            "SELECT item_id, COUNT(*) AS cnt FROM user_items"
+            " WHERE user_id = ANY(:ids)"
+            " GROUP BY item_id"
+        ),
+        {"ids": uid_strs},
+    ).all()
+    return {uuid.UUID(str(r.item_id)): int(r.cnt) for r in rows}
 
 
 def run_mode_comparison(
@@ -623,8 +670,14 @@ def run_mode_comparison(
     """Compare average semantic vs heuristic scores across Group A pairs.
 
     Group A users have the most overlap so scores are most meaningful there.
+    Popularity is built from the full synthetic cohort so that items shared by
+    all 5 Group A users receive count=5 (lower rarity) rather than count=2
+    (the degenerate per-pair value that makes the heuristic score constant).
     """
     group_a = [su for su in synthetic_users if su.group == "A"]
+
+    # Precompute cohort-wide popularity once; pass to every pair
+    cohort_popularity = _build_cohort_popularity(session, synthetic_users)
 
     semantic_scores: list[float] = []
     heuristic_scores: list[float] = []
@@ -632,7 +685,11 @@ def run_mode_comparison(
     for i, ua in enumerate(group_a):
         for ub in group_a[i + 1 :]:
             semantic_scores.append(_semantic_score_for_pair(session, ua.user_id, ub.user_id))
-            heuristic_scores.append(_heuristic_score_for_pair(session, ua.user_id, ub.user_id))
+            heuristic_scores.append(
+                _heuristic_score_for_pair(
+                    session, ua.user_id, ub.user_id, popularity=cohort_popularity
+                )
+            )
 
     def _avg(xs: list[float]) -> float:
         return sum(xs) / len(xs) if xs else 0.0
@@ -674,25 +731,47 @@ def print_report(
     k = holdout["k"]
     print()
     print(f"Holdout recommendation quality (N={holdout['n_users']} users, k={k}):")
-    print(f"  Precision@{k}: {holdout['precision_at_k']:.2f}")
-    print(f"  Recall@{k}:    {holdout['recall_at_k']:.2f}")
+    print(f"  Precision@{k} (pooled): {holdout['precision_at_k']:.2f}")
+    print(f"  Recall@{k}    (pooled): {holdout['recall_at_k']:.2f}")
+    per_group: dict[str, float] = holdout.get("recall_per_group", {})
+    if per_group:
+        print(f"  Recall@{k} by group:")
+        for g in ("A", "B", "C", "out"):
+            if g in per_group:
+                note = {
+                    "A": "high overlap — sanity check",
+                    "B": "medium overlap",
+                    "C": "0% training overlap — structural upper bound",
+                    "out": "cross-domain — sanity check",
+                }.get(g, "")
+                print(f"    Group {g}: {per_group[g]:.2f}  ({note})")
 
     sem = modes["semantic_avg"]
     heu = modes["heuristic_avg"]
     delta_pct = ((sem - heu) / heu * 100) if heu > 0 else float("inf")
     print()
     print("Matching mode comparison (Group A pairs):")
-    print(f"  heuristic:  avg score {heu:.2f}")
+    print(f"  heuristic:  avg score {heu:.2f}  (rarity-weighted overlap, cohort-wide popularity)")
     if heu > 0:
-        print(f"  semantic:   avg score {sem:.2f}  ({delta_pct:+.0f}%)")
+        print(f"  semantic:   avg score {sem:.2f}  ({delta_pct:+.0f}% vs heuristic)")
     else:
         print(f"  semantic:   avg score {sem:.2f}")
 
     print()
-    print("Known failure modes:")
+    print("Evaluation caveats (self-critical assessment):")
+    print("  - Synthetic cohort uses constant engagement_score=0.8 → log1p weighting")
+    print("    is uniform; user vectors are unweighted item centroids. Real users with")
+    print("    varied engagement will exercise the log1p dampening path.")
+    print("  - Recall@k pooled across groups is not directly comparable: Group C and")
+    print("    Out-group use items from a tight semantic cluster so recall is high by")
+    print("    construction. Group A/B recall is the more informative signal.")
+    print("  - Precision@5 for Out-group is trivially 1.0 (same EDM cluster). It")
+    print("    validates domain separation, not intra-domain ranking quality.")
+    print("Known failure modes (production):")
     print("  - Users with < 20 items: degraded recommendation quality (thin signal)")
     print("  - Steam-only users: no genre metadata pre-enrichment → lower embedding quality")
-    print("  - Centroid collapse: users with different items can produce similar centroids")
+    print("  - Centroid collapse: users whose items span unrelated clusters produce")
+    print("    averaged vectors that match neither cluster well")
     print("=" * 60)
 
 
@@ -731,15 +810,26 @@ def main() -> None:
     import sqlalchemy as sa
 
     with factory() as session:
-        # Pre-cleanup: remove leftover synthetic data from any previous run
+        # Pre-cleanup: remove leftover synthetic data from any previous run.
+        # match_cache must be deleted before users (FK constraint).
         session.execute(
             sa.text(
-                "DELETE FROM user_embeddings WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
+                "DELETE FROM match_cache WHERE user_a_id IN"
+                " (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
+                "   OR user_b_id IN"
+                " (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
             )
         )
         session.execute(
             sa.text(
-                "DELETE FROM user_items WHERE user_id IN (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
+                "DELETE FROM user_embeddings WHERE user_id IN"
+                " (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
+            )
+        )
+        session.execute(
+            sa.text(
+                "DELETE FROM user_items WHERE user_id IN"
+                " (SELECT id FROM users WHERE email LIKE 'eval-synthetic-%')"
             )
         )
         session.execute(sa.text("DELETE FROM users WHERE email LIKE 'eval-synthetic-%'"))
@@ -764,11 +854,10 @@ def main() -> None:
         finally:
             if not args.no_cleanup:
                 print("\nCleaning up synthetic data...")
-                try:
-                    session.rollback()
-                except Exception:
-                    pass
-                _cleanup_synthetic(session, [su.user_id for su in synthetic_users])
+                # Use a fresh session — the evaluation session may be in a broken
+                # state if an exception occurred during the try block.
+                with factory() as cleanup_session:
+                    _cleanup_synthetic(cleanup_session, [su.user_id for su in synthetic_users])
                 print("Done.")
             else:
                 session.commit()
