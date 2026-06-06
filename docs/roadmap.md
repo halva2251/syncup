@@ -514,7 +514,7 @@ New dep: `sentence-transformers>=3.0` in `pyproject.toml`.
 
 ### 2.3 User embedding builder
 
-**Status:** Complete ✅ (2026-06-04). `feat/phase2-user-embeddings` — 863 tests passing.
+**Status:** Complete ✅ (2026-06-04). `feat/phase2-user-embeddings` — 868 tests passing.
 
 `POST /api/embeddings/build` — computes (or recomputes) the current user's `combined` taste vector.
 

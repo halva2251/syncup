@@ -53,6 +53,7 @@ def build_user_embedding(
     stmt = (
         select(
             Item.service,
+            UserItem.id.label("user_item_id"),
             UserItem.engagement_score,
             Item.embedding,
             PreferenceOverride.boost_multiplier,
@@ -93,7 +94,11 @@ def build_user_embedding(
     total_items = 0
     for service_rows in by_service.values():
         # Sort descending by engagement_score and take the top SERVICE_CAP items.
-        capped = sorted(service_rows, key=lambda r: r.engagement_score, reverse=True)[:_SERVICE_CAP]
+        capped = sorted(
+            service_rows,
+            key=lambda r: (r.engagement_score, r.user_item_id),
+            reverse=True,
+        )[:_SERVICE_CAP]
         for row in capped:
             dim_weight = row.dim_weight if row.dim_weight is not None else 1.0
             boost = row.boost_multiplier if row.boost_multiplier is not None else 1.0
@@ -112,7 +117,14 @@ def build_user_embedding(
             422,
         )
 
-    combined = aggregate_vectors(pairs)
+    try:
+        combined = aggregate_vectors(pairs)
+    except ValueError as exc:
+        raise SyncUpError(
+            "NO_EMBEDDINGS_AVAILABLE",
+            str(exc),
+            422,
+        ) from exc
     now = datetime.now(UTC)
 
     embedding_row = UserEmbedding(
