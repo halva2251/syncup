@@ -68,12 +68,11 @@ def get_recommendations(
     the combined vector spans all connected services, so asking for
     item_type=film returns recommendations informed by gaming and music taste.
 
-    Returns 503 NO_EMBEDDING_AVAILABLE when the user has no combined embedding.
+    Returns 422 NO_EMBEDDING_AVAILABLE when the user has no combined embedding.
     Build one via POST /api/embeddings/build or POST /api/me/recompute.
 
-    Note: similarity_score is computed after the DB LIMIT is applied, so the
-    response may contain fewer than `limit` items when top candidates have
-    score <= 0 (cosine distance >= 1.0 — orthogonal or opposite vectors).
+    The DB is oversampled (limit * 3, capped at 150) before Python post-filtering,
+    so up to `limit` items are returned even when some candidates have score <= 0.
     """
     embedding = db.execute(
         select(UserEmbedding.embedding).where(
@@ -86,36 +85,36 @@ def get_recommendations(
         raise SyncUpError(
             "NO_EMBEDDING_AVAILABLE",
             "Build your taste vector first via POST /api/embeddings/build or POST /api/me/recompute.",
-            503,
+            422,
         )
 
     vec_str = _format_vec(list(embedding))
-    item_type_clause = "AND i.item_type = :item_type" if item_type is not None else ""
 
-    sql = text(
-        f"""
-        SELECT i.name, i.service, i.item_type,
-               i.embedding <=> CAST(:vec AS vector({EMBEDDING_DIM})) AS distance
-        FROM items i
-        WHERE i.embedding IS NOT NULL
-          AND NOT EXISTS (
-              SELECT 1 FROM user_items ui
-              WHERE ui.user_id = :user_id AND ui.item_id = i.id
-          )
-          {item_type_clause}
-        ORDER BY i.embedding <=> CAST(:vec AS vector({EMBEDDING_DIM}))
-        LIMIT :limit
-        """
+    # Oversample so post-filter (score <= 0) doesn't under-deliver.
+    db_limit = min(limit * 3, 150)
+
+    base_sql = (
+        f"SELECT i.name, i.service, i.item_type,"
+        f" i.embedding <=> CAST(:vec AS vector({EMBEDDING_DIM})) AS distance"
+        f" FROM items i"
+        f" WHERE i.embedding IS NOT NULL"
+        f"   AND NOT EXISTS ("
+        f"       SELECT 1 FROM user_items ui"
+        f"       WHERE ui.user_id = :user_id AND ui.item_id = i.id"
+        f"   )"
     )
     params: dict[str, object] = {
         "vec": vec_str,
         "user_id": str(user.id),
-        "limit": limit,
+        "db_limit": db_limit,
     }
     if item_type is not None:
+        base_sql += " AND i.item_type = :item_type"
         params["item_type"] = item_type.value
 
-    rows = db.execute(sql, params).all()
+    base_sql += f" ORDER BY i.embedding <=> CAST(:vec AS vector({EMBEDDING_DIM})) LIMIT :db_limit"
+
+    rows = db.execute(text(base_sql), params).all()
 
     items: list[RecommendationOut] = []
     for row in rows:
@@ -130,5 +129,7 @@ def get_recommendations(
                 similarity_score=score,
             )
         )
+        if len(items) >= limit:
+            break
 
     return RecommendationListOut(items=items)

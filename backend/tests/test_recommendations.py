@@ -119,9 +119,11 @@ def unauth_client(
     monkeypatch.setenv("DEBUG", "true")
     from syncup.api.app import app
 
+    _rate_limiter.enabled = False
     with patch("syncup.api.app.sessionmaker_for", return_value=MagicMock()):
         with TestClient(app) as c:
             yield c
+    _rate_limiter.enabled = True
 
 
 # ---------------------------------------------------------------------------
@@ -139,17 +141,17 @@ def test_requires_auth(unauth_client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_no_embedding_returns_503(
+def test_no_embedding_returns_422(
     rec_client: tuple[TestClient, User],
     mock_db: MagicMock,
 ) -> None:
-    """503 when the user has no combined embedding yet."""
+    """422 when the user has no combined embedding yet."""
     client, _ = rec_client
     _setup_db_for_recs(mock_db, embedding=None, ann_rows=[])
 
     resp = client.get("/api/me/recommendations")
 
-    assert resp.status_code == 503
+    assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "NO_EMBEDDING_AVAILABLE"
 
 
@@ -390,3 +392,76 @@ def test_all_candidates_filtered_zero_score(
 
     assert resp.status_code == 200
     assert resp.json()["items"] == []
+
+
+# ---------------------------------------------------------------------------
+# M5: additional coverage gaps
+# ---------------------------------------------------------------------------
+
+
+def test_default_limit_passed_as_sql_param(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """Default limit=10 is forwarded as db_limit bind param to the SQL query."""
+    client, _ = rec_client
+    _setup_db_for_recs(mock_db, embedding=[0.1] * 384, ann_rows=[])
+
+    client.get("/api/me/recommendations")
+
+    second_call = mock_db.execute.call_args_list[1]
+    params = second_call[0][1]
+    # db_limit is limit * 3 (oversample), default limit=10 → db_limit=30
+    assert params["db_limit"] == 30
+
+
+def test_similarity_score_clamped_to_zero_for_large_distance(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """distance=2.0 → score is clamped to 0.0 and the item is excluded."""
+    client, _ = rec_client
+    _setup_db_for_recs(
+        mock_db,
+        embedding=[0.1] * 384,
+        ann_rows=[_make_rec_row(name="Anti-Vibes", distance=2.0)],
+    )
+
+    resp = client.get("/api/me/recommendations")
+
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
+def test_no_item_type_param_excludes_it_from_sql_params(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """When item_type is omitted, 'item_type' key is NOT in the SQL bind params."""
+    client, _ = rec_client
+    _setup_db_for_recs(mock_db, embedding=[0.1] * 384, ann_rows=[])
+
+    client.get("/api/me/recommendations")
+
+    second_call = mock_db.execute.call_args_list[1]
+    params = second_call[0][1]
+    assert "item_type" not in params
+
+
+def test_under_delivery_due_to_post_filter(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """If half the oversampled rows are filtered out, only good rows are returned."""
+    client, _ = rec_client
+    rows = [_make_rec_row(name=f"Good {i}", distance=0.1 * (i + 1)) for i in range(5)] + [
+        _make_rec_row(name=f"Bad {i}", distance=1.5) for i in range(5)
+    ]
+    _setup_db_for_recs(mock_db, embedding=[0.1] * 384, ann_rows=rows)
+
+    resp = client.get("/api/me/recommendations?limit=10")
+
+    assert resp.status_code == 200
+    names = [i["item_name"] for i in resp.json()["items"]]
+    assert len(names) == 5
+    assert all(n.startswith("Good") for n in names)
