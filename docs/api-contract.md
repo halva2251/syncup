@@ -285,7 +285,7 @@ Valid services: any service registered in `ServiceRegistry` (currently `steam`, 
 
 ### `POST /embeddings/build` — Live ✅ *(Phase 2 Block D)*
 
-Compute (or recompute) the current user's combined 384-dim taste vector. Aggregates all non-excluded `user_items` that have item embeddings, applies per-service cap (top 50 by `engagement_score`), dimension weights, and preference override boost multipliers, then writes a single L2-normalised vector to `user_embeddings` with `service='combined'`.
+Compute (or recompute) the current user's combined 384-dim taste vector. Aggregates all non-excluded `user_items` that have item embeddings using **two-level, service-aware aggregation** (per-service cap of top 50 by `engagement_score`), then writes a single L2-normalised vector to `user_embeddings` with `service='combined'`.
 
 Rate-limited to 5/min per user.
 
@@ -301,7 +301,9 @@ Rate-limited to 5/min per user.
 { "error": { "code": "NO_EMBEDDINGS_AVAILABLE", "message": "No embedded items found. Run the enrichment and populate scripts first, or sync a connected service." } }
 ```
 
-**Weight formula:** `effective_weight = log1p(engagement_score) × dim_weight × boost_multiplier`
+**Aggregation (service-aware, corrected 2026-06-07):**
+- **Within a service:** `service_direction = L2_normalize( Σ embedding × boost_multiplier × log1p(engagement_score) )`. `boost_multiplier` amplifies an item relative to its service peers; log1p is a mild concave reweighting on the already-normalized `engagement_score ∈ [0,1]` (not a raw-count dampener).
+- **Across services:** `combined = L2_normalize( Σ service_direction × dim_weight )` — a **linear** weighted sum. Mean-pooling each service to unit mass first makes `dim_weight` authoritative: a 0.7 vs 0.3 split yields exactly a 0.7:0.3 contribution **regardless of how many items each service has**. (Before this fix, a large library could override the user's slider by sheer item count.)
 - `dim_weight` defaults to 1.0 if no `user_dimension_weights` row exists for the service
 - `boost_multiplier` defaults to 1.0 if no `preference_overrides` row exists for the item
 - `excluded = true` items are skipped entirely

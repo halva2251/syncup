@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session as DbSession
 from syncup.auth.router import RequireAuth
 from syncup.db.models import Item, PreferenceOverride, UserDimensionWeight, UserEmbedding, UserItem
 from syncup.db.session import get_db
-from syncup.embeddings.user_embeddings import aggregate_vectors
+from syncup.embeddings.user_embeddings import aggregate_vectors, combine_service_vectors
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
 
@@ -90,7 +90,15 @@ def build_user_embedding(
     for row in rows:
         by_service[row.service].append(row)
 
-    pairs: list[tuple[list[float], float]] = []
+    # Two-level aggregation so per-service dimension weights are authoritative:
+    #   1. Within a service: aggregate_vectors → unit "service taste direction".
+    #      boost amplifies an item relative to its service peers; log1p applies a
+    #      mild concave reweighting on engagement_score (already in [0, 1]).
+    #   2. Across services: combine_service_vectors weights each unit direction
+    #      LINEARLY by dimension weight. Mean-pooling each service to unit mass
+    #      first means a 500-game library no longer dominates a 20-track one by
+    #      sheer count — the user's slider, not item count, sets the balance.
+    service_pairs: list[tuple[list[float], float]] = []
     total_items = 0
     for service_rows in by_service.values():
         # Sort descending by engagement_score and take the top SERVICE_CAP items.
@@ -99,18 +107,29 @@ def build_user_embedding(
             key=lambda r: (r.engagement_score, r.user_item_id),
             reverse=True,
         )[:_SERVICE_CAP]
+
+        item_pairs: list[tuple[list[float], float]] = []
+        dim_weight = 1.0
         for row in capped:
+            # dim_weight is keyed by (user, service) so it is identical for every
+            # row of a service; capture it once for the across-service combine.
             dim_weight = row.dim_weight if row.dim_weight is not None else 1.0
             boost = row.boost_multiplier if row.boost_multiplier is not None else 1.0
-            scale = dim_weight * boost
-            # Scale the vector so log1p dampening inside aggregate_vectors applies
-            # to engagement_score alone; dim_weight and boost remain true linear
-            # multipliers: effective weight = log1p(engagement_score) * dim_weight * boost
-            if scale > 0 and row.engagement_score > 0:
-                pairs.append(([v * scale for v in row.embedding], row.engagement_score))
+            if boost > 0 and row.engagement_score > 0:
+                item_pairs.append(([v * boost for v in row.embedding], row.engagement_score))
                 total_items += 1
 
-    if not pairs:
+        if not item_pairs or dim_weight <= 0:
+            continue
+        try:
+            service_vec = aggregate_vectors(item_pairs)
+        except ValueError:
+            # Degenerate service (e.g. all-zero embeddings) — skip it, don't fail
+            # the whole build if other services are usable.
+            continue
+        service_pairs.append((service_vec, dim_weight))
+
+    if not service_pairs:
         raise SyncUpError(
             "NO_EMBEDDINGS_AVAILABLE",
             "All qualifying items have zero effective weight.",
@@ -118,7 +137,7 @@ def build_user_embedding(
         )
 
     try:
-        combined = aggregate_vectors(pairs)
+        combined = combine_service_vectors(service_pairs)
     except ValueError as exc:
         raise SyncUpError(
             "NO_EMBEDDINGS_AVAILABLE",

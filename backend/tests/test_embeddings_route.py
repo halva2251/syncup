@@ -377,10 +377,9 @@ def test_per_service_cap_is_independent(
     """Cap of 50 applies per service, not globally."""
     client, user, db = auth_client
     # 60 steam + 60 spotify = 120 total, capped to 50 + 50 = 100
-    rows = (
-        [_fake_row(service="steam", engagement_score=round((i + 1) / 60, 4)) for i in range(60)]
-        + [_fake_row(service="spotify", engagement_score=round((i + 1) / 60, 4)) for i in range(60)]
-    )
+    rows = [
+        _fake_row(service="steam", engagement_score=round((i + 1) / 60, 4)) for i in range(60)
+    ] + [_fake_row(service="spotify", engagement_score=round((i + 1) / 60, 4)) for i in range(60)]
     db.execute.return_value.fetchall.return_value = rows
 
     resp = client.post("/api/embeddings/build")
@@ -446,13 +445,19 @@ def test_dimension_weight_changes_result_direction(
 def test_boost_multiplier_changes_result_direction(
     auth_client: tuple[TestClient, User, MagicMock],
 ) -> None:
-    """Changing boost_multiplier must shift the angle of the resulting normalized vector."""
+    """Changing boost_multiplier must shift the angle of the resulting normalized vector.
+
+    Under the service-aware builder, boost is a WITHIN-service lever (it amplifies
+    an item relative to its service peers); across-service balance is governed by
+    dimension weight. So both boosted items live in the same service here — a
+    single-item service would normalise the boost away by design.
+    """
     client, user, db = auth_client
     v1 = [1.0, 0.0, 0.0, 0.0]
     v2 = [0.0, 1.0, 0.0, 0.0]
     rows = [
         _fake_row(service="steam", engagement_score=1.0, embedding=v1, boost=3.0),
-        _fake_row(service="spotify", engagement_score=1.0, embedding=v2, boost=1.0),
+        _fake_row(service="steam", engagement_score=1.0, embedding=v2, boost=1.0),
     ]
     db.execute.return_value.fetchall.return_value = rows
 
@@ -461,8 +466,69 @@ def test_boost_multiplier_changes_result_direction(
 
     merged_obj = db.merge.call_args[0][0]
     assert isinstance(merged_obj, UserEmbedding)
-    # With boost 3:1, the x-component should be larger than y
+    # With boost 3:1 within the same service, the x-component should be larger than y
     assert merged_obj.embedding[0] > merged_obj.embedding[1]
+
+
+def test_item_count_does_not_dominate_dimension_weight(
+    auth_client: tuple[TestClient, User, MagicMock],
+) -> None:
+    """REGRESSION (Block J review): a service with many items must NOT dominate a
+    service with few items when dimension weights are equal.
+
+    Before the service-aware fix, 20 game items vs 1 music item produced a ~20:1
+    centroid skew toward games regardless of the user's slider. After the fix each
+    service is mean-pooled to unit mass first, so equal dim weights → balanced.
+    """
+    client, user, db = auth_client
+    v_games = [1.0, 0.0, 0.0, 0.0]
+    v_music = [0.0, 1.0, 0.0, 0.0]
+    rows = [
+        _fake_row(service="steam", engagement_score=0.8, embedding=v_games) for _ in range(20)
+    ] + [_fake_row(service="spotify", engagement_score=0.8, embedding=v_music)]
+    db.execute.return_value.fetchall.return_value = rows
+
+    resp = client.post("/api/embeddings/build")
+    assert resp.status_code == 200
+
+    merged_obj = db.merge.call_args[0][0]
+    assert isinstance(merged_obj, UserEmbedding)
+    # 20:1 item-count imbalance, equal dim weights → both services ~equally represented
+    assert merged_obj.embedding[0] == pytest.approx(merged_obj.embedding[1], abs=1e-6)
+
+
+def test_dimension_weight_authoritative_over_item_count(
+    auth_client: tuple[TestClient, User, MagicMock],
+) -> None:
+    """REGRESSION (Block J review): the user's dimension-weight slider must win
+    over raw item count.
+
+    20 game items at dim_weight 0.3 vs 1 music item at dim_weight 0.7 → the user
+    asked for music to dominate, so the music component must exceed games despite
+    a 20x item-count disadvantage. Pre-fix, games won (count dominated). The
+    0.7:0.3 ratio is exact because combine_service_vectors is linear.
+    """
+    client, user, db = auth_client
+    v_games = [1.0, 0.0, 0.0, 0.0]
+    v_music = [0.0, 1.0, 0.0, 0.0]
+    rows = [
+        _fake_row(service="steam", engagement_score=0.8, embedding=v_games, dim_weight=0.3)
+        for _ in range(20)
+    ] + [_fake_row(service="spotify", engagement_score=0.8, embedding=v_music, dim_weight=0.7)]
+    db.execute.return_value.fetchall.return_value = rows
+
+    resp = client.post("/api/embeddings/build")
+    assert resp.status_code == 200
+
+    merged_obj = db.merge.call_args[0][0]
+    assert isinstance(merged_obj, UserEmbedding)
+    # music (y) weighted 0.7 must beat games (x) weighted 0.3 despite 20x fewer items
+    assert merged_obj.embedding[1] > merged_obj.embedding[0]
+    # exact linear ratio 0.7:0.3
+    expected_ratio = 0.7 / 0.3
+    assert merged_obj.embedding[1] / merged_obj.embedding[0] == pytest.approx(
+        expected_ratio, abs=1e-3
+    )
 
 
 def test_zero_norm_embedding_returns_422(

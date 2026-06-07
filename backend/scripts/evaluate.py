@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import random
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -246,7 +247,9 @@ def _insert_items(
             item_type=item_type,
             external_id=str(uuid.uuid4())[:8],
             name=name,
-            metadata={"genres": genres.split(", ")},
+            # ORM attribute is `meta` (column name "metadata"); passing metadata=
+            # silently sets a non-mapped attribute and leaves the column as {}.
+            meta={"genres": genres.split(", ")},
             embedding=emb,
             embedding_computed_at=now,
             created_at=now,
@@ -752,6 +755,115 @@ def run_mode_comparison(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Centroid-collapse probe (mixed-domain users)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _group_centroid(session: Any, user_ids: list[uuid.UUID]) -> list[float] | None:
+    """Mean of the group's combined embeddings, L2-renormalised. None if empty."""
+    import numpy as np
+    from sqlalchemy import select
+
+    from syncup.db.models import UserEmbedding
+
+    vecs: list[list[float]] = []
+    for uid in user_ids:
+        row = session.execute(
+            select(UserEmbedding.embedding).where(
+                UserEmbedding.user_id == uid, UserEmbedding.service == "combined"
+            )
+        ).scalar_one_or_none()
+        if row is not None:
+            vecs.append(list(row))
+    if not vecs:
+        return None
+    arr = np.mean(np.asarray(vecs, dtype=np.float64), axis=0)
+    norm = float(np.linalg.norm(arr))
+    if norm == 0.0:
+        return None
+    return list(arr / norm)
+
+
+def _cosine(session: Any, user_id: uuid.UUID, centroid: list[float]) -> float | None:
+    import numpy as np
+    from sqlalchemy import select
+
+    from syncup.db.models import UserEmbedding
+
+    row = session.execute(
+        select(UserEmbedding.embedding).where(
+            UserEmbedding.user_id == user_id, UserEmbedding.service == "combined"
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    a = np.asarray(list(row), dtype=np.float64)
+    b = np.asarray(centroid, dtype=np.float64)
+    return float(a @ b)  # both unit-norm → dot product is cosine
+
+
+def run_centroid_collapse_probe(
+    session: Any,
+    synthetic_users: list[SyntheticUser],
+    n_mixed: int = 3,
+) -> dict[str, Any]:
+    """Measure (not just assert) centroid collapse for mixed-domain users.
+
+    Builds a few users whose libraries blend Group-A RPG items with Out-group EDM
+    items in equal measure. Their averaged taste vector should land between the two
+    clusters, matching *neither* as strongly as a pure-domain user matches its own.
+    Reports the mixed user's cosine to each parent centroid vs the pure-domain
+    within-cluster baseline — turning the documented failure mode into evidence.
+
+    Returns mixed_user_ids so the caller can clean them up.
+    """
+    a_users = [su for su in synthetic_users if su.group == "A"]
+    out_users = [su for su in synthetic_users if su.group == "out"]
+    if not a_users or not out_users:
+        return {}
+
+    # Reuse already-inserted items: 4 RPG items + 4 EDM items.
+    rpg_items = a_users[0].training_item_ids[:4]
+    edm_items = out_users[0].training_item_ids[:4]
+    if len(rpg_items) < 4 or len(edm_items) < 4:
+        return {}
+
+    mixed_ids: list[uuid.UUID] = []
+    for i in range(n_mixed):
+        uid = _insert_user(session, "M", i)
+        item_scores = [(iid, 0.8) for iid in (*rpg_items, *edm_items)]
+        _assign_items_to_user(session, uid, item_scores)
+        mixed_ids.append(uid)
+    session.commit()
+    for uid in mixed_ids:
+        _build_embedding_for_user(session, uid)
+    session.commit()
+
+    a_centroid = _group_centroid(session, [su.user_id for su in a_users])
+    out_centroid = _group_centroid(session, [su.user_id for su in out_users])
+    if a_centroid is None or out_centroid is None:
+        return {"mixed_user_ids": mixed_ids}
+
+    # Pure-domain baseline: how close an A user sits to the A centroid.
+    a_self = [c for su in a_users if (c := _cosine(session, su.user_id, a_centroid)) is not None]
+    mixed_to_rpg = [c for uid in mixed_ids if (c := _cosine(session, uid, a_centroid)) is not None]
+    mixed_to_edm = [
+        c for uid in mixed_ids if (c := _cosine(session, uid, out_centroid)) is not None
+    ]
+
+    def _avg(xs: list[float]) -> float:
+        return sum(xs) / len(xs) if xs else 0.0
+
+    return {
+        "mixed_user_ids": mixed_ids,
+        "n_mixed": n_mixed,
+        "pure_a_to_a_centroid": _avg(a_self),
+        "mixed_to_rpg_centroid": _avg(mixed_to_rpg),
+        "mixed_to_edm_centroid": _avg(mixed_to_edm),
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Report
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -761,6 +873,7 @@ def print_report(
     holdout: dict[str, Any],
     modes: dict[str, Any],
     users_per_group: int,
+    collapse: dict[str, Any] | None = None,
 ) -> None:
     """Print evaluation report matching roadmap §2.8 format."""
     n_users = users_per_group * 4
@@ -824,6 +937,22 @@ def print_report(
                     f"  ({g_delta:+.0f}%)  n={n_g} pairs"
                 )
 
+    if collapse and "pure_a_to_a_centroid" in collapse:
+        print()
+        print(f"Centroid-collapse probe (mixed-domain users, N={collapse['n_mixed']}):")
+        print(
+            f"  pure RPG user → RPG centroid:   {collapse['pure_a_to_a_centroid']:.3f}"
+            "  (within-cluster baseline)"
+        )
+        print(f"  mixed user    → RPG centroid:   {collapse['mixed_to_rpg_centroid']:.3f}")
+        print(f"  mixed user    → EDM centroid:   {collapse['mixed_to_edm_centroid']:.3f}")
+        drop_rpg = collapse["pure_a_to_a_centroid"] - collapse["mixed_to_rpg_centroid"]
+        print(
+            f"  → blending two domains pulls the vector to a midpoint: it matches the RPG"
+            f" cluster {drop_rpg:+.3f} weaker than a pure RPG user does (centroid collapse,"
+            " measured not assumed)."
+        )
+
     print()
     print("Evaluation caveats (self-critical assessment):")
     print("  - Synthetic cohort uses seeded engagement scores (0.2–1.0); log1p dampening")
@@ -872,6 +1001,7 @@ def main() -> None:
 
     users_per_group = args.cohort_size
     synthetic_users: list[SyntheticUser] = []
+    mixed_user_ids: list[uuid.UUID] = []
 
     import sqlalchemy as sa
 
@@ -906,16 +1036,20 @@ def main() -> None:
             print(f"\nBuilding synthetic cohort ({users_per_group} users/group)...")
             synthetic_users = build_cohort(session, users_per_group=users_per_group)
 
-            print("\nRunning matching evaluation (Precision@5)...")
+            print("\nRunning matching evaluation (Recall@5)...")
             matching = run_matching_evaluation(session, synthetic_users)
 
-            print("Running holdout evaluation (Precision@10, Recall@10)...")
+            print("Running holdout evaluation (Hit Rate@10)...")
             holdout = run_holdout_evaluation(session, synthetic_users, k=10)
 
             print("Running mode comparison...")
             modes = run_mode_comparison(session, synthetic_users)
 
-            print_report(matching, holdout, modes, users_per_group)
+            print("Running centroid-collapse probe...")
+            collapse = run_centroid_collapse_probe(session, synthetic_users)
+            mixed_user_ids.extend(collapse.get("mixed_user_ids", []))
+
+            print_report(matching, holdout, modes, users_per_group, collapse)
 
         finally:
             if not args.no_cleanup:
@@ -923,7 +1057,8 @@ def main() -> None:
                 # Use a fresh session — the evaluation session may be in a broken
                 # state if an exception occurred during the try block.
                 with factory() as cleanup_session:
-                    _cleanup_synthetic(cleanup_session, [su.user_id for su in synthetic_users])
+                    all_ids = [su.user_id for su in synthetic_users] + mixed_user_ids
+                    _cleanup_synthetic(cleanup_session, all_ids)
                 print("Done.")
             else:
                 session.commit()

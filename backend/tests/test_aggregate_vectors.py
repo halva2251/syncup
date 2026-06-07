@@ -12,7 +12,7 @@ from typing import cast
 import numpy as np
 import pytest
 
-from syncup.embeddings.user_embeddings import aggregate_vectors
+from syncup.embeddings.user_embeddings import aggregate_vectors, combine_service_vectors
 
 DIM = 4  # small dimension for readable test assertions
 
@@ -154,3 +154,68 @@ def test_384_dim_input() -> None:
     assert len(result) == 384
     norm = math.sqrt(sum(v * v for v in result))
     assert norm == pytest.approx(1.0, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# combine_service_vectors — LINEAR weighted sum (no log1p) used to combine
+# per-service unit vectors by dimension weight. Dimension weights are direct
+# linear preferences, so a 0.7 vs 0.3 weight must produce a 0.7:0.3 ratio.
+# ---------------------------------------------------------------------------
+
+
+def test_combine_is_l2_normalised() -> None:
+    result = combine_service_vectors([([1.0, 2.0, 3.0, 4.0], 0.5)])
+    norm = math.sqrt(sum(v * v for v in result))
+    assert norm == pytest.approx(1.0, abs=1e-6)
+
+
+def test_combine_single_pair_returns_unit_direction() -> None:
+    raw = [3.0, 4.0, 0.0, 0.0]
+    result = combine_service_vectors([(raw, 0.9)])
+    assert result == pytest.approx(_unit(raw), abs=1e-6)
+
+
+def test_combine_is_linear_not_log1p() -> None:
+    """0.7 vs 0.3 dimension weights must yield a 0.7:0.3 contribution ratio.
+
+    This is the property that makes dimension weights authoritative: unlike
+    aggregate_vectors (log1p-dampened), combine must be exactly linear so the
+    user's slider maps directly to service contribution.
+    """
+    v1 = [1.0, 0.0, 0.0, 0.0]
+    v2 = [0.0, 1.0, 0.0, 0.0]
+    result = combine_service_vectors([(v1, 0.7), (v2, 0.3)])
+    expected = _unit([0.7, 0.3, 0.0, 0.0])
+    assert result == pytest.approx(expected, abs=1e-6)
+
+
+def test_combine_equal_weights_balanced() -> None:
+    v1 = [1.0, 0.0, 0.0, 0.0]
+    v2 = [0.0, 1.0, 0.0, 0.0]
+    result = combine_service_vectors([(v1, 1.0), (v2, 1.0)])
+    assert result == pytest.approx(_unit([1.0, 1.0, 0.0, 0.0]), abs=1e-6)
+
+
+def test_combine_empty_raises() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        combine_service_vectors([])
+
+
+def test_combine_negative_weight_raises() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        combine_service_vectors([([1.0, 0.0, 0.0, 0.0], -0.1)])
+
+
+def test_combine_all_zero_weights_raises() -> None:
+    with pytest.raises(ValueError, match="No pairs contributed"):
+        combine_service_vectors([([1.0, 0.0, 0.0, 0.0], 0.0)])
+
+
+def test_combine_zero_norm_raises() -> None:
+    with pytest.raises(ValueError, match="zero norm"):
+        combine_service_vectors([([0.0, 0.0, 0.0, 0.0], 1.0)])
+
+
+def test_combine_mixed_dimensions_raises() -> None:
+    with pytest.raises(ValueError, match="same dimension"):
+        combine_service_vectors([([1.0, 0.0, 0.0, 0.0], 1.0), ([0.0, 1.0, 0.0], 1.0)])
