@@ -56,6 +56,22 @@ class CookieDeleteOpts(TypedDict):
     path: str
 
 
+def _oauth_cookie_delete_opts(settings: Settings) -> CookieDeleteOpts:
+    """Build the matching delete-cookie options for `_oauth_cookie_opts`.
+
+    `delete_cookie` rejects `max_age`, so this is a separate TypedDict —
+    but the remaining attributes (httponly/samesite/secure/path) must match
+    what `set_cookie` used, or the browser won't recognize it as the same
+    cookie and the deletion silently no-ops.
+    """
+    return CookieDeleteOpts(
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        path="/",
+    )
+
+
 def _oauth_cookie_opts(settings: Settings, *, max_age: int = 600) -> CookieOpts:
     """Build the standard short-lived OAuth state/verifier cookie options.
 
@@ -499,9 +515,7 @@ def anilist_oauth_callback(
     logger.info("User %s connected AniList (anilist_id=%s)", user.id, anilist_user_id)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(
-        _ANILIST_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/"
-    )
+    response.delete_cookie(_ANILIST_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
     return response
 
 
@@ -620,9 +634,7 @@ def trakt_oauth_callback(
     logger.info("User %s connected Trakt (trakt_username=%s)", user.id, trakt_username)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(
-        _TRAKT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/"
-    )
+    response.delete_cookie(_TRAKT_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
     return response
 
 
@@ -748,9 +760,7 @@ def reddit_oauth_callback(
     logger.info("User %s connected Reddit (reddit_username=%s)", user.id, reddit_username)
 
     response = RedirectResponse("/", status_code=302)
-    response.delete_cookie(
-        _REDDIT_STATE_COOKIE, httponly=True, samesite="lax", secure=not settings.debug, path="/"
-    )
+    response.delete_cookie(_REDDIT_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
     return response
 
 
@@ -999,12 +1009,7 @@ def spotify_callback(
 
     logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
 
-    _state_cookie_del_opts = CookieDeleteOpts(
-        httponly=True,
-        samesite="lax",
-        secure=not settings.debug,
-        path="/",
-    )
+    _state_cookie_del_opts = _oauth_cookie_delete_opts(settings)
     response = RedirectResponse("/", status_code=302)
     response.delete_cookie("spotify_state", **_state_cookie_del_opts)
     response.delete_cookie("spotify_verifier", **_state_cookie_del_opts)

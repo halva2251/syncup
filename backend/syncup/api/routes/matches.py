@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
 
@@ -356,7 +357,7 @@ def _write_match_results(
             )
             db.execute(stmt)
         db.commit()
-    except Exception:
+    except SQLAlchemyError:
         db.rollback()
         logger.exception("Match cache write phase failed")
     finally:
