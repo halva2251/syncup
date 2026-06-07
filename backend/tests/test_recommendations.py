@@ -61,19 +61,35 @@ def _make_rec_row(
     return row
 
 
+def _make_owned_row(name: str, item_type: str = "game") -> Any:
+    """Build a mock row for the 'items the user already owns' query (name, item_type)."""
+    row = MagicMock()
+    row.name = name
+    row.item_type = item_type
+    return row
+
+
 def _setup_db_for_recs(
     mock_db: MagicMock,
     embedding: list[float] | None,
     ann_rows: list[Any],
+    owned_rows: list[Any] | None = None,
 ) -> None:
-    """Wire mock_db so the two db.execute calls return the right values."""
+    """Wire mock_db so the three db.execute calls return the right values.
+
+    Query order in the endpoint: (1) user's combined embedding, (2) the user's
+    owned (name, item_type) rows for title-based dedup, (3) the ANN candidates.
+    """
     emb_result = MagicMock()
     emb_result.scalar_one_or_none.return_value = embedding
+
+    owned_result = MagicMock()
+    owned_result.all.return_value = owned_rows or []
 
     ann_result = MagicMock()
     ann_result.all.return_value = ann_rows
 
-    mock_db.execute.side_effect = [emb_result, ann_result]
+    mock_db.execute.side_effect = [emb_result, owned_result, ann_result]
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +253,96 @@ def test_similarity_score_clamped_to_one(
 
 
 # ---------------------------------------------------------------------------
+# Cross-service dedup + owned-by-title exclusion (QA fixes)
+# ---------------------------------------------------------------------------
+
+
+def test_excludes_title_already_owned_on_another_service(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """A title the user owns (on any service) must not be recommended from another.
+
+    User owns 'Disco Elysium' on steam; the ANN candidate is the same title under a
+    different service — it must be filtered out by normalized-title match.
+    """
+    client, _ = rec_client
+    _setup_db_for_recs(
+        mock_db,
+        embedding=[0.1] * 384,
+        ann_rows=[_make_rec_row(name="Disco Elysium", service="vibe_test", distance=0.2)],
+        owned_rows=[_make_owned_row(name="Disco Elysium", item_type="game")],
+    )
+
+    resp = client.get("/api/me/recommendations")
+    assert resp.status_code == 200
+    assert resp.json()["items"] == []
+
+
+def test_owned_title_match_is_normalized(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """Owned-title exclusion uses normalize_title (case/punctuation-insensitive)."""
+    client, _ = rec_client
+    _setup_db_for_recs(
+        mock_db,
+        embedding=[0.1] * 384,
+        ann_rows=[_make_rec_row(name="DISCO ELYSIUM!", service="x", distance=0.2)],
+        owned_rows=[_make_owned_row(name="Disco Elysium", item_type="game")],
+    )
+
+    resp = client.get("/api/me/recommendations")
+    assert resp.json()["items"] == []
+
+
+def test_dedupes_same_title_across_services(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """The same title appearing under multiple services collapses to one rec (best score)."""
+    client, _ = rec_client
+    _setup_db_for_recs(
+        mock_db,
+        embedding=[0.1] * 384,
+        ann_rows=[
+            _make_rec_row(name="Hades", service="steam", distance=0.20),  # better
+            _make_rec_row(name="Hades", service="vibe_test", distance=0.35),
+        ],
+    )
+
+    resp = client.get("/api/me/recommendations")
+    items = resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["item_name"] == "Hades"
+    assert items[0]["service"] == "steam"  # the higher-similarity (lower-distance) copy
+
+
+def test_different_titles_same_franchise_are_kept(
+    rec_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """Distinct titles (e.g. a franchise) are NOT collapsed — only exact title dupes are."""
+    client, _ = rec_client
+    _setup_db_for_recs(
+        mock_db,
+        embedding=[0.1] * 384,
+        ann_rows=[
+            _make_rec_row(name="Avatar", service="letterboxd", item_type="film", distance=0.2),
+            _make_rec_row(
+                name="Avatar: The Way of Water",
+                service="letterboxd",
+                item_type="film",
+                distance=0.25,
+            ),
+        ],
+    )
+
+    resp = client.get("/api/me/recommendations")
+    assert len(resp.json()["items"]) == 2
+
+
+# ---------------------------------------------------------------------------
 # Filtering
 # ---------------------------------------------------------------------------
 
@@ -280,9 +386,10 @@ def test_item_type_filter_accepted(
 
     assert resp.status_code == 200
     assert resp.json()["items"][0]["item_type"] == "game"
-    # Verify 'game' was passed as a bind param to the ANN query (second db.execute call).
-    second_call = mock_db.execute.call_args_list[1]
-    passed_params = second_call[0][1]
+    # Verify 'game' was passed as a bind param to the ANN query (3rd db.execute call:
+    # embedding, owned-titles, then ANN).
+    ann_call = mock_db.execute.call_args_list[2]
+    passed_params = ann_call[0][1]
     assert passed_params["item_type"] == "game"
 
 
@@ -409,10 +516,11 @@ def test_default_limit_passed_as_sql_param(
 
     client.get("/api/me/recommendations")
 
-    second_call = mock_db.execute.call_args_list[1]
-    params = second_call[0][1]
-    # db_limit is limit * 3 (oversample), default limit=10 → db_limit=30
-    assert params["db_limit"] == 30
+    ann_call = mock_db.execute.call_args_list[2]
+    params = ann_call[0][1]
+    # db_limit is limit * 5 (oversample for score/owned/dedup post-filters),
+    # default limit=10 → db_limit=50
+    assert params["db_limit"] == 50
 
 
 def test_similarity_score_clamped_to_zero_for_large_distance(
@@ -443,8 +551,8 @@ def test_no_item_type_param_excludes_it_from_sql_params(
 
     client.get("/api/me/recommendations")
 
-    second_call = mock_db.execute.call_args_list[1]
-    params = second_call[0][1]
+    ann_call = mock_db.execute.call_args_list[2]
+    params = ann_call[0][1]
     assert "item_type" not in params
 
 

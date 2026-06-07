@@ -74,7 +74,8 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `populate_item_embeddings.py` — batch-embeds all items `WHERE embedding IS NULL` in chunks of 256; degenerate text guard | `backend/scripts/populate_item_embeddings.py` |
 | 831 passing tests | `backend/tests/` |
 | `GET /api/me/recommendations` — cross-domain item recs from combined taste vector; `item_type` filter allowlist (9 types); `NOT EXISTS` ownership check; `similarity_score = 1 - cosine_distance` clamped to `[0, 1]`; 422 `NO_EMBEDDING_AVAILABLE` guard | `syncup/api/routes/recommendations.py` |
-| 947 passing tests | `backend/tests/` |
+| Block J review fixes — **service-aware user embedding** (`combine_service_vectors`: per-service mean-pool then linear dim-weight so the slider is authoritative over item count), semantic-authoritative match refresh (no heuristic churn), in-flight refresh guard, drift-tolerant highlight parsing, honest log1p docstring, centroid-collapse eval probe, `Item(meta)` genre-persistence fix | `syncup/embeddings/user_embeddings.py`, `syncup/api/routes/{embeddings,matches}.py`, `scripts/evaluate.py` |
+| 987 passing tests | `backend/tests/` |
 
 ---
 
@@ -522,26 +523,27 @@ New dep: `sentence-transformers>=3.0` in `pyproject.toml`.
 
 The `combined` vector is the **match vector** — what ANN search operates on. It is built from the user's actual curated item data, not from LLM output.
 
-**Catalog-size normalization (fix before implementing):** Without a per-service item cap, a user with 500 Steam games will have their gaming dimension dominate the user vector by sheer averaging mass, not by taste intensity. Fix: cap to the top-N items per service (by engagement_score) before computing the weighted average — e.g. top 50 per service. This ensures a user with 500 games and 20 Spotify tracks gets equal representation per service before dimension weights are applied.
+**Per-service representation — corrected during the Block J review (2026-06-07).** The original plan claimed a top-50/service cap alone gives "equal representation per service before dimension weights." That was **wrong**: a flat global weighted sum still lets a service with more items dominate the centroid by sheer count (verified — 50 games + 5 tracks at music=0.7/games=0.3 still leaned games 0.87 vs 0.16). The cap bounds the imbalance but does not remove it. **Fix shipped:** the builder is now **service-aware (two-level aggregation)** so the user's dimension-weight slider is authoritative regardless of library size.
 
-Implementation:
-1. Query `user_items JOIN items WHERE items.embedding IS NOT NULL AND user_items.excluded = false`
-2. **Per-service cap:** keep top 50 by `engagement_score` per service before weighting
-3. Apply `user_dimension_weights` as multipliers on `engagement_score`, then apply `preference_overrides.boost_multiplier` where set
-4. Call `aggregate_vectors([(item.embedding, weighted_score), ...])` — log1p dampened weighted average, L2-normalised
+Implementation (as built):
+1. Query `user_items JOIN items WHERE items.embedding IS NOT NULL AND user_items.excluded = false`, LEFT JOIN dimension weights + overrides
+2. **Per-service cap:** keep top 50 by `engagement_score` per service
+3. **Within each service** → `aggregate_vectors([(embedding × boost, engagement_score), …])`: log1p-dampened weighted sum, L2-normalised to a unit *service taste direction*. `boost` amplifies an item relative to its service peers.
+4. **Across services** → `combine_service_vectors([(service_unit_vec, dim_weight), …])`: a **linear** weighted sum (no log1p), L2-normalised. Because each service was mean-pooled to unit mass first, `dim_weight` maps directly to contribution (0.7 vs 0.3 → exactly 0.7:0.3) — item count no longer overrides the slider.
 5. Upsert to `user_embeddings` with `service = "combined"`
-6. Returns 422 `NO_EMBEDDINGS_AVAILABLE` if no items have embeddings yet (not 500)
+6. Returns 422 `NO_EMBEDDINGS_AVAILABLE` if no items have embeddings / all weights zero
 
-**Why item-average is information-preserving:**
+**Why this is information-preserving:**
 - Uses `engagement_score` (already normalized 0–1 per service), not raw playtime/scrobbles
-- `preference_overrides.boost_multiplier` directly amplifies underrepresented items (e.g. Disco Elysium at 20h can be boosted 3× and will dominate an Overwatch at 1500h)
-- `excluded = true` items are skipped — misrepresentative items (e.g. games played purely with friends) don't pull the vector toward unwanted regions
-- Log1p dampening prevents any single item from dominating regardless of raw engagement magnitude
-- Dimension weights let the user decide which services contribute to their match profile
+- `preference_overrides.boost_multiplier` amplifies underrepresented items *within their service*
+- `excluded = true` items are skipped entirely
+- `dim_weight` is now the authoritative cross-service lever (per-service mean-pool before weighting)
 
-Known limitation (document in evaluation): centroid collapse — two users can theoretically produce the same weighted-average vector from completely different item sets. This is real but bounded: the per-service cap and preference controls make degenerate collisions unlikely in practice. Name it in the self-critical assessment section.
+**Honest note on log1p (corrected 2026-06-07):** log1p runs on `engagement_score ∈ [0,1]` (already normalised by every ingest client), where it is *near-linear* — a mild concave reweighting, NOT the order-of-magnitude raw-play-count dampener the old docstring described (that work happens upstream in each client). The module docstring now states this honestly.
 
-`aggregate_vectors()` is extracted from `user_embeddings.py` as a pure function taking pre-fetched `(vector, weight)` pairs directly — no model dependency.
+**Known limitation — centroid collapse (now *measured*, not just asserted):** a user whose library spans unrelated domains produces an averaged vector that matches neither cluster well. Block J's eval now includes a mixed-domain probe quantifying it: a mixed RPG+EDM user sits at cos≈0.79 to the RPG centroid vs 0.99 for a pure RPG user (a ~0.20 collapse). See §2.8.
+
+`aggregate_vectors()` and `combine_service_vectors()` live in `user_embeddings.py` as pure functions taking pre-fetched `(vector, weight)` pairs — no model dependency.
 
 ### 2.4 LLM vibe synthesis (explanation layer only)
 
@@ -613,9 +615,13 @@ Response field `matching_mode: "heuristic" | "semantic"` on `GET /api/matches` a
 
 **Score formula:** pure cosine similarity on the `combined` vector — reproducible, empirically evaluable, defensible to judges. Candidates with negative cosine similarity (distance > 1.0) are filtered out rather than floored to 0, preventing antipodal users from appearing in match results.
 
-**Known issues / deferred:**
-- `_write_match_results` uses `db.merge()` in a loop (not atomic). Concurrent refreshes of the same user pair can unique-violate. Fix: bulk `ON CONFLICT DO UPDATE` upsert.
-- Heuristic refresh can overwrite a semantic row for the same symmetric pair (e.g., B's heuristic overwrites A's semantic). Fix needed: mode precedence policy or per-direction mode storage.
+**Addressed in the Block J review (2026-06-07):**
+- **Semantic mode is now authoritative.** Once a user has a combined embedding, `_refresh_match_cache` no longer falls through to the heuristic path even when every ANN neighbour scores ≤ 0. This removes the mode-churn that previously let a heuristic refresh overwrite a semantic row for a symmetric pair.
+- **In-flight refresh guard.** Repeated empty-page `GET /api/matches` requests no longer stack redundant concurrent `_refresh_match_cache` runs for the same user (`_try_acquire_refresh` / `_release_refresh`), reducing write contention.
+- **Match list is drift-tolerant.** Highlights are parsed via `_parse_highlights` (`model_validate` + skip-and-log) so a malformed/legacy cache row degrades gracefully instead of 500-ing the whole list.
+
+**Known issues / deferred (still open):**
+- `_write_match_results` uses `db.merge()` in a loop (not atomic). Concurrent refreshes of the same user pair can still unique-violate. Fix: bulk `ON CONFLICT DO UPDATE` upsert. (The in-flight guard reduces, but does not eliminate, the window — recompute and matches paths can still overlap.)
 - Semantic `pop_rows` are computed over 51 users (self + 50 candidates) vs 500 in heuristic. `top_shared_highlights` rarity weighting is slightly inconsistent between modes.
 
 ### Match Cache + Staleness (carried from original 2.4)
@@ -674,9 +680,9 @@ The three taste control levers (all exist in API):
 
 Frontend unifies these in a "manage your taste" view (Phase 3, friend's job).
 
-### 2.8 Evaluation framework
+### 2.8 Evaluation framework ✅
 
-**Status:** Not started. Required for KI Challenge scientific rigor (criterion 7).
+**Status:** Complete. `backend/scripts/evaluate.py` — 987 tests passing (Block J review fixes applied 2026-06-07).
 
 A standalone evaluation script that measures how well the AI is actually working — without requiring real users. Without this, we can't answer "how do you know your matching works?" in front of judges.
 
@@ -706,28 +712,57 @@ For each group-A user, check how many group-A users appear in their top-5 semant
 - For the wrong one: diagnose why (sparse data? missing metadata? genre mismatch?)
 - This exhibit answers criterion 8 ("self-critical assessment") better than any number.
 
-**Output:** `scripts/evaluate.py` prints a clean report:
+**Actual output** (`python scripts/evaluate.py`, refreshed 2026-06-07 after the service-aware builder + centroid-collapse probe landed):
 ```
 Synthetic cohort evaluation (N=20 synthetic users):
-  Group A precision@5: 0.80  (high-overlap users correctly ranked)
-  Group B precision@5: 0.60
-  Group C precision@5: 0.25
+  Group A recall@5: 1.00  (high-overlap users correctly ranked)
+  Group B recall@5: 1.00  (medium-overlap users ranked)
+  Group C recall@5: 1.00  (low-overlap users ranked)
+  Group out recall@5: 1.00  (zero-overlap out-group ranked)
 
-Holdout recommendation quality (N=X users):
-  Precision@10: 0.34
-  Recall@10:    0.21
+Holdout recommendation quality (N=20 users, k=10):
+  Hit Rate@10 (pooled): 0.80
+  Hit Rate@10 by group:
+    Group A: 1.00  (high overlap — sanity check)
+    Group B: 0.80  (medium overlap)
+    Group C: 0.40  (unique holdout per user — hardest group)
+    Group out: 1.00  (cross-domain — sanity check)
 
-Matching mode comparison:
-  heuristic:  avg score 0.41
-  semantic:   avg score 0.58  (+41%)
+Matching mode comparison (Groups A/B/out, 30 pairs):
+  heuristic:  avg score 0.537  (rarity-weighted overlap, cohort-wide popularity)
+  semantic:   avg score 0.967  (+80% vs heuristic)
+  Spearman r (heuristic vs semantic rankings): 0.461
+  Per-group breakdown:
+    Group A: heuristic 0.583  semantic 0.983  (+69%)  n=10 pairs
+    Group B: heuristic 0.444  semantic 0.943  (+112%) n=10 pairs
+    Group out: heuristic 0.583 semantic 0.975  (+67%)  n=10 pairs
 
-Known failure modes:
+Centroid-collapse probe (mixed-domain users, N=3):
+  pure RPG user → RPG centroid:   0.993  (within-cluster baseline)
+  mixed user    → RPG centroid:   0.792
+  mixed user    → EDM centroid:   0.805
+  → blending two domains pulls the vector to a midpoint: it matches the RPG
+    cluster +0.201 weaker than a pure RPG user does (centroid collapse,
+    measured not assumed).
+
+Evaluation caveats (self-critical assessment):
+  - Synthetic cohort uses seeded engagement scores (0.2–1.0); log1p dampening
+    is exercised but items are still from a narrow eval vocabulary.
+  - Hit Rate@k pooled across groups is not directly comparable: Group C uses
+    unique holdouts per user (hardest), Out-group items cluster tightly (easy).
+    Group A/B hit rate is the most informative signal.
+  - Recall@5 for Out-group is trivially 1.0 (same EDM cluster). It
+    validates domain separation, not intra-domain ranking quality.
+Known failure modes (production):
   - Users with < 20 items: degraded recommendation quality (thin signal)
   - Steam-only users: no genre metadata pre-enrichment → lower embedding quality
-  - Centroid collapse: users with different items can produce similar centroids
+  - Centroid collapse: users whose items span unrelated clusters produce
+    averaged vectors that match neither cluster well (now quantified above)
 ```
 
-This is the scientific evidence that the AI works. Show this to judges. The failure modes section is not a weakness — it is criterion 8.
+This is the scientific evidence that the AI works. Show this to judges. The caveats and failure modes section is not a weakness — it is criterion 8.
+
+> **Metric naming (corrected 2026-06-07):** the matching metric is **Recall@5** (fraction of same-group peers surfaced — ceiling 1.0, vs P@5's structural ceiling of 4/5) and the holdout metric is **Hit Rate@10** (single held-out item per user → binary). The centroid-collapse failure mode is now *measured* by a dedicated mixed-domain probe, not merely asserted.
 
 ---
 

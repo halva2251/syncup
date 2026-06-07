@@ -15,9 +15,10 @@ from sqlalchemy.orm import Session as DbSession
 # same pgvector literal format and must stay in sync with the precision.
 from syncup.api.routes.matches import _format_vec  # noqa: E402
 from syncup.auth.router import RequireAuth
-from syncup.db.models import EMBEDDING_DIM, UserEmbedding
+from syncup.db.models import EMBEDDING_DIM, Item, UserEmbedding, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
+from syncup.ingest._text import normalize_title
 from syncup.limiter import limiter
 
 logger = logging.getLogger(__name__)
@@ -89,10 +90,22 @@ def get_recommendations(
             422,
         )
 
+    # Titles the user already owns on ANY service, for cross-service dedup. The
+    # SQL below excludes owned items by ID, but the same title can exist under
+    # multiple services (different IDs) — without this a user could be recommended
+    # a game they already own from a different source.
+    owned_rows = db.execute(
+        select(Item.name, Item.item_type)
+        .join(UserItem, UserItem.item_id == Item.id)
+        .where(UserItem.user_id == user.id)
+    ).all()
+    owned_keys = {(normalize_title(r.name), r.item_type) for r in owned_rows}
+
     vec_str = _format_vec(list(embedding))
 
-    # Oversample so post-filter (score <= 0) doesn't under-deliver.
-    db_limit = min(limit * 3, 150)
+    # Oversample so post-filters (score <= 0, owned-by-title, title dedup) don't
+    # under-deliver.
+    db_limit = min(limit * 5, 200)
 
     base_sql = (
         f"SELECT i.name, i.service, i.item_type,"
@@ -118,10 +131,20 @@ def get_recommendations(
     rows = db.execute(text(base_sql), params).all()
 
     items: list[RecommendationOut] = []
+    seen_titles: set[tuple[str, str]] = set()
     for row in rows:
         score = max(0.0, min(1.0, 1.0 - float(row.distance)))
         if score <= 0.0:
             continue
+        key = (normalize_title(row.name), row.item_type)
+        if key in owned_keys:
+            # User already owns this title (possibly on a different service).
+            continue
+        if key in seen_titles:
+            # Same title already recommended from a higher-ranked row — dedup.
+            # Rows are distance-ordered, so the first occurrence is the best.
+            continue
+        seen_titles.add(key)
         items.append(
             RecommendationOut(
                 item_name=row.name,

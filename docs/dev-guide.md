@@ -404,7 +404,49 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Phase 2 Block H (feat/phase2-match-upgrade) is complete.** Semantic ANN matching path added alongside the existing heuristic scorer. `_refresh_match_cache` now tries the semantic path first (requires a `combined` user embedding): runs HNSW ANN search via pgvector `<=>` operator on `user_embeddings WHERE service='combined'`, returns up to 50 candidates, scores as `1 - cosine_distance` (candidates with `score <= 0` filtered). Falls back to heuristic item-overlap when no embedding exists. `match_cache` gains `matching_mode TEXT` column (`'heuristic'|'semantic'`). `POST /api/me/recompute` queues `_build_embedding_bg` before `_refresh_match_cache`. Migration `20260606_0011` creates `matching_mode` column and recreates the ANN index as HNSW (replaces planned IVFFlat — HNSW requires no lists-tuning). 931 tests passing.
 
-**Next: Block I (`feat/phase2-recommendations`)** — `GET /api/me/recommendations` endpoint; unblocked by Block H (requires combined user embedding + HNSW item index).
+**Phase 2 Block J (feat/phase2-evaluation) is complete.** `backend/scripts/evaluate.py` — standalone evaluation framework. Constructs a 20-user synthetic cohort (4 groups: high/medium/low/zero overlap), measures **Recall@5** matching quality per group, **Hit Rate@10** holdout recommendation quality per group, compares semantic vs heuristic average scores (with Spearman r) on Groups A/B/out pairs, and runs a **centroid-collapse probe** on mixed-domain users. Results: Recall@5=1.00 all groups, Hit Rate@10 pooled=0.80, semantic avg=0.967 vs heuristic 0.537 (+80%, Spearman r=0.46), mixed-domain users sit ~0.20 weaker to their parent cluster than pure users (collapse quantified). 987 tests passing.
+
+**Block J review fixes (2026-06-07) — the keystone-PR hardening pass.** A strict review (manual + ml-reviewer + code-reviewer, mapped to KI criteria) surfaced two design-vs-implementation gaps and several robustness items, all fixed:
+
+- **Service-aware user embedding (the important one).** The user vector is now built in two levels so the per-service **dimension-weight slider is authoritative regardless of library size**. Previously a flat global weighted sum let item count dominate (50 games + 5 tracks at music=0.7 still leaned games). Now: (1) *within* a service, `aggregate_vectors` produces a unit "service taste direction" (log1p-dampened engagement, boost as a within-service lever); (2) *across* services, `combine_service_vectors` does a **linear** weighted sum by dimension weight (no log1p) — so 0.7 vs 0.3 → exactly 0.7:0.3. Both are pure functions in `user_embeddings.py`.
+- **Honest log1p framing.** log1p runs on already-normalized `engagement_score ∈ [0,1]` where it is near-linear (mild concave reweighting), *not* the raw-play-count whale-dampener the old docstring claimed. Docstring corrected.
+- **Semantic mode is authoritative.** Once a combined embedding exists, `_refresh_match_cache` never falls back to heuristic (even when all ANN neighbours score ≤ 0), eliminating matching_mode churn on symmetric pairs.
+- **In-flight refresh guard.** `_try_acquire_refresh`/`_release_refresh` stop repeated empty-page `/api/matches` requests from stacking redundant background refreshes.
+- **Drift-tolerant highlights.** `_parse_highlights` validates each cached highlight and skips malformed entries instead of 500-ing the list.
+- **Eval honesty.** Mixed-domain centroid-collapse probe (measured, not asserted) + `Item(meta=)` genre-persistence fix in the eval script.
+
+Run with:
+```bash
+cd backend && source .venv/bin/activate
+python scripts/evaluate.py                   # full 20-user cohort
+python scripts/evaluate.py --cohort-size 2   # fast 8-user smoke test
+python scripts/evaluate.py --no-cleanup      # keep synthetic rows for inspection
+```
+
+**Operational scripts (recommendations cold-start + QA):**
+- `scripts/seed_catalog.py` — seeds ~170 curated, taste-distinctive items (games,
+  artists, films, albums, anime) with **production-consistent embeddings** (reuses
+  `item_to_text`). Recommendations draw from the shared catalog, so without this a
+  single-user instance has nothing to recommend (it owns ~all items). Idempotent
+  (`seed-<slug>` external_ids skip on re-run) and reversible (`--wipe`). Seeded
+  items use realistic service names; the recommendations owned-by-title dedup
+  ensures a user is never recommended a title they already own under their real
+  synced copy.
+  ```bash
+  python scripts/seed_catalog.py            # insert (skips existing)
+  python scripts/seed_catalog.py --dry-run  # preview
+  python scripts/seed_catalog.py --wipe     # remove all seeded items
+  ```
+- `scripts/qa_sweep.py` — autonomous, self-cleaning QA harness: seeds a catalog,
+  drives the live HTTP API as a throwaway user, and asserts invariants
+  (recommendation dedup, owned-by-title exclusion, score range/order, item_type
+  filter, limit bounds, cross-domain recs, endpoint smoke). 22/22 pass.
+
+**Recommendations cross-service dedup (2026-06-07):** `GET /api/me/recommendations`
+excludes a title the user owns on *any* service (normalize_title + item_type, not
+just item_id) and never returns the same title twice — the higher-similarity copy
+wins; distinct franchise entries are preserved. Oversample is `limit*5` (cap 200)
+so the post-filters don't under-deliver.
 
 ---
 

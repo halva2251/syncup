@@ -4,7 +4,8 @@ Covers:
 - matching_mode field present in GET /api/matches and GET /api/matches/{id} responses
 - _compute_semantic_scores: score = 1 - distance, breakdown, uuid ordering, clamping
 - _compute_match_scores: sets matching_mode='heuristic'
-- _refresh_match_cache: semantic path taken when combined embedding exists, heuristic fallback otherwise
+- _refresh_match_cache: semantic path taken when combined embedding exists,
+  heuristic fallback otherwise
 - _read_semantic_data: returns None when user has no combined embedding
 - POST /api/me/recompute: triggers embedding build before cache refresh
 - _SEMANTIC_CANDIDATE_LIMIT constant
@@ -593,3 +594,139 @@ def test_build_embedding_bg_always_closes_session() -> None:
         _build_embedding_bg(factory, user_id)
 
     db.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Fix #4 — semantic mode is authoritative: no heuristic fallthrough when a
+# combined embedding exists but every ANN neighbour scores <= 0.
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_semantic_authoritative_no_heuristic_fallthrough() -> None:
+    """When an embedding exists but all ANN candidates score <= 0, the refresh must
+    NOT fall through to the heuristic path (would churn symmetric pairs / flip mode)."""
+    from syncup.api.routes.matches import _refresh_match_cache
+
+    user_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    # distance 1.5 → similarity -0.5 → filtered out by _compute_semantic_scores
+    far_candidate = (other_id, 1.5)
+
+    with (
+        patch(
+            "syncup.api.routes.matches._read_semantic_data",
+            return_value=([far_candidate], [], []),
+        ) as mock_sem,
+        patch("syncup.api.routes.matches._read_match_data") as mock_heuristic,
+        patch("syncup.api.routes.matches._write_match_results") as mock_write,
+    ):
+        _refresh_match_cache(MagicMock(), user_id)
+
+    mock_sem.assert_called_once()
+    mock_heuristic.assert_not_called()  # authoritative — no fallthrough
+    mock_write.assert_not_called()  # nothing positive to write
+
+
+# ---------------------------------------------------------------------------
+# Fix #3 — in-flight refresh guard (dedupe redundant background refreshes)
+# ---------------------------------------------------------------------------
+
+
+def test_refresh_releases_in_flight_flag_on_success() -> None:
+    from syncup.api.routes import matches as m
+
+    user_id = uuid.uuid4()
+    m._refresh_in_flight.add(user_id)
+    with (
+        patch("syncup.api.routes.matches._read_semantic_data", return_value=None),
+        patch("syncup.api.routes.matches._read_match_data", return_value=None),
+    ):
+        m._refresh_match_cache(MagicMock(), user_id)
+    assert user_id not in m._refresh_in_flight
+
+
+def test_refresh_releases_in_flight_flag_on_exception() -> None:
+    from syncup.api.routes import matches as m
+
+    user_id = uuid.uuid4()
+    m._refresh_in_flight.add(user_id)
+    with (
+        patch("syncup.api.routes.matches._read_semantic_data", return_value=None),
+        patch(
+            "syncup.api.routes.matches._read_match_data",
+            side_effect=RuntimeError("boom"),
+        ),
+        pytest.raises(RuntimeError),
+    ):
+        m._refresh_match_cache(MagicMock(), user_id)
+    assert user_id not in m._refresh_in_flight
+
+
+def test_empty_page_skips_refresh_when_already_in_flight(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """A second empty-page request while a refresh is in flight must not schedule another."""
+    from syncup.api.routes import matches as m
+
+    client, user = match_client
+    m._refresh_in_flight.add(user.id)
+    try:
+        with (
+            patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)),
+            patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh,
+        ):
+            resp = client.get("/api/matches")
+        assert resp.status_code == 200
+        mock_refresh.assert_not_called()
+    finally:
+        m._refresh_in_flight.discard(user.id)
+
+
+def test_empty_page_schedules_refresh_when_not_in_flight(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    from syncup.api.routes import matches as m
+
+    client, user = match_client
+    m._refresh_in_flight.discard(user.id)
+    try:
+        with (
+            patch("syncup.api.routes.matches._load_cached_matches", return_value=([], False)),
+            patch("syncup.api.routes.matches._refresh_match_cache") as mock_refresh,
+        ):
+            resp = client.get("/api/matches")
+        assert resp.status_code == 200
+        mock_refresh.assert_called_once()
+    finally:
+        m._refresh_in_flight.discard(user.id)
+
+
+# ---------------------------------------------------------------------------
+# Fix #4 — match list tolerates malformed highlight JSON without 500
+# ---------------------------------------------------------------------------
+
+
+def test_match_list_skips_malformed_highlight(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    """A drifted/legacy cache row with a malformed highlight must not 500 the list."""
+    client, user = match_client
+    other = _make_user(display_name="Sam")
+    row = _make_cache_row(user.id, other.id)
+    # One good highlight, one malformed (missing 'item_name'), one wrong type
+    row.highlights = [
+        {"service": "steam", "item_name": "Disco Elysium"},
+        {"service": "steam"},
+        "not-a-dict",
+    ]
+    mock_db.scalars.return_value.all.return_value = [other]
+
+    with patch("syncup.api.routes.matches._load_cached_matches", return_value=([row], False)):
+        resp = client.get("/api/matches")
+
+    assert resp.status_code == 200
+    highlights = resp.json()["items"][0]["shared_highlights"]
+    assert highlights == [{"service": "steam", "item_name": "Disco Elysium"}]

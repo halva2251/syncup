@@ -2,13 +2,14 @@
 
 import base64
 import logging
+import threading
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.orm import Session as DbSession
@@ -33,6 +34,28 @@ router = APIRouter(prefix="/api", tags=["matches"])
 
 _CACHE_MAX_AGE_HOURS = 24
 _SEMANTIC_CANDIDATE_LIMIT = 50
+
+# In-flight guard: dedupe redundant background match-cache refreshes for the same
+# user. Without it, repeated empty-page GET /api/matches requests (which schedule a
+# refresh each time) can stack N concurrent _refresh_match_cache runs, amplifying
+# the db.merge()-in-a-loop write contention. BackgroundTasks run in the process
+# threadpool, so a module-level set + lock is sufficient.
+_refresh_in_flight: set[uuid.UUID] = set()
+_refresh_in_flight_lock = threading.Lock()
+
+
+def _try_acquire_refresh(user_id: uuid.UUID) -> bool:
+    """Return True and mark the user in-flight if no refresh is already scheduled."""
+    with _refresh_in_flight_lock:
+        if user_id in _refresh_in_flight:
+            return False
+        _refresh_in_flight.add(user_id)
+        return True
+
+
+def _release_refresh(user_id: uuid.UUID) -> None:
+    with _refresh_in_flight_lock:
+        _refresh_in_flight.discard(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +90,23 @@ class MatchOut(BaseModel):
 class MatchListOut(BaseModel):
     items: list[MatchOut]
     next_cursor: str | None
+
+
+def _parse_highlights(raw: object) -> list[SharedHighlightOut]:
+    """Defensively parse cached highlight JSON.
+
+    A drifted or legacy match_cache row (e.g. a malformed dict or a non-dict
+    entry) must not 500 the whole matches response — skip the bad entry and log.
+    """
+    result: list[SharedHighlightOut] = []
+    if not isinstance(raw, list):
+        return result
+    for entry in raw:
+        try:
+            result.append(SharedHighlightOut.model_validate(entry))
+        except (ValidationError, TypeError):
+            logger.warning("Skipping malformed highlight in match_cache: %r", entry)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -118,7 +158,8 @@ def _load_cached_matches(
     cursor_user_a_id: uuid.UUID | None = None,
     cursor_user_b_id: uuid.UUID | None = None,
 ) -> tuple[list[MatchCache], bool]:
-    """Load a page of cached matches using a keyset cursor on (score DESC, user_a_id ASC, user_b_id ASC).
+    """Load a page of cached matches using a keyset cursor on
+    (score DESC, user_a_id ASC, user_b_id ASC).
 
     Returns (rows, has_more). Fetches limit+1 to detect the next page without COUNT.
     """
@@ -438,31 +479,39 @@ def _build_embedding_bg(db_factory: sessionmaker[DbSession], user_id: uuid.UUID)
 def _refresh_match_cache(db_factory: sessionmaker[DbSession], user_id: uuid.UUID) -> None:
     """Recompute match scores and write to match_cache.
 
-    Tries the semantic ANN path first (requires a combined embedding). Falls back
-    to the heuristic item-overlap path when no embedding exists.
-    Runs as a BackgroundTask; splits into read / compute / write phases so the
-    write transaction is as short as possible.
-    """
-    semantic_data = _read_semantic_data(db_factory, user_id)
+    Uses the semantic ANN path when a combined embedding exists; that path is
+    authoritative — even if every ANN neighbour scores <= 0 it does NOT fall
+    through to the heuristic path, which would recompute against all users, flip
+    matching_mode, and churn symmetric cache rows (roadmap §2.6 b). The heuristic
+    item-overlap path is used only when the user has no combined embedding at all.
 
-    if semantic_data is not None:
-        candidate_pairs, item_rows, pop_rows = semantic_data
-        now = datetime.now(UTC)
-        results = _compute_semantic_scores(user_id, candidate_pairs, item_rows, pop_rows, now)
-        if results:
-            _write_match_results(db_factory, results)
+    Runs as a BackgroundTask; splits into read / compute / write phases so the
+    write transaction is as short as possible. Always releases the in-flight guard.
+    """
+    try:
+        semantic_data = _read_semantic_data(db_factory, user_id)
+
+        if semantic_data is not None:
+            candidate_pairs, item_rows, pop_rows = semantic_data
+            now = datetime.now(UTC)
+            results = _compute_semantic_scores(user_id, candidate_pairs, item_rows, pop_rows, now)
+            if results:
+                _write_match_results(db_factory, results)
+            # Semantic mode is authoritative once an embedding exists — stop here.
             return
 
-    data = _read_match_data(db_factory, user_id)
-    if data is None:
-        return
+        data = _read_match_data(db_factory, user_id)
+        if data is None:
+            return
 
-    matchable_ids, rows, pop_rows = data
-    now = datetime.now(UTC)
-    results = _compute_match_scores(user_id, matchable_ids, rows, pop_rows, now)
+        matchable_ids, rows, pop_rows = data
+        now = datetime.now(UTC)
+        results = _compute_match_scores(user_id, matchable_ids, rows, pop_rows, now)
 
-    if results:
-        _write_match_results(db_factory, results)
+        if results:
+            _write_match_results(db_factory, results)
+    finally:
+        _release_refresh(user_id)
 
 
 # ---------------------------------------------------------------------------
@@ -518,9 +567,11 @@ def get_matches(
 
     if not page:
         # Empty page means either no cache or the cache expired mid-session.
-        # Always schedule a background refresh so the client gets fresh results
-        # on the next request, regardless of which page they were on.
-        background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
+        # Schedule a background refresh so the client gets fresh results on the
+        # next request — but only if one isn't already in flight for this user,
+        # to avoid stacking redundant concurrent refreshes.
+        if _try_acquire_refresh(user.id):
+            background_tasks.add_task(_refresh_match_cache, request.app.state.db, user.id)
         return MatchListOut(items=[], next_cursor=None)
 
     last_row = page[-1]
@@ -544,7 +595,7 @@ def get_matches(
                 user=MatchUserOut.model_validate(other),
                 score=row.score,
                 breakdown=row.breakdown,
-                shared_highlights=[SharedHighlightOut(**h) for h in row.highlights],
+                shared_highlights=_parse_highlights(row.highlights),
                 computed_at=row.computed_at,
                 matching_mode=cast(Literal["heuristic", "semantic"], row.matching_mode),
             )
@@ -580,7 +631,7 @@ def get_match_detail(
         user=MatchUserOut.model_validate(other),
         score=row.score,
         breakdown=row.breakdown,
-        shared_highlights=[SharedHighlightOut(**h) for h in row.highlights],
+        shared_highlights=_parse_highlights(row.highlights),
         computed_at=row.computed_at,
         matching_mode=cast(Literal["heuristic", "semantic"], row.matching_mode),
     )
