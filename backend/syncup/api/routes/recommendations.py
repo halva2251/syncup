@@ -11,11 +11,9 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DbSession
 
-# Import the shared vec-formatting helper from matches.py — both routes use the
-# same pgvector literal format and must stay in sync with the precision.
-from syncup.api.routes.matches import _format_vec  # noqa: E402
 from syncup.auth.router import RequireAuth
 from syncup.db.models import EMBEDDING_DIM, Item, UserEmbedding, UserItem
+from syncup.db.pgvector import format_vec
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.ingest._text import normalize_title
@@ -101,7 +99,7 @@ def get_recommendations(
     ).all()
     owned_keys = {(normalize_title(r.name), r.item_type) for r in owned_rows}
 
-    vec_str = _format_vec(list(embedding))
+    vec_str = format_vec(list(embedding))
 
     # Oversample so post-filters (score <= 0, owned-by-title, title dedup) don't
     # under-deliver.

@@ -1,4 +1,5 @@
 """GET /api/me/taste — aggregated taste profile."""
+
 from __future__ import annotations
 
 import uuid
@@ -211,10 +212,14 @@ def get_taste(
     user: RequireAuth,
 ) -> TasteOut:
     """Return the authenticated user's aggregated taste profile."""
-    rn = func.row_number().over(
-        partition_by=[Item.service, Item.item_type],
-        order_by=UserItem.engagement_score.desc(),
-    ).label("rn")
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=[Item.service, Item.item_type],
+            order_by=UserItem.engagement_score.desc(),
+        )
+        .label("rn")
+    )
 
     subq = (
         select(
@@ -233,9 +238,7 @@ def get_taste(
     )
 
     taste_rows = db.execute(
-        select(subq)
-        .where(subq.c.rn <= _TASTE_TOP_N)
-        .order_by(subq.c.engagement_score.desc())
+        select(subq).where(subq.c.rn <= _TASTE_TOP_N).order_by(subq.c.engagement_score.desc())
     ).all()
 
     groups: defaultdict[tuple[str, str], list] = defaultdict(list)
@@ -274,6 +277,7 @@ def get_taste(
         select(ManualObsession)
         .where(ManualObsession.user_id == user.id)
         .order_by(ManualObsession.created_at.desc())
+        .limit(100)
     ).all()
 
     override_rows = db.execute(
@@ -288,7 +292,13 @@ def get_taste(
     ).all()
 
     return TasteOut(
-        services=ServicesOut(steam=steam, lastfm=lastfm, spotify=spotify, letterboxd=letterboxd, rateyourmusic=rateyourmusic),
+        services=ServicesOut(
+            steam=steam,
+            lastfm=lastfm,
+            spotify=spotify,
+            letterboxd=letterboxd,
+            rateyourmusic=rateyourmusic,
+        ),
         manual_obsessions=[
             ManualObsessionOut(
                 id=o.id,

@@ -1,4 +1,5 @@
 """Auth routes: signup, login, logout, and the require_auth dependency."""
+
 from __future__ import annotations
 
 import logging
@@ -135,6 +136,7 @@ def signup(
     """Create a new account and set a session cookie."""
     existing = db.scalar(select(User).where(User.email == body.email))
     if existing is not None:
+        verify_password_dummy(body.password)  # constant-time: don't reveal email existence
         raise SyncUpError("EMAIL_TAKEN", "An account with that email already exists", 409)
 
     now = datetime.now(UTC)
@@ -159,9 +161,7 @@ def signup(
         db.rollback()
         # Race condition: another request beat us to the same email between
         # our pre-check and the INSERT.
-        raise SyncUpError(
-            "EMAIL_TAKEN", "An account with that email already exists", 409
-        ) from exc
+        raise SyncUpError("EMAIL_TAKEN", "An account with that email already exists", 409) from exc
 
     logger.info("New user signed up: %s", user.id)
 

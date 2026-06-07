@@ -40,7 +40,7 @@ STEAM_API_KEY=your_key_here
 
 ## 2. Last.fm
 
-Last.fm uses an **API key + shared secret** pair. For our use case (read-only listening history), no OAuth is strictly required — you can fetch public data by username.
+Last.fm issues an **API key + shared secret** pair, but we only need the API key — request signing (which needs the shared secret) is only required for write/auth methods. We only call read-only public-data methods by username.
 
 ### Steps
 
@@ -50,7 +50,7 @@ Last.fm uses an **API key + shared secret** pair. For our use case (read-only li
    - **Application name**: `SyncUp (dev - your_name)`
    - **Application description**: taste-based matching
    - **Callback URL**: `http://127.0.0.1:3000/api/auth/lastfm/callback` (only needed if doing full auth flow later)
-4. Submit. You'll see your API key and shared secret on the next page.
+4. Submit. You'll see your API key on the next page (ignore the shared secret — we don't use it).
 
 ### What you can fetch
 
@@ -63,7 +63,6 @@ Last.fm uses an **API key + shared secret** pair. For our use case (read-only li
 
 ```
 LASTFM_API_KEY=your_key_here
-LASTFM_SHARED_SECRET=your_secret_here
 ```
 
 ### Docs
@@ -242,7 +241,6 @@ STEAM_API_KEY=
 
 # Last.fm
 LASTFM_API_KEY=
-LASTFM_SHARED_SECRET=
 
 # Spotify
 SPOTIFY_CLIENT_ID=

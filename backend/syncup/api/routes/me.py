@@ -1,4 +1,5 @@
 """GET/PATCH /api/me — current user profile and service connections."""
+
 from __future__ import annotations
 
 from typing import Annotated
@@ -38,6 +39,19 @@ class ProfilePatch(BaseModel):
             v = v.strip()
             if not v:
                 raise ValueError("cannot be blank")
+        return v
+
+    @field_validator("avatar_url", mode="before")
+    @classmethod
+    def validate_avatar_url(cls, v: object) -> object:
+        if v is None:
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+            if not (v.startswith("http://") or v.startswith("https://")):
+                raise ValueError("must be an http(s) URL")
         return v
 
 

@@ -6,7 +6,7 @@ import logging
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any, Self
+from typing import Annotated, Literal, Self, TypedDict
 
 import httpx
 from fastapi import APIRouter, Depends, Query, Request, UploadFile
@@ -40,6 +40,34 @@ router = APIRouter(prefix="/api/connect", tags=["connect"])
 # Spotify auth lives under /api/auth (not /api/connect) for legacy URL compatibility.
 # A10: moved here from app.py to keep all service-connection logic in one module.
 spotify_auth_router = APIRouter(prefix="/api/auth", tags=["connect"])
+
+
+class CookieOpts(TypedDict):
+    httponly: bool
+    samesite: Literal["lax", "strict", "none"]
+    max_age: int
+    secure: bool
+
+
+class CookieDeleteOpts(TypedDict):
+    httponly: bool
+    samesite: Literal["lax", "strict", "none"]
+    secure: bool
+    path: str
+
+
+def _oauth_cookie_opts(settings: Settings, *, max_age: int = 600) -> CookieOpts:
+    """Build the standard short-lived OAuth state/verifier cookie options.
+
+    A typed dict catches typos like `secure="False"` (a truthy string) at
+    type-check time instead of silently weakening cookie security.
+    """
+    return CookieOpts(
+        httponly=True,
+        samesite="lax",
+        max_age=max_age,
+        secure=not settings.debug,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -374,12 +402,7 @@ def anilist_oauth_start(
     state = secrets.token_urlsafe(16)
     url = client.get_authorize_url(state=state)
 
-    _cookie_opts: dict[str, Any] = {
-        "httponly": True,
-        "samesite": "lax",
-        "max_age": 600,
-        "secure": not settings.debug,
-    }
+    _cookie_opts = _oauth_cookie_opts(settings)
     response = RedirectResponse(url=url, status_code=302)
     response.set_cookie(_ANILIST_STATE_COOKIE, state, **_cookie_opts)
     return response
@@ -520,12 +543,7 @@ def trakt_oauth_start(
     state = secrets.token_urlsafe(16)
     url = client.get_authorize_url(state=state)
 
-    _cookie_opts: dict[str, Any] = {
-        "httponly": True,
-        "samesite": "lax",
-        "max_age": 600,
-        "secure": not settings.debug,
-    }
+    _cookie_opts = _oauth_cookie_opts(settings)
     response = RedirectResponse(url=url, status_code=302)
     response.set_cookie(_TRAKT_STATE_COOKIE, state, **_cookie_opts)
     return response
@@ -646,12 +664,7 @@ def reddit_oauth_start(
     state = secrets.token_urlsafe(16)
     url = client.get_authorize_url(state=state)
 
-    _cookie_opts: dict[str, Any] = {
-        "httponly": True,
-        "samesite": "lax",
-        "max_age": 600,
-        "secure": not settings.debug,
-    }
+    _cookie_opts = _oauth_cookie_opts(settings)
     response = RedirectResponse(url=url, status_code=302)
     response.set_cookie(_REDDIT_STATE_COOKIE, state, **_cookie_opts)
     return response
@@ -898,18 +911,14 @@ def spotify_auth_start(
 
     redirect_url = client.get_authorize_url(state=state, code_challenge=challenge)
     response = RedirectResponse(url=redirect_url)
-    _cookie_opts: dict[str, Any] = {
-        "httponly": True,
-        "samesite": "lax",
-        "max_age": 600,
-        "secure": not settings.debug,
-    }
+    _cookie_opts = _oauth_cookie_opts(settings)
     response.set_cookie("spotify_state", state, **_cookie_opts)
     response.set_cookie("spotify_verifier", verifier, **_cookie_opts)
     return response
 
 
 @spotify_auth_router.get("/spotify/callback")
+@limiter.limit("10/minute")
 def spotify_callback(
     request: Request,
     code: Annotated[str, Query(min_length=1)],
@@ -990,12 +999,12 @@ def spotify_callback(
 
     logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
 
-    _state_cookie_del_opts = {
-        "httponly": True,
-        "samesite": "lax",
-        "secure": not settings.debug,
-        "path": "/",
-    }
+    _state_cookie_del_opts = CookieDeleteOpts(
+        httponly=True,
+        samesite="lax",
+        secure=not settings.debug,
+        path="/",
+    )
     response = RedirectResponse("/", status_code=302)
     response.delete_cookie("spotify_state", **_state_cookie_del_opts)
     response.delete_cookie("spotify_verifier", **_state_cookie_del_opts)

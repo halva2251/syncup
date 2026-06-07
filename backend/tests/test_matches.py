@@ -599,10 +599,12 @@ def test_match_cache_uuid_pair_always_has_a_less_than_b() -> None:
     with patch("syncup.api.routes.matches._read_semantic_data", return_value=None):
         _refresh_match_cache(factory, user_id)
 
-    write_db.merge.assert_called_once()
-    merged_row = write_db.merge.call_args[0][0]
-    assert merged_row.user_a_id < merged_row.user_b_id, (
-        f"Expected user_a_id < user_b_id but got {merged_row.user_a_id} >= {merged_row.user_b_id}"
+    write_db.execute.assert_called_once()
+    stmt = write_db.execute.call_args[0][0]
+    values = stmt.compile().params
+    assert values["user_a_id_m0"] < values["user_b_id_m0"], (
+        f"Expected user_a_id < user_b_id but got "
+        f"{values['user_a_id_m0']} >= {values['user_b_id_m0']}"
     )
 
 
