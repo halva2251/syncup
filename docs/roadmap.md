@@ -76,6 +76,10 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | `GET /api/me/recommendations` — cross-domain item recs from combined taste vector; `item_type` filter allowlist (9 types); `NOT EXISTS` ownership check; `similarity_score = 1 - cosine_distance` clamped to `[0, 1]`; 422 `NO_EMBEDDING_AVAILABLE` guard | `syncup/api/routes/recommendations.py` |
 | Block J review fixes — **service-aware user embedding** (`combine_service_vectors`: per-service mean-pool then linear dim-weight so the slider is authoritative over item count), semantic-authoritative match refresh (no heuristic churn), in-flight refresh guard, drift-tolerant highlight parsing, honest log1p docstring, centroid-collapse eval probe, `Item(meta)` genre-persistence fix | `syncup/embeddings/user_embeddings.py`, `syncup/api/routes/{embeddings,matches}.py`, `scripts/evaluate.py` |
 | 987 passing tests | `backend/tests/` |
+| Recommendations cross-service dedup — excludes any title the user owns on *any* service (`normalize_title` + `item_type`, not just `item_id`); same title never returned twice (highest-similarity copy wins); franchise variants preserved; oversample raised to `limit*5` (cap 200) | `syncup/api/routes/recommendations.py` |
+| `scripts/qa_sweep.py` — autonomous, self-cleaning QA harness: seeds a catalog, drives the live HTTP API as a throwaway user, asserts dedup/exclusion/score/filter/limit/cross-domain/smoke invariants (22/22 pass) | `backend/scripts/qa_sweep.py` |
+| `scripts/seed_catalog.py` — seeds ~170 curated, taste-distinctive items (45 games, 45 artists, 35 films, 25 albums, 20 anime) with production-consistent embeddings (`item_to_text` + `embed_batch`), solving the recommendations cold-start for single/few-user instances; idempotent (`seed-<slug>` external_ids), reversible (`--wipe`), `--dry-run` preview | `backend/scripts/seed_catalog.py` |
+| 998 passing tests | `backend/tests/` |
 
 ---
 
@@ -648,6 +652,11 @@ Cross-domain is automatic: combined taste vector spans all services, so asking f
 
 For the KI Challenge: recommendations are a compelling live demo. Connect Steam, run the endpoint, get back items you've never played but actually would love. More tangible to judges than matching scores.
 
+**Cross-service dedup + cold-start seeding (added 2026-06-07, after live manual testing surfaced both issues):**
+- **Dedup:** a title the user owns on *any* service is excluded — matched via `normalize_title(name)` + `item_type`, not just `item_id` — so a game owned on Steam isn't re-recommended from another service's catalog row under a different id. The same title is never returned twice (highest-similarity copy wins, distinct franchise entries like *Avatar* vs *Avatar: The Way of Water* are kept). Oversample raised to `limit*5` (cap 200) so the extra filtering doesn't under-deliver.
+- **Cold start:** recommendations draw from the *shared* item catalog. A near-empty catalog (e.g. a single real user who owns ~all of it) has nothing left to recommend — this looked like a bug ("only 5 recommendations") but was confirmed to be cold-start by `scripts/qa_sweep.py`. `scripts/seed_catalog.py` solves it by seeding ~170 curated, taste-distinctive items across games/artists/films/albums/anime with **production-consistent embeddings** (reuses `item_to_text` + `embed_batch`, so seeded items live in the same vector space as real synced items). Idempotent (`seed-<slug>` external_ids skip on re-run), reversible (`--wipe`). Verified end-to-end: recommendations went from 5 → 15 meaningful, on-taste items for a real account.
+- `scripts/qa_sweep.py` is an autonomous, self-cleaning QA harness — seeds a catalog, drives the live HTTP API as a throwaway user, and asserts dedup/exclusion/score-range/item_type-filter/limit/cross-domain/smoke invariants (22/22 pass). Run it after any change to the recommendations path.
+
 ### 2.7 Public taste card endpoint
 
 **Status:** Not started. Backend data (`GET /api/me/taste`) already live; this adds a public unauthenticated version for shareable links.
@@ -682,7 +691,7 @@ Frontend unifies these in a "manage your taste" view (Phase 3, friend's job).
 
 ### 2.8 Evaluation framework ✅
 
-**Status:** Complete. `backend/scripts/evaluate.py` — 987 tests passing (Block J review fixes applied 2026-06-07).
+**Status:** Complete. `backend/scripts/evaluate.py` — 987 tests passing when Block J review fixes landed (2026-06-07); 998 passing after the follow-up recommendations cross-service dedup fix, `qa_sweep.py`, and `seed_catalog.py` landed the same day (see §2.6 and the Done table above).
 
 A standalone evaluation script that measures how well the AI is actually working — without requiring real users. Without this, we can't answer "how do you know your matching works?" in front of judges.
 

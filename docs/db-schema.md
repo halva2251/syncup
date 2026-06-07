@@ -40,6 +40,10 @@ CREATE TABLE users (
     languages       TEXT[],                     -- nullable; skippable during onboarding
     is_matchable    BOOLEAN NOT NULL DEFAULT false,
     onboarded       BOOLEAN NOT NULL DEFAULT false,
+    vibe_summary    TEXT,                       -- LLM-generated 2-3 sentence taste summary (Phase 2 Block F)
+    archetype       TEXT,                       -- LLM-generated label, e.g. "The Patient Aesthete"
+    key_themes      TEXT[],                     -- LLM-generated list of 3-5 cross-domain themes
+    vibe_computed_at TIMESTAMPTZ,               -- set when vibe synthesis last ran; null if no llm_api_key configured
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()  -- auto-updated by trigger trg_users_updated_at
 );
@@ -100,8 +104,9 @@ CREATE TABLE items (
 );
 
 CREATE INDEX idx_items_service_type ON items(service, item_type);
-CREATE INDEX idx_items_embedding ON items USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 200);
+CREATE INDEX idx_items_embedding ON items USING hnsw (embedding vector_cosine_ops);
+-- Switched from IVFFlat to HNSW in migration 20260606_0012 (Phase 2 Block I):
+-- no lists/probes tuning required, handles dynamic inserts gracefully.
 
 -- =============================================================
 -- User items: per-user engagement with catalog items
@@ -116,6 +121,7 @@ CREATE TABLE user_items (
     raw_value         REAL,             -- original metric: minutes (Steam), play count (Last.fm/Spotify), rating (Letterboxd/AniList/Trakt/RYM)
     raw_type          TEXT NOT NULL DEFAULT 'consumption'  -- 'consumption' | 'rating'
                           CHECK (raw_type IN ('consumption', 'rating')),
+    excluded          BOOLEAN NOT NULL DEFAULT false,  -- user-controlled removal from vector/LLM/recs (Phase 2 Block E)
     last_engaged_at   TIMESTAMPTZ,
     fetched_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, item_id)
@@ -184,10 +190,11 @@ CREATE TABLE user_embeddings (
     PRIMARY KEY (user_id, service)
 );
 
--- Partial index for the combined-vector nearest-neighbour search
+-- Partial index for the combined-vector nearest-neighbour search.
+-- Switched from IVFFlat to HNSW in migration 20260606_0011 (Phase 2 Block H):
+-- no lists/probes tuning required, performs well from single-digit to millions of rows.
 CREATE INDEX idx_user_embeddings_combined
-    ON user_embeddings USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 200)
+    ON user_embeddings USING hnsw (embedding vector_cosine_ops)
     WHERE service = 'combined';
 
 -- =============================================================
@@ -200,6 +207,7 @@ CREATE TABLE match_cache (
     score        REAL NOT NULL,        -- 0..1 heuristic/cosine similarity
     breakdown    JSONB NOT NULL,       -- {steam: 0.72, lastfm: 0.89, spotify: 0.81}
     highlights   JSONB NOT NULL DEFAULT '[]',  -- [{service, item_name}, ...] top shared items
+    matching_mode TEXT NOT NULL DEFAULT 'heuristic',  -- 'heuristic' | 'semantic' (Phase 2 Block H, migration 20260606_0011)
     computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_a_id, user_b_id),
     CHECK (user_a_id < user_b_id)
@@ -227,7 +235,8 @@ CREATE INDEX idx_sessions_expires ON sessions(expires_at);
 
 ## Open questions (to resolve during implementation)
 
-- **Embedding dimension** — resolved: `vector(384)`. `all-MiniLM-L6-v2` outputs 384-dim vectors. Migration `20260520_0010` applied this change. IVFFlat `lists=200` is appropriate for 384-dim vectors.
+- **Embedding dimension** — resolved: `vector(384)`. `all-MiniLM-L6-v2` outputs 384-dim vectors. Migration `20260520_0010` applied this change.
+- **ANN index type** — resolved: both `idx_items_embedding` and `idx_user_embeddings_combined` were switched from IVFFlat to **HNSW** (migrations `20260606_0011` and `20260606_0012`). HNSW requires no `lists`/`probes` tuning and performs well from single-digit to millions of rows — a better fit for an early-stage table with no representative row count to tune against.
 - **Token encryption** — `BYTEA` columns assume symmetric encryption (AES-GCM) with a key from env. Decide key rotation strategy later.
 - **Match cache TTL** — initial target: invalidate on any embedding update for either user; hard-expire after 24h.
 - **`items.metadata` shape** — free JSONB, but the following keys are load-bearing and must stay stable:
