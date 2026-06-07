@@ -4,6 +4,8 @@ Each service needs its own registration. Both developers should register indepen
 
 Put all secrets in `backend/.env` (never commit). Use the variable names listed in each section.
 
+**Letterboxd and RateYourMusic need no credentials** — they're CSV-import services (`POST /api/connect/{service}/import`). Users upload their data export directly; see `docs/export-guide.md` for where to find it.
+
 ---
 
 ## 1. Steam

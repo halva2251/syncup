@@ -6,7 +6,7 @@ Internals, design decisions, and a map of what still needs to be built. Read thi
 
 ## The idea in one paragraph
 
-SyncUp matches people based on their actual taste across platforms — not demographics, not dating. A user connects their Steam, Spotify, and Last.fm accounts. The system ingests their data (games owned + playtime, top artists, top tracks), builds a per-user embedding vector from item-level embeddings trained on public datasets, then finds other users whose vectors are close in cosine space. Users control per-service dimension weights ("weight my music 70%, games 30%") and can boost items that underrepresent their taste (e.g. "I love Disco Elysium despite low hours"). Matches share a profile card and a Discord/social handle — no in-app chat.
+SyncUp matches people based on their actual taste across platforms — not demographics, not dating. A user connects services like Steam, Spotify, Last.fm, Letterboxd, AniList, Trakt, Reddit, and RateYourMusic. The system ingests their data (games owned + playtime, top artists, ratings, subreddit subscriptions, etc.), embeds each item with a semantic sentence-transformer model (`all-MiniLM-L6-v2`, 384-dim — see Phase 2 in `roadmap.md`), and aggregates a user's items into a single `combined` taste vector via service-aware two-level pooling (so dimension-weight sliders are authoritative regardless of library size). Matches are found via HNSW ANN cosine search on that vector, with a heuristic item-overlap fallback for users without an embedding yet. Users control per-service dimension weights ("weight my music 70%, games 30%") and can boost or exclude items that misrepresent their taste (e.g. "I love Disco Elysium despite low hours"). Matches share a profile card and a Discord/social handle — no in-app chat.
 
 ---
 
@@ -287,68 +287,59 @@ alembic upgrade head
 
 ---
 
-## Embedding pipeline (`syncup/embeddings/`)
+## Embedding pipeline (`syncup/embeddings/`) — Phase 2 (live)
 
-### Item2Vec (`item2vec.py`)
+This is the current, live pipeline. It replaced the original Item2Vec-on-public-datasets plan — see `docs/brainstorm.md §ML Architecture Decisions` for why separate per-service Item2Vec models can't support cross-domain matching.
 
-A Word2Vec model where "words" are item IDs and "sentences" are play sequences (games a user has played, or tracks a user has listened to). Items that appear together in many users' histories end up near each other in vector space.
+### `semantic.py` + `item_text.py` — item embeddings
 
-```python
-from pathlib import Path
-from syncup.embeddings.item2vec import TrainingConfig, Item2VecModel
-
-config = TrainingConfig(vector_size=128, min_count=5, epochs=10)
-
-# sequences: list of lists of item IDs (strings)
-# e.g. [["730", "570", "271590"], ["730", "4000"], ...]
-model = Item2VecModel.train(sequences, config)
-
-vec = model.vector("730")            # list[float] for CS2
-similar = model.most_similar("730", k=10)
-model.save(Path("path/to/model.bin"))
-
-# Later:
-model2 = Item2VecModel.load(Path("path/to/model.bin"))
-```
-
-### User embeddings (`user_embeddings.py`)
-
-Takes a trained Item2Vec model + a user's item interactions and builds a single weighted-average vector for that user.
+Every catalog item is converted to a descriptive string (`item_to_text`, format varies per service/item_type — see roadmap §2.1) and embedded with a lazy-loaded `sentence-transformers` model (`all-MiniLM-L6-v2`, 384-dim, L2-normalised):
 
 ```python
-from syncup.embeddings.user_embeddings import build_user_vector
+from syncup.embeddings.semantic import embed_text, embed_batch
+from syncup.embeddings.item_text import item_to_text
 
-# item_id → engagement weight (playtime in minutes, play count, etc.)
-interactions = {
-    "730": 100.0,   # CS2, 100 hours
-    "570": 50.0,    # Dota 2, 50 hours
-}
-
-user_vec = build_user_vector(interactions, model)  # list[float], L2-normalised
+text = item_to_text(item)            # e.g. "Disco Elysium — game, RPG, narrative"
+vec = embed_text(text)               # list[float], 384-dim, L2-normalised
+vecs = embed_batch([text1, text2])   # batched, more efficient for many items
 ```
 
-Weight is typically playtime (minutes) for games, play count for tracks, or the user's explicit boost value. Weights are log1p-dampened internally so no single item dominates.
+Run `scripts/populate_item_embeddings.py` (after the enrichment scripts) to backfill `items.embedding` for the whole catalog.
+
+### `user_embeddings.py` — service-aware two-level aggregation
+
+Builds the `combined` user vector that ANN search operates on. Two pure functions, no model dependency — they take pre-fetched `(vector, weight)` pairs:
+
+```python
+from syncup.embeddings.user_embeddings import aggregate_vectors, combine_service_vectors
+
+# 1. Within a service: log1p-dampened weighted sum → unit "service taste direction"
+service_vec = aggregate_vectors([(item_vec * boost, engagement_score), ...])
+
+# 2. Across services: LINEAR weighted sum by dimension weight → combined vector
+combined_vec = combine_service_vectors([(steam_vec, 0.3), (spotify_vec, 0.7)])
+```
+
+Mean-pooling each service to unit mass *before* applying the dimension weight is what makes the weight slider authoritative regardless of library size — see roadmap §2.3 for the full reasoning (this was a real bug found and fixed during the Block J review). `POST /api/embeddings/build` (in `api/routes/embeddings.py`) wires this together: per-service cap of top 50 by `engagement_score`, applies `boost_multiplier` and `dim_weight`, upserts `user_embeddings` with `service='combined'`.
+
+`item2vec.py` (`Item2VecModel`, `build_user_vector`) remains in the codebase as a legacy/future-optional path — not part of the live pipeline. See roadmap §Phase 2 architecture note.
 
 ---
 
-## Matching engine (`syncup/matching/engine.py`)
+## Matching engine — Phase 2 (live)
 
-Cosine similarity between user vectors, with optional per-service dimension weighting.
+`_refresh_match_cache` in `api/routes/matches.py` is the live matching path:
+
+1. **Semantic (preferred):** if the user has a `user_embeddings` row with `service='combined'`, runs an HNSW ANN cosine search (`embedding <=> :query` via pgvector) against other matchable users' combined vectors. `score = 1 - cosine_distance`, candidates with `score <= 0` (antipodal) filtered. Once a user has a combined embedding, this path is authoritative — it never falls back to heuristic, even if every neighbour scores ≤ 0.
+2. **Heuristic (fallback):** for users without a combined embedding, `syncup/matching/heuristic.py` does rarity-weighted item-overlap scoring (`syncup/matching/engine.py` provides the underlying `UserProfile`/cosine-similarity primitives it builds on).
+
+Results are written to `match_cache` with a `matching_mode: "semantic" | "heuristic"` field so the frontend (and the eval script) can distinguish them.
 
 ```python
-from syncup.matching.engine import UserProfile, match_score, rank_matches
+from syncup.matching.heuristic import heuristic_score
 
-profile_a = UserProfile(user_id="uuid-a", vectors={"steam": vec_a_steam, "spotify": vec_a_spotify})
-profile_b = UserProfile(user_id="uuid-b", vectors={"steam": vec_b_steam, "spotify": vec_b_spotify})
-
-# per-service weights — renormalised automatically over shared services
-weights = {"steam": 0.3, "spotify": 0.7, "lastfm": 0.0}
-
-score = match_score(profile_a, profile_b, weights)
-# Returns float in [-1, 1]. Higher = more similar.
-
-top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
-# Returns list of (UserProfile, score) sorted highest-first.
+score = heuristic_score(user_a_item_ids, user_b_item_ids, item_popularity)
+# Rarity-weighted overlap, normalised to [0, 1) via raw/(raw+1)
 ```
 
 ---
@@ -357,7 +348,7 @@ top_k = rank_matches(profile_a, [profile_b, profile_c], weights, k=10)
 
 ```bash
 cd backend
-pytest                        # all 620 tests
+pytest                        # all 998 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
