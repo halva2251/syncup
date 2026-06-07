@@ -423,6 +423,31 @@ python scripts/evaluate.py --cohort-size 2   # fast 8-user smoke test
 python scripts/evaluate.py --no-cleanup      # keep synthetic rows for inspection
 ```
 
+**Operational scripts (recommendations cold-start + QA):**
+- `scripts/seed_catalog.py` — seeds ~170 curated, taste-distinctive items (games,
+  artists, films, albums, anime) with **production-consistent embeddings** (reuses
+  `item_to_text`). Recommendations draw from the shared catalog, so without this a
+  single-user instance has nothing to recommend (it owns ~all items). Idempotent
+  (`seed-<slug>` external_ids skip on re-run) and reversible (`--wipe`). Seeded
+  items use realistic service names; the recommendations owned-by-title dedup
+  ensures a user is never recommended a title they already own under their real
+  synced copy.
+  ```bash
+  python scripts/seed_catalog.py            # insert (skips existing)
+  python scripts/seed_catalog.py --dry-run  # preview
+  python scripts/seed_catalog.py --wipe     # remove all seeded items
+  ```
+- `scripts/qa_sweep.py` — autonomous, self-cleaning QA harness: seeds a catalog,
+  drives the live HTTP API as a throwaway user, and asserts invariants
+  (recommendation dedup, owned-by-title exclusion, score range/order, item_type
+  filter, limit bounds, cross-domain recs, endpoint smoke). 22/22 pass.
+
+**Recommendations cross-service dedup (2026-06-07):** `GET /api/me/recommendations`
+excludes a title the user owns on *any* service (normalize_title + item_type, not
+just item_id) and never returns the same title twice — the higher-similarity copy
+wins; distinct franchise entries are preserved. Oversample is `limit*5` (cap 200)
+so the post-filters don't under-deliver.
+
 ---
 
 ## Known gaps and sharp edges
