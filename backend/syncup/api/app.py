@@ -57,7 +57,12 @@ def _cors_origins() -> list[str]:
     raw = os.environ.get("CORS_ALLOWED_ORIGINS")
     if raw:
         try:
-            parsed: list[str] = json.loads(raw)
+            parsed = json.loads(raw)
+            # json.loads returns Any — a bare string, dict, or list of non-strings
+            # is valid JSON but would misbehave deep inside CORSMiddleware at
+            # request time; fail loudly at startup instead.
+            if not isinstance(parsed, list) or not all(isinstance(o, str) for o in parsed):
+                raise ValueError("not a JSON array of strings")
             return parsed
         except (ValueError, json.JSONDecodeError):
             debug = os.environ.get("DEBUG", "false").lower() in ("1", "true", "yes")
@@ -65,8 +70,8 @@ def _cors_origins() -> list[str]:
                 logger.error("Could not parse CORS_ALLOWED_ORIGINS — using defaults (debug mode)")
                 return ["http://127.0.0.1:3001", "http://localhost:3001"]
             raise RuntimeError(
-                "CORS_ALLOWED_ORIGINS is set but could not be parsed as a JSON array. "
-                "Fix the value or remove it to use the default."
+                "CORS_ALLOWED_ORIGINS is set but could not be parsed as a JSON array "
+                "of strings. Fix the value or remove it to use the default."
             )
     return ["http://127.0.0.1:3001", "http://localhost:3001"]
 

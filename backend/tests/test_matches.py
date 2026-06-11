@@ -602,6 +602,9 @@ def test_match_cache_uuid_pair_always_has_a_less_than_b() -> None:
     write_db.execute.assert_called_once()
     stmt = write_db.execute.call_args[0][0]
     values = stmt.compile().params
+    # "_m0" is SQLAlchemy's internal bind-param suffix for multi-row VALUES
+    # (row 0) — stable since 1.4 but not public API; a major-version bump that
+    # renames it will surface here as a KeyError, not a real invariant break.
     assert values["user_a_id_m0"] < values["user_b_id_m0"], (
         f"Expected user_a_id < user_b_id but got "
         f"{values['user_a_id_m0']} >= {values['user_b_id_m0']}"

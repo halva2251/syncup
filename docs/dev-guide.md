@@ -315,6 +315,8 @@ vecs = embed_batch([text1, text2])   # batched, more efficient for many items
 
 Run `scripts/populate_item_embeddings.py` (after the enrichment scripts) to backfill `items.embedding` for the whole catalog.
 
+**Auto-embed cap on sync:** after each sync, `_embed_new_items` (in `api/routes/sync.py`) embeds at most 200 new items per run (`_MAX_AUTO_EMBED_ITEMS`). A user importing a huge library in one go gets a temporarily *partial* combined vector — the embedding builder skips `embedding IS NULL` items safely — and it self-heals: leftover items are picked up by the same query on the next sync, or by the populate script. Expect match results to shift slightly right after a very large import; that's this, not a bug.
+
 ### `user_embeddings.py` — service-aware two-level aggregation
 
 Builds the `combined` user vector that ANN search operates on. Two pure functions, no model dependency — they take pre-fetched `(vector, weight)` pairs:
