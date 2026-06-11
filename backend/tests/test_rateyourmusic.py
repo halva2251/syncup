@@ -1,12 +1,13 @@
 """Tests for RateYourMusicClient — CSV parsing and Protocol conformance."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 import pytest
 
-from syncup.ingest.rateyourmusic import RateYourMusicClient
 from syncup.ingest.protocol import ServiceClient, SyncClientError
+from syncup.ingest.rateyourmusic import RateYourMusicClient
 
 # ---------------------------------------------------------------------------
 # Protocol conformance
@@ -208,6 +209,15 @@ def test_parse_csv_invalid_rating_value_raises_sync_client_error() -> None:
     bad_csv = "Title,Release_Date,Rating\nOK Computer,1997,not-a-number\n"
     with pytest.raises(SyncClientError, match="Invalid rating"):
         RateYourMusicClient().parse_csv(bad_csv)
+
+
+def test_parse_csv_non_finite_rating_raises_sync_client_error() -> None:
+    # float() happily parses "inf"/"nan"/"1e400" — reject them so non-finite
+    # garbage never lands in user_items.raw_value.
+    for bad in ("inf", "-inf", "nan", "1e400"):
+        bad_csv = f"Title,Release_Date,Rating\nOK Computer,1997,{bad}\n"
+        with pytest.raises(SyncClientError, match="Invalid rating"):
+            RateYourMusicClient().parse_csv(bad_csv)
 
 
 # ---------------------------------------------------------------------------

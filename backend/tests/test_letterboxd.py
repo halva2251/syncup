@@ -1,4 +1,5 @@
 """Tests for LetterboxdClient — CSV parsing and Protocol conformance."""
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -154,6 +155,15 @@ def test_parse_csv_invalid_rating_value_raises_sync_client_error() -> None:
     bad_csv = "Date,Name,Year,Rating\n2024-01-01,Stalker,1979,not-a-number\n"
     with pytest.raises(SyncClientError, match="Invalid rating"):
         LetterboxdClient().parse_csv(bad_csv)
+
+
+def test_parse_csv_non_finite_rating_raises_sync_client_error() -> None:
+    # float() happily parses "inf"/"nan"/"1e400" — reject them so non-finite
+    # garbage never lands in user_items.raw_value.
+    for bad in ("inf", "-inf", "nan", "1e400"):
+        bad_csv = f"Date,Name,Year,Rating\n2024-01-01,Stalker,1979,{bad}\n"
+        with pytest.raises(SyncClientError, match="Invalid rating"):
+            LetterboxdClient().parse_csv(bad_csv)
 
 
 # ---------------------------------------------------------------------------

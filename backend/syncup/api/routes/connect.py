@@ -1003,9 +1003,12 @@ def spotify_callback(
         )
     try:
         db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         db.rollback()
         logger.warning("Spotify upsert race on user %s; connection already exists", user.id)
+        raise SyncUpError(
+            "SPOTIFY_CONNECT_CONFLICT", "Connection already exists — please retry", 409
+        ) from exc
 
     logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
 

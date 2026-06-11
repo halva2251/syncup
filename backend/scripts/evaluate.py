@@ -224,7 +224,11 @@ class SyntheticUser:
 
 
 def _format_vec(vec: list[float]) -> str:
-    return "[" + ",".join(f"{v:.8f}" for v in vec) + "]"
+    # Delegate to the production serializer so eval queries can never drift
+    # from the formatting used by matches.py / recommendations.py.
+    from syncup.db.pgvector import format_vec
+
+    return format_vec(vec)
 
 
 def _make_item_text(name: str, item_type: str, genres: str) -> str:

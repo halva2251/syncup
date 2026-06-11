@@ -203,7 +203,7 @@ tracks = client.get_top_tracks("username", limit=50, period="6month")
 # Each track: {"name": "...", "artist": {"name": "..."}, "playcount": "42", ...}
 ```
 
-Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `ValueError` (will be changed to `SyncClientError` in the S1 PR).
+Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `SyncClientError`.
 
 ### `crypto.py` — token encryption
 
@@ -261,8 +261,10 @@ Key tables:
 
 `format_vec(vec: list[float]) -> str` serializes a float vector into a pgvector
 literal string (`"[0.1,0.2,...]"`, 8-decimal precision) for use in raw SQL
-`ORDER BY embedding <=> :vec` queries. Shared by `matches.py` and
-`recommendations.py` — don't duplicate it locally.
+`ORDER BY embedding <=> :vec` queries. Raises `ValueError` on non-finite
+elements (NaN/inf) — they aren't valid pgvector literals. Shared by
+`matches.py`, `recommendations.py`, and `scripts/evaluate.py` — don't
+duplicate it locally.
 
 ### Sessions (`session.py`)
 
@@ -359,7 +361,7 @@ score = heuristic_score(user_a_item_ids, user_b_item_ids, item_popularity)
 
 ```bash
 cd backend
-pytest                        # all 998 tests
+pytest                        # all 1009 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
