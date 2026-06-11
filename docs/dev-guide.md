@@ -203,7 +203,7 @@ tracks = client.get_top_tracks("username", limit=50, period="6month")
 # Each track: {"name": "...", "artist": {"name": "..."}, "playcount": "42", ...}
 ```
 
-Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `ValueError` (will be changed to `SyncClientError` in the S1 PR).
+Last.fm returns its own error envelope (`{"error": 6, "message": "..."}`) even on HTTP 200. The client checks for this and raises `SyncClientError`.
 
 ### `crypto.py` — token encryption
 
