@@ -251,6 +251,59 @@ def test_callback_fetch_me_failure_returns_error(authed_client: TestClient) -> N
     assert resp.json()["error"]["code"] == "SPOTIFY_TOKEN_ERROR"
 
 
+def test_callback_connect_race_returns_409(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A concurrent connect causing IntegrityError on commit must surface as a
+    # 409 SPOTIFY_CONNECT_CONFLICT (same contract as AniList/Trakt/Reddit),
+    # not a silent success redirect.
+    from sqlalchemy.exc import IntegrityError
+
+    monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("DEBUG", "true")
+
+    from syncup.api.app import app
+    from syncup.auth.router import require_auth
+    from syncup.limiter import limiter
+
+    now = datetime.now(UTC)
+    fake_user = User(
+        id=uuid.uuid4(),
+        email="test@example.com",
+        display_name="Tester",
+        is_matchable=False,
+        onboarded=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+    session = MagicMock()
+    session.commit.side_effect = IntegrityError("stmt", None, Exception("duplicate key"))
+    factory = MagicMock(return_value=session)
+
+    # This test adds two extra hits to the shared in-memory limiter window;
+    # reset so later callback tests in this module don't trip the 10/min cap.
+    limiter.reset()
+    try:
+        app.dependency_overrides[require_auth] = lambda: fake_user
+        with (
+            patch("syncup.api.app.sessionmaker_for", return_value=factory),
+            patch("syncup.api.routes.connect.require_auth", return_value=fake_user),
+            patch("syncup.ingest.spotify.SpotifyClient.exchange_code", return_value=_MOCK_TOKENS),
+            patch("syncup.ingest.spotify.SpotifyClient.fetch_me", return_value={"id": "sp-123"}),
+            patch("syncup.api.routes.connect.encrypt_token", return_value=b"encrypted"),
+            TestClient(app, follow_redirects=False) as c,
+        ):
+            c.get("/api/auth/spotify", follow_redirects=False)
+            state = c.cookies.get("spotify_state")
+            resp = c.get(f"/api/auth/spotify/callback?code=authcode&state={state}")
+    finally:
+        app.dependency_overrides.pop(require_auth, None)
+        limiter.reset()
+
+    assert resp.status_code == 409
+    assert resp.json()["error"]["code"] == "SPOTIFY_CONNECT_CONFLICT"
+    session.rollback.assert_called()
+
+
 def test_callback_encrypts_both_tokens(authed_client: TestClient) -> None:
     with (
         patch("syncup.ingest.spotify.SpotifyClient.exchange_code", return_value=_MOCK_TOKENS),

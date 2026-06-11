@@ -1,8 +1,10 @@
 """Letterboxd CSV import client (no OAuth — diary export upload only)."""
+
 from __future__ import annotations
 
 import csv
 import io
+import math
 from typing import TYPE_CHECKING, ClassVar
 
 from syncup.ingest._text import normalize_title
@@ -27,8 +29,7 @@ class LetterboxdClient:
     def fetch_items(self, connection: ServiceConnection) -> list[RawItem]:
         """Not supported — Letterboxd data must be re-imported via CSV upload."""
         raise SyncClientError(
-            "Letterboxd data must be re-imported via CSV — "
-            "use POST /api/connect/letterboxd/import"
+            "Letterboxd data must be re-imported via CSV — use POST /api/connect/letterboxd/import"
         )
 
     def refresh_token(self, connection: ServiceConnection) -> TokenPair | None:
@@ -49,9 +50,7 @@ class LetterboxdClient:
         fieldnames = set(reader.fieldnames or [])
         missing = _REQUIRED_COLUMNS - fieldnames
         if missing:
-            raise SyncClientError(
-                f"CSV missing required columns: {sorted(missing)}"
-            )
+            raise SyncClientError(f"CSV missing required columns: {sorted(missing)}")
 
         result: list[RawItem] = []
         for row in reader:
@@ -68,6 +67,8 @@ class LetterboxdClient:
                 rating = float(rating_str)
             except ValueError:
                 raise SyncClientError(f"Invalid rating value: {rating_str!r}") from None
+            if not math.isfinite(rating):
+                raise SyncClientError(f"Invalid rating value: {rating_str!r}")
 
             try:
                 release_year = int(year_str) if year_str else 0

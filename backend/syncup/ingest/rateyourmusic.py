@@ -1,8 +1,10 @@
 """RateYourMusic CSV import client (no OAuth — ratings export upload only)."""
+
 from __future__ import annotations
 
 import csv
 import io
+import math
 from typing import TYPE_CHECKING, ClassVar
 
 from syncup.ingest._text import normalize_title
@@ -74,9 +76,7 @@ class RateYourMusicClient:
         fieldnames = set(reader.fieldnames or [])
         missing = _REQUIRED_COLUMNS - fieldnames
         if missing:
-            raise SyncClientError(
-                f"CSV missing required columns: {sorted(missing)}"
-            )
+            raise SyncClientError(f"CSV missing required columns: {sorted(missing)}")
 
         result: list[RawItem] = []
         for row in reader:
@@ -93,6 +93,8 @@ class RateYourMusicClient:
                 rating = float(rating_str)
             except ValueError:
                 raise SyncClientError(f"Invalid rating value: {rating_str!r}") from None
+            if not math.isfinite(rating):
+                raise SyncClientError(f"Invalid rating value: {rating_str!r}")
 
             # Artist is optional — present in full RYM exports but absent in
             # minimal CSV formats. Including it in external_id prevents
