@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     steam_api_key: str = ""
 
     # ── Last.fm ──────────────────────────────────────────────────────────────
+    # No shared secret — we only call read-only public-data methods (by
+    # username), which don't require request signing. See docs/api-keys.md.
     lastfm_api_key: str = ""
-    lastfm_shared_secret: str = ""
 
     # ── AniList ──────────────────────────────────────────────────────────────
     # Register at https://anilist.co/settings/developer before use.

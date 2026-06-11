@@ -252,6 +252,13 @@ class UserItem(Base):
         UniqueConstraint("user_id", "item_id"),
         Index("idx_user_items_user", "user_id"),
         Index("idx_user_items_item", "item_id"),
+        CheckConstraint(
+            "raw_type IN ('consumption', 'rating')", name="ck_user_items_raw_type_values"
+        ),
+        CheckConstraint(
+            "engagement_score >= 0 AND engagement_score <= 1",
+            name="ck_user_items_engagement_score_range",
+        ),
     )
 
 

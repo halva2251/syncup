@@ -12,12 +12,15 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Respons
 from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import and_, desc, func, or_, select, text
 from sqlalchemy import delete as sa_delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import sessionmaker
 
 from syncup.api.routes.embeddings import build_user_embedding  # noqa: E402
 from syncup.auth.router import RequireAuth
 from syncup.db.models import EMBEDDING_DIM, Item, MatchCache, User, UserEmbedding, UserItem
+from syncup.db.pgvector import format_vec
 from syncup.db.session import get_db
 from syncup.embeddings.vibe_synthesizer import synthesize_vibe
 from syncup.exceptions import SyncUpError
@@ -120,8 +123,14 @@ def _parse_highlights(raw: object) -> list[SharedHighlightOut]:
 
 
 def _encode_cursor(score: float, user_a_id: uuid.UUID, user_b_id: uuid.UUID) -> str:
-    """Encode a keyset cursor as base64(score:user_a_id:user_b_id)."""
-    return base64.b64encode(f"{score:.6f}:{user_a_id}:{user_b_id}".encode()).decode()
+    """Encode a keyset cursor as base64(score:user_a_id:user_b_id).
+
+    `repr(score)` round-trips losslessly back to the same float (Python's
+    repr produces the shortest string that parses back to the exact value),
+    unlike `:.6f` which rounds and breaks the `score == cursor_score`
+    tie-break branch in keyset pagination.
+    """
+    return base64.b64encode(f"{score!r}:{user_a_id}:{user_b_id}".encode()).decode()
 
 
 def _decode_cursor(
@@ -314,22 +323,45 @@ def _write_match_results(
     db_factory: sessionmaker[DbSession],
     results: list[MatchCache],
 ) -> None:
-    """Phase 3: write computed match rows. Opens a short-lived write session."""
+    """Phase 3: write computed match rows. Opens a short-lived write session.
+
+    Uses a single bulk upsert rather than `db.merge()` per row — merge() issues
+    a SELECT then INSERT/UPDATE per row, which is hundreds of round-trips for a
+    full candidate set.
+    """
     db = db_factory()
     try:
-        for row in results:
-            db.merge(row)
+        if results:
+            values = [
+                {
+                    "user_a_id": row.user_a_id,
+                    "user_b_id": row.user_b_id,
+                    "score": row.score,
+                    "breakdown": row.breakdown,
+                    "highlights": row.highlights,
+                    "computed_at": row.computed_at,
+                    "matching_mode": row.matching_mode,
+                }
+                for row in results
+            ]
+            stmt = pg_insert(MatchCache).values(values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[MatchCache.user_a_id, MatchCache.user_b_id],
+                set_={
+                    "score": stmt.excluded.score,
+                    "breakdown": stmt.excluded.breakdown,
+                    "highlights": stmt.excluded.highlights,
+                    "computed_at": stmt.excluded.computed_at,
+                    "matching_mode": stmt.excluded.matching_mode,
+                },
+            )
+            db.execute(stmt)
         db.commit()
-    except Exception:
+    except SQLAlchemyError:
         db.rollback()
         logger.exception("Match cache write phase failed")
     finally:
         db.close()
-
-
-def _format_vec(vec: list[float]) -> str:
-    """Format a float vector as a pgvector literal string."""
-    return "[" + ",".join(f"{v:.8f}" for v in vec) + "]"
 
 
 def _read_semantic_data(
@@ -353,7 +385,7 @@ def _read_semantic_data(
         if embedding is None:
             return None
 
-        vec_str = _format_vec(list(embedding))
+        vec_str = format_vec(list(embedding))
 
         ann_rows = list(
             db.execute(

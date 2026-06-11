@@ -8,6 +8,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
@@ -56,17 +57,37 @@ def _cors_origins() -> list[str]:
     raw = os.environ.get("CORS_ALLOWED_ORIGINS")
     if raw:
         try:
-            return json.loads(raw)
+            parsed = json.loads(raw)
+            # json.loads returns Any — a bare string, dict, or list of non-strings
+            # is valid JSON but would misbehave deep inside CORSMiddleware at
+            # request time; fail loudly at startup instead.
+            if not isinstance(parsed, list) or not all(isinstance(o, str) for o in parsed):
+                raise ValueError("not a JSON array of strings")
+            return parsed
         except (ValueError, json.JSONDecodeError):
             debug = os.environ.get("DEBUG", "false").lower() in ("1", "true", "yes")
             if debug:
                 logger.error("Could not parse CORS_ALLOWED_ORIGINS — using defaults (debug mode)")
                 return ["http://127.0.0.1:3001", "http://localhost:3001"]
             raise RuntimeError(
-                "CORS_ALLOWED_ORIGINS is set but could not be parsed as a JSON array. "
-                "Fix the value or remove it to use the default."
+                "CORS_ALLOWED_ORIGINS is set but could not be parsed as a JSON array "
+                "of strings. Fix the value or remove it to use the default."
             )
     return ["http://127.0.0.1:3001", "http://localhost:3001"]
+
+
+def _trusted_proxy_hosts() -> list[str]:
+    """Read trusted reverse-proxy hosts from env.
+
+    `trusted_hosts="*"` would let any client spoof `X-Forwarded-For` and
+    bypass IP-based rate limiting (slowapi keys on `request.client.host`).
+    Default to loopback only — the proxy and app run on the same host in our
+    deployments; widen via env if a real multi-host setup needs it.
+    """
+    raw = os.environ.get("TRUSTED_PROXY_HOSTS")
+    if raw:
+        return [host.strip() for host in raw.split(",") if host.strip()]
+    return ["127.0.0.1", "::1"]
 
 
 # ---------------------------------------------------------------------------
@@ -145,11 +166,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(title="SyncUp API", version="0.1.0", lifespan=lifespan)
 
-# Trust one hop of X-Forwarded-For so the rate limiter sees the real client IP
-# when running behind nginx / Caddy. trusted_hosts="*" is safe for single-hop setups.
+# Trust X-Forwarded-For only from known proxy hosts so the rate limiter sees
+# the real client IP when running behind nginx / Caddy, without letting
+# arbitrary clients spoof their IP and bypass rate limits (see TRUSTED_PROXY_HOSTS).
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware  # noqa: E402
 
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=_trusted_proxy_hosts())
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -166,6 +188,13 @@ async def security_headers(request: Request, call_next: Any) -> Any:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    if settings is not None and not settings.debug and request.url.scheme == "https":
+        # ProxyHeadersMiddleware rewrites request.url.scheme from X-Forwarded-Proto
+        # for trusted proxies, so this reflects the real client-facing scheme —
+        # sending HSTS over plain HTTP would get the directive cached by browsers
+        # and could break HTTP access in misconfigured deployments.
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Content-Security-Policy"] = (
         "default-src 'none'; frame-ancestors 'none'; base-uri 'self'"
     )
@@ -199,8 +228,11 @@ async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONR
 @app.exception_handler(RequestValidationError)
 async def _validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     # exc.errors() may contain Python exceptions in ctx fields; round-trip through
-    # json.dumps(default=str) to make every value JSON-serializable.
-    details = json.loads(json.dumps(exc.errors(), default=str))
+    # json.dumps(default=str) to make every value JSON-serializable. Drop "input"
+    # — Pydantic v2 echoes the raw submitted value there, which would leak
+    # passwords and other sensitive fields back to the client.
+    safe_errors = [{k: v for k, v in err.items() if k != "input"} for err in exc.errors()]
+    details = json.loads(json.dumps(safe_errors, default=str))
     return JSONResponse(
         {
             "error": {

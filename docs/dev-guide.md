@@ -255,6 +255,15 @@ Key tables:
 
 `service_connections.sync_status` is constrained to `pending | syncing | ok | error`.
 
+`user_items` has CHECK constraints on `raw_type` (`consumption | rating`) and `engagement_score` (`0..1`).
+
+### `pgvector.py` — vector literal formatting
+
+`format_vec(vec: list[float]) -> str` serializes a float vector into a pgvector
+literal string (`"[0.1,0.2,...]"`, 8-decimal precision) for use in raw SQL
+`ORDER BY embedding <=> :vec` queries. Shared by `matches.py` and
+`recommendations.py` — don't duplicate it locally.
+
 ### Sessions (`session.py`)
 
 In FastAPI route handlers, use the `get_db` dependency — it pulls the session factory from `app.state.db` (set at startup) and handles rollback on exception:
@@ -305,6 +314,8 @@ vecs = embed_batch([text1, text2])   # batched, more efficient for many items
 ```
 
 Run `scripts/populate_item_embeddings.py` (after the enrichment scripts) to backfill `items.embedding` for the whole catalog.
+
+**Auto-embed cap on sync:** after each sync, `_embed_new_items` (in `api/routes/sync.py`) embeds at most 200 new items per run (`_MAX_AUTO_EMBED_ITEMS`). A user importing a huge library in one go gets a temporarily *partial* combined vector — the embedding builder skips `embedding IS NULL` items safely — and it self-heals: leftover items are picked up by the same query on the next sync, or by the populate script. Expect match results to shift slightly right after a very large import; that's this, not a bug.
 
 ### `user_embeddings.py` — service-aware two-level aggregation
 
@@ -376,6 +387,11 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 **Phase 1.11 — Backend Hardening Sprint:**
 
 **Branch 1 (fix/security-hardening) is complete.** All 12 security items (S1–S12) merged: timing-safe OAuth, encryption key guard, error body stripping, proxy rate limiter, cookie attributes, security headers, required env vars, logout rate limit, CORS validation, error message injection prevention, session secret default, health fingerprint removal.
+
+> The proxy rate limiter trusts `X-Forwarded-For` only from hosts listed in
+> `TRUSTED_PROXY_HOSTS` (comma-separated, defaults to loopback `127.0.0.1,::1`).
+> Set this to your reverse-proxy's address in any multi-host deployment —
+> trusting `"*"` lets any client spoof their IP and bypass rate limits.
 
 **Branch 2 (fix/ingest-hardening) is complete.** All 10 ingest items (I1–I10) merged: client error body stripping (AniList/Trakt/Reddit), RequestError hostname scrubbing (Steam/Last.fm/AniList), OAuth token expiry guard for Trakt and Reddit, httpx.Client shutdown via `close_all()`, LastfmClient validators raise `SyncClientError`, Last.fm artist external_id normalized, ligature expansion in `normalize_title()`, sync route db guard, CSV 50K row cap, engagement_score clamp. 681 tests passing.
 

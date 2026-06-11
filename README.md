@@ -96,7 +96,6 @@ STEAM_API_KEY=
 
 # Last.fm
 LASTFM_API_KEY=
-LASTFM_SHARED_SECRET=
 
 # Spotify
 SPOTIFY_CLIENT_ID=
@@ -284,7 +283,6 @@ syncup/
 | `SPOTIFY_REDIRECT_URI` | for Spotify | must match dashboard exactly |
 | `STEAM_API_KEY` | for Steam | from steamcommunity.com/dev/apikey |
 | `LASTFM_API_KEY` | for Last.fm | from last.fm/api/account/create |
-| `LASTFM_SHARED_SECRET` | for Last.fm | same registration |
 | `ANILIST_CLIENT_ID` | for AniList | from anilist.co/settings/developer |
 | `ANILIST_CLIENT_SECRET` | for AniList | same registration |
 | `TRAKT_CLIENT_ID` | for Trakt | from trakt.tv/oauth/applications |

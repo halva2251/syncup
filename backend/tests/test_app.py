@@ -462,6 +462,33 @@ def test_cors_parse_error_is_fatal_in_production_mode(
         _cors_origins()
 
 
+@pytest.mark.parametrize("raw", ['{"http://evil.com": true}', "[1, 2, 3]", '"http://a.com"'])
+def test_cors_wrong_json_shape_is_fatal_in_production_mode(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    """Valid JSON that isn't a list of strings must also raise RuntimeError."""
+    # Import before setting the bad env — module-level app creation calls
+    # _cors_origins(), and a first-time import here would raise outside pytest.raises.
+    from syncup.api.app import _cors_origins
+
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", raw)
+    monkeypatch.setenv("DEBUG", "false")
+
+    with pytest.raises(RuntimeError, match="CORS_ALLOWED_ORIGINS"):
+        _cors_origins()
+
+
+def test_cors_wrong_json_shape_falls_back_to_defaults_in_debug_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from syncup.api.app import _cors_origins
+
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "[1, 2, 3]")
+    monkeypatch.setenv("DEBUG", "true")
+
+    assert _cors_origins() == ["http://127.0.0.1:3001", "http://localhost:3001"]
+
+
 # ---------------------------------------------------------------------------
 # S11 — session_secret default must be None (not empty string)
 # ---------------------------------------------------------------------------

@@ -17,7 +17,9 @@ Routes are marked **Live** (implemented) or **Sketch** (planned, shape may chang
   ```json
   { "error": { "code": "NOT_FOUND", "message": "..." } }
   ```
-  Validation errors (422) include a `details` array:
+  Validation errors (422) include a `details` array (each entry's `input` field
+  is stripped server-side — it would otherwise echo back raw submitted values,
+  including passwords and other sensitive fields):
   ```json
   { "error": { "code": "VALIDATION_ERROR", "message": "Validation failed", "details": [...] } }
   ```

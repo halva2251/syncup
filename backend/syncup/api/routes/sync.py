@@ -139,6 +139,8 @@ def _set_sync_error(session: DbSession, user_id: uuid.UUID, service: str, error:
 # Generic background sync task
 # ---------------------------------------------------------------------------
 
+_MAX_AUTO_EMBED_ITEMS = 200
+
 
 def _embed_new_items(session: DbSession, user_id: uuid.UUID, service: str) -> None:
     """Embed items from this sync that don't have embeddings yet.
@@ -159,6 +161,10 @@ def _embed_new_items(session: DbSession, user_id: uuid.UUID, service: str) -> No
                 Item.service == service,
                 Item.embedding.is_(None),
             )
+            # Cap the synchronous embed_batch call for power users with huge
+            # libraries — remaining items stay embedding=NULL and get picked
+            # up by this same query on the user's next sync.
+            .limit(_MAX_AUTO_EMBED_ITEMS)
         ).all()
     )
 
