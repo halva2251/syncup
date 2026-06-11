@@ -75,6 +75,40 @@ def recall_at_k(
     return hits / len(relevant)
 
 
+def filter_candidates_production_style(
+    candidates: list[tuple[Any, tuple[str, str]]],
+    owned_keys: set[tuple[str, str]],
+    limit: int,
+) -> list[Any]:
+    """Mirror recommendations.py post-filtering on ANN candidates.
+
+    Production (GET /api/me/recommendations) excludes any title the user owns
+    on ANY service and never returns the same title twice (first = best, since
+    candidates arrive distance-ordered). The eval must apply the same filters,
+    otherwise seeded/real catalog items that duplicate an owned title crowd the
+    holdout out of the top-k and Hit Rate@k underestimates production quality
+    (observed: 0.80 → 0.10 after seed_catalog.py populated the shared catalog).
+
+    Args:
+        candidates: distance-ordered (item_id, (normalized_title, item_type)) pairs.
+        owned_keys: (normalized_title, item_type) keys the user already owns.
+        limit: max results, applied after filtering.
+
+    Returns:
+        Up to `limit` item_ids, input order preserved.
+    """
+    out: list[Any] = []
+    seen: set[tuple[str, str]] = set()
+    for item_id, key in candidates:
+        if key in owned_keys or key in seen:
+            continue
+        seen.add(key)
+        out.append(item_id)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def overlap_fraction(a: set[Any], b: set[Any]) -> float:
     """Jaccard index — |A ∩ B| / |A ∪ B|.
 
@@ -357,15 +391,39 @@ def _ann_matching_query(
     return [uuid.UUID(str(r.user_id)) for r in rows]
 
 
+def _owned_title_keys(session: Any, user_id: uuid.UUID) -> set[tuple[str, str]]:
+    """(normalized_title, item_type) keys of every item the user owns — mirrors
+    the owned-by-title dedup in recommendations.py."""
+    from sqlalchemy import select
+
+    from syncup.db.models import Item, UserItem
+    from syncup.ingest._text import normalize_title
+
+    rows = session.execute(
+        select(Item.name, Item.item_type)
+        .join(UserItem, UserItem.item_id == Item.id)
+        .where(UserItem.user_id == user_id)
+    ).all()
+    return {(normalize_title(r.name), r.item_type) for r in rows}
+
+
 def _ann_item_query(
     session: Any,
     user_id: uuid.UUID,
     limit: int = 10,
 ) -> list[uuid.UUID]:
-    """Return top-limit item IDs not owned by the user, ordered by cosine similarity."""
+    """Return top-limit recommendable item IDs, ordered by cosine similarity.
+
+    Mirrors the production recommendations path: ANN search over the full
+    catalog excluding owned item_ids in SQL, then Python post-filtering that
+    skips owned titles (any service) and dedups repeated titles. Oversamples
+    limit*5 (cap 200) exactly like recommendations.py so the post-filters
+    don't under-deliver.
+    """
     from sqlalchemy import select, text
 
     from syncup.db.models import EMBEDDING_DIM, UserEmbedding
+    from syncup.ingest._text import normalize_title
 
     row = session.execute(
         select(UserEmbedding.embedding).where(
@@ -377,10 +435,11 @@ def _ann_item_query(
         return []
 
     vec_str = _format_vec(list(row))
+    db_limit = min(limit * 5, 200)  # keep in lockstep with recommendations.py
     # Search the full item catalog (not just synthetic items) to match production
     # behaviour — the holdout item must compete against all real items.
     sql = text(
-        f"SELECT i.id FROM items i"
+        f"SELECT i.id, i.name, i.item_type FROM items i"
         f" WHERE i.embedding IS NOT NULL"
         f"   AND NOT EXISTS ("
         f"       SELECT 1 FROM user_items ui"
@@ -389,8 +448,10 @@ def _ann_item_query(
         f" ORDER BY i.embedding <=> CAST(:vec AS vector({EMBEDDING_DIM}))"
         f" LIMIT :lim"
     )
-    rows = session.execute(sql, {"uid": str(user_id), "vec": vec_str, "lim": limit}).all()
-    return [uuid.UUID(str(r.id)) for r in rows]
+    rows = session.execute(sql, {"uid": str(user_id), "vec": vec_str, "lim": db_limit}).all()
+    candidates = [(uuid.UUID(str(r.id)), (normalize_title(r.name), r.item_type)) for r in rows]
+    owned_keys = _owned_title_keys(session, user_id)
+    return filter_candidates_production_style(candidates, owned_keys, limit)
 
 
 def _heuristic_score_for_pair(
@@ -638,16 +699,34 @@ def run_holdout_evaluation(
     whose held-out item appears in their top-k recommendations. This is the
     standard metric name for this setting; calling it Recall@k would imply a
     multi-item relevance set.
+
+    Hits are counted by (normalized_title, item_type) equivalence, not item_id:
+    once a shared catalog exists (seed_catalog.py), production legitimately
+    recommends a different catalog copy of the same title — the title-dedup in
+    recommendations.py keeps the highest-similarity copy, which may not be the
+    eval-inserted row. Title equivalence is the real notion of relevance here.
     """
+    from syncup.db.models import Item
+    from syncup.ingest._text import normalize_title
+
+    def _title_keys(item_ids: list[uuid.UUID]) -> set[tuple[str, str]]:
+        keys: set[tuple[str, str]] = set()
+        for iid in item_ids:
+            item = session.get(Item, iid)
+            if item is not None:
+                keys.add((normalize_title(item.name), item.item_type))
+        return keys
+
     hits: list[float] = []
     group_hits: dict[str, list[float]] = {}
 
     for su in synthetic_users:
         if not su.holdout_item_ids:
             continue
-        relevant = set(su.holdout_item_ids)
+        relevant_keys = _title_keys(su.holdout_item_ids)
         retrieved = _ann_item_query(session, su.user_id, limit=k)
-        hit = recall_at_k(retrieved, relevant, k=k)  # binary when |relevant|=1
+        retrieved_keys = _title_keys(retrieved)
+        hit = 1.0 if retrieved_keys & relevant_keys else 0.0
         hits.append(hit)
         group_hits.setdefault(su.group, []).append(hit)
 

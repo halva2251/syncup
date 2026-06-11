@@ -59,6 +59,7 @@ import pytest
 precision_at_k = _eval_mod.precision_at_k
 recall_at_k = _eval_mod.recall_at_k
 overlap_fraction = _eval_mod.overlap_fraction
+filter_candidates_production_style = _eval_mod.filter_candidates_production_style
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -172,3 +173,50 @@ class TestOverlapFraction:
 
     def test_one_empty_returns_zero(self):
         assert overlap_fraction({1, 2}, set()) == 0.0
+
+
+# ──────────────────────────────────────────────────────────────────────
+# filter_candidates_production_style
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestFilterCandidatesProductionStyle:
+    """Mirrors recommendations.py post-filtering: owned-by-title skip + title dedup."""
+
+    def test_skips_owned_titles(self):
+        candidates = [
+            (1, ("disco elysium", "game")),
+            (2, ("hades", "game")),
+        ]
+        owned = {("disco elysium", "game")}
+        assert filter_candidates_production_style(candidates, owned, limit=10) == [2]
+
+    def test_dedups_repeated_titles_keeping_first(self):
+        candidates = [
+            (1, ("hades", "game")),
+            (2, ("hades", "game")),  # seeded twin, lower-ranked
+            (3, ("celeste", "game")),
+        ]
+        assert filter_candidates_production_style(candidates, set(), limit=10) == [1, 3]
+
+    def test_same_title_different_type_not_deduped(self):
+        candidates = [
+            (1, ("dune", "film")),
+            (2, ("dune", "game")),
+        ]
+        assert filter_candidates_production_style(candidates, set(), limit=10) == [1, 2]
+
+    def test_respects_limit(self):
+        candidates = [(i, (f"t{i}", "game")) for i in range(20)]
+        assert filter_candidates_production_style(candidates, set(), limit=3) == [0, 1, 2]
+
+    def test_empty_candidates(self):
+        assert filter_candidates_production_style([], {("x", "game")}, limit=5) == []
+
+    def test_preserves_input_order(self):
+        candidates = [
+            (9, ("a", "game")),
+            (3, ("b", "game")),
+            (7, ("c", "game")),
+        ]
+        assert filter_candidates_production_style(candidates, set(), limit=10) == [9, 3, 7]

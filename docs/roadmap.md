@@ -83,6 +83,8 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | External code review (Kimi) pass — fixed lossless cursor encoding (`repr()` not `:.6f`) in keyset pagination, bulk `pg_insert(...).on_conflict_do_update(...)` upsert for match cache writes (replacing N×`db.merge()`), proxy-host allowlist for `ProxyHeadersMiddleware` (`TRUSTED_PROXY_HOSTS` env var, was `"*"`), stripped `input` field from validation-error responses, conditional HSTS header, `raw_type`/`engagement_score` CHECK constraints on `user_items`, signup timing-safe constant-time fix, avatar URL scheme allowlisting, query limits on obsessions/auto-embed, removed unused `lastfm_shared_secret` config, unified OAuth cookie-deletion options across all 4 callbacks, narrowed match-cache write exception to `SQLAlchemyError`. **Deferred to issue #23**: OAuth state/verifier cookies aren't deleted on callback *failure* paths (low-severity — httpOnly/secure/10-min TTL) | `backend/CODE_REVIEW_REPORT.md`, PR #22, [issue #23](https://github.com/halva2251/syncup/issues/23) |
 | Second full-scope swarm review (2026-06-11, 5 parallel agents: oauth-security, bounty-style security, ML correctness, Python quality, test/lint verification) — zero CRITICAL/HIGH; all 8 Phase 2 ML invariants re-confirmed. Fixed: Spotify OAuth callback now raises `409 SPOTIFY_CONNECT_CONFLICT` on connect race instead of silently swallowing `IntegrityError` (matches AniList/Trakt/Reddit contract); non-finite CSV ratings (`inf`/`nan`/`1e400`) rejected with `SyncClientError` in Letterboxd + RYM parsers; `format_vec` raises `ValueError` on non-finite vector elements (clear error instead of opaque pgvector DB error); `evaluate.py` `_format_vec` delegates to production `syncup.db.pgvector.format_vec` (drift elimination). Deferred: OAuth state-to-session binding (defense-in-depth), recompute in-flight-guard release edge, vibe top-item tiebreaker, Reddit User-Agent placeholder fallback, `(service, external_user_id)` non-uniqueness | `syncup/api/routes/connect.py`, `syncup/ingest/{letterboxd,rateyourmusic}.py`, `syncup/db/pgvector.py`, `backend/scripts/evaluate.py` |
 | 1009 passing tests | `backend/tests/` |
+| ML-pipeline validation pass (2026-06-11) — full re-review (ml-reviewer: all 8 Phase 2 invariants re-confirmed, zero CRITICAL/HIGH; python-reviewer: zero CRITICAL/HIGH) + 9/9 independent fake-data probes (dimension-weight authority incl. 50-vs-5-item slider invariance, boost, exclusion, engagement lean, cross-domain artist ranking) + 22/22 qa_sweep. Fixed eval–production drift: `evaluate.py` `_ann_item_query` now mirrors `recommendations.py` owned-by-title + title-dedup filtering (`filter_candidates_production_style`, oversample `limit*5`), holdout hits counted by normalized-title equivalence; Hit Rate@10 re-baselined 0.80 (empty catalog) → 0.50 (403-item catalog) — see §2.8 catalog-sensitivity note | `backend/scripts/evaluate.py`, `backend/tests/test_evaluate.py` |
+| 1015 passing tests | `backend/tests/` |
 
 ---
 
@@ -724,7 +726,7 @@ For each group-A user, check how many group-A users appear in their top-5 semant
 - For the wrong one: diagnose why (sparse data? missing metadata? genre mismatch?)
 - This exhibit answers criterion 8 ("self-critical assessment") better than any number.
 
-**Actual output** (`python scripts/evaluate.py`, refreshed 2026-06-07 after the service-aware builder + centroid-collapse probe landed):
+**Actual output** (`python scripts/evaluate.py`, refreshed 2026-06-11 after the eval–production filtering alignment, on a 403-item catalog incl. the 170-item seed):
 ```
 Synthetic cohort evaluation (N=20 synthetic users):
   Group A recall@5: 1.00  (high-overlap users correctly ranked)
@@ -733,12 +735,12 @@ Synthetic cohort evaluation (N=20 synthetic users):
   Group out recall@5: 1.00  (zero-overlap out-group ranked)
 
 Holdout recommendation quality (N=20 users, k=10):
-  Hit Rate@10 (pooled): 0.80
+  Hit Rate@10 (pooled): 0.50
   Hit Rate@10 by group:
     Group A: 1.00  (high overlap — sanity check)
-    Group B: 0.80  (medium overlap)
+    Group B: 0.20  (medium overlap)
     Group C: 0.40  (unique holdout per user — hardest group)
-    Group out: 1.00  (cross-domain — sanity check)
+    Group out: 0.40  (cross-domain — sanity check)
 
 Matching mode comparison (Groups A/B/out, 30 pairs):
   heuristic:  avg score 0.537  (rarity-weighted overlap, cohort-wide popularity)
@@ -775,6 +777,8 @@ Known failure modes (production):
 This is the scientific evidence that the AI works. Show this to judges. The caveats and failure modes section is not a weakness — it is criterion 8.
 
 > **Metric naming (corrected 2026-06-07):** the matching metric is **Recall@5** (fraction of same-group peers surfaced — ceiling 1.0, vs P@5's structural ceiling of 4/5) and the holdout metric is **Hit Rate@10** (single held-out item per user → binary). The centroid-collapse failure mode is now *measured* by a dedicated mixed-domain probe, not merely asserted.
+
+> **Hit Rate@10 is catalog-sensitive (found + fixed 2026-06-11).** The originally documented pooled 0.80 was measured on a near-empty catalog and is not reproducible after `seed_catalog.py` populated 170 curated items: re-running gave 0.10 because `_ann_item_query` excluded owned items only by `item_id` while production (`recommendations.py`) also filters owned titles (any service) and dedups repeated titles — seeded title-twins of the user's own items crowded the holdout out of the top-10. Fix: the eval now mirrors production filtering exactly (`filter_candidates_production_style`, oversample `limit*5` cap 200) and counts a hit by `(normalize_title, item_type)` equivalence, since production legitimately returns a different catalog copy of the same title. Result on the 403-item catalog: pooled 0.50 (A=1.00, B=0.20, C=0.40, out=0.40). The drop from 0.80 is honest, not a regression: the holdout now competes against hundreds of taste-adjacent real items instead of a handful — report Hit Rate@k only alongside the catalog size it was measured on.
 
 ---
 
