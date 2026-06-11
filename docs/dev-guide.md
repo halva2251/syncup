@@ -361,7 +361,7 @@ score = heuristic_score(user_a_item_ids, user_b_item_ids, item_popularity)
 
 ```bash
 cd backend
-pytest                        # all 1009 tests
+pytest                        # all 1015 tests
 pytest tests/test_spotify.py  # one module
 pytest --cov=syncup           # with coverage report
 ```
@@ -413,7 +413,7 @@ See **[roadmap.md](roadmap.md)** for the full phased build order, current status
 
 **Phase 2 Block H (feat/phase2-match-upgrade) is complete.** Semantic ANN matching path added alongside the existing heuristic scorer. `_refresh_match_cache` now tries the semantic path first (requires a `combined` user embedding): runs HNSW ANN search via pgvector `<=>` operator on `user_embeddings WHERE service='combined'`, returns up to 50 candidates, scores as `1 - cosine_distance` (candidates with `score <= 0` filtered). Falls back to heuristic item-overlap when no embedding exists. `match_cache` gains `matching_mode TEXT` column (`'heuristic'|'semantic'`). `POST /api/me/recompute` queues `_build_embedding_bg` before `_refresh_match_cache`. Migration `20260606_0011` creates `matching_mode` column and recreates the ANN index as HNSW (replaces planned IVFFlat — HNSW requires no lists-tuning). 931 tests passing.
 
-**Phase 2 Block J (feat/phase2-evaluation) is complete.** `backend/scripts/evaluate.py` — standalone evaluation framework. Constructs a 20-user synthetic cohort (4 groups: high/medium/low/zero overlap), measures **Recall@5** matching quality per group, **Hit Rate@10** holdout recommendation quality per group, compares semantic vs heuristic average scores (with Spearman r) on Groups A/B/out pairs, and runs a **centroid-collapse probe** on mixed-domain users. Results: Recall@5=1.00 all groups, Hit Rate@10 pooled=0.80, semantic avg=0.967 vs heuristic 0.537 (+80%, Spearman r=0.46), mixed-domain users sit ~0.20 weaker to their parent cluster than pure users (collapse quantified). 987 tests passing at the time; 998 after the same-day follow-up work below (recs dedup, `qa_sweep.py`, `seed_catalog.py`).
+**Phase 2 Block J (feat/phase2-evaluation) is complete.** `backend/scripts/evaluate.py` — standalone evaluation framework. Constructs a 20-user synthetic cohort (4 groups: high/medium/low/zero overlap), measures **Recall@5** matching quality per group, **Hit Rate@10** holdout recommendation quality per group, compares semantic vs heuristic average scores (with Spearman r) on Groups A/B/out pairs, and runs a **centroid-collapse probe** on mixed-domain users. Results: Recall@5=1.00 all groups, semantic avg=0.967 vs heuristic 0.537 (+80%, Spearman r=0.46), mixed-domain users sit ~0.20 weaker to their parent cluster than pure users (collapse quantified). 987 tests passing at the time; 998 after the same-day follow-up work below (recs dedup, `qa_sweep.py`, `seed_catalog.py`). **Hit Rate@10 re-baselined 2026-06-11:** the eval now mirrors production recommendation filtering (owned-by-title + title-dedup via `filter_candidates_production_style`, hits counted by normalized-title equivalence) — the original pooled 0.80 was measured on a near-empty catalog; on the current 403-item catalog (incl. the 170-item seed) it is 0.50 (A=1.00, B=0.20, C=0.40, out=0.40). Hit Rate@k is catalog-sensitive — always report it with the catalog size (see roadmap §2.8).
 
 **Block J review fixes (2026-06-07) — the keystone-PR hardening pass.** A strict review (manual + ml-reviewer + code-reviewer, mapped to KI criteria) surfaced two design-vs-implementation gaps and several robustness items, all fixed:
 
