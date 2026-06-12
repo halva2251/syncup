@@ -180,7 +180,15 @@ export function ObsessionsStepForm({
         </ul>
       )}
 
-      <div className="mt-8 flex justify-end">
+      <div className="mt-8 flex items-center justify-between gap-3">
+        <ButtonLink
+          href="/onboarding/profile"
+          variant="secondary"
+          size="lg"
+          className="bg-[var(--color-bg-card)]"
+        >
+          Back
+        </ButtonLink>
         <ButtonLink href="/onboarding/services" size="lg">
           Continue
         </ButtonLink>
