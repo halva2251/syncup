@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { ErrorMessage } from "@/components/ui/error-message";
 import { Loader2, X, Check } from "lucide-react";
 
+type ValidationType = "email" | "password" | "displayName";
+
 interface AuthField {
   name: string;
   label: string;
@@ -14,8 +16,8 @@ interface AuthField {
   placeholder?: string;
   required?: boolean;
   autoComplete?: string;
-  validate?: (value: string) => string | undefined;
-  showValidationIcon?: "email" | "password";
+  validation?: ValidationType;
+  showValidationIcon?: boolean;
 }
 
 interface AuthFormProps {
@@ -28,6 +30,25 @@ interface AuthFormProps {
 }
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const validators: Record<ValidationType, (value: string) => string | undefined> = {
+  email: (value) => {
+    if (!value.trim()) return "Email is required.";
+    if (!emailRegex.test(value.trim())) return "Please enter a valid email address.";
+    return undefined;
+  },
+  password: (value) => {
+    if (!value) return "Password is required.";
+    if (value.length < 8) return "Password must be at least 8 characters.";
+    if (value.length > 128) return "Password must be 128 characters or less.";
+    return undefined;
+  },
+  displayName: (value) => {
+    if (!value.trim()) return "Display name is required.";
+    if (value.trim().length > 100) return "Display name must be 100 characters or less.";
+    return undefined;
+  },
+};
 
 function getEmailStatus(value: string): "empty" | "invalid" | "valid" {
   if (!value) return "empty";
@@ -71,6 +92,19 @@ export function AuthForm({
   );
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
 
+  const validateField = useCallback(
+    (field: AuthField, value: string) => {
+      if (field.required && !value.trim()) {
+        return `${field.label} is required.`;
+      }
+      if (field.validation) {
+        return validators[field.validation](value);
+      }
+      return undefined;
+    },
+    []
+  );
+
   const [state, formAction, pending] = useActionState(
     async (_prevState: { error?: string } | null, formData: FormData) => {
       const newErrors: Record<string, string> = {};
@@ -78,19 +112,15 @@ export function AuthForm({
 
       for (const field of fields) {
         const value = (formData.get(field.name) as string) ?? "";
-        if (field.required && !value.trim()) {
-          newErrors[field.name] = `${field.label} is required.`;
+        const error = validateField(field, value);
+        if (error) {
+          newErrors[field.name] = error;
           hasError = true;
-        } else if (field.validate) {
-          const error = field.validate(value);
-          if (error) {
-            newErrors[field.name] = error;
-            hasError = true;
-          }
         }
       }
 
       setClientErrors(newErrors);
+      setTouched(Object.fromEntries(fields.map((f) => [f.name, true])));
 
       if (hasError) {
         return { error: "Please fix the errors above." };
@@ -99,19 +129,6 @@ export function AuthForm({
       return await action(formData);
     },
     null
-  );
-
-  const validateField = useCallback(
-    (field: AuthField, value: string) => {
-      if (field.required && !value.trim()) {
-        return `${field.label} is required.`;
-      }
-      if (field.validate) {
-        return field.validate(value);
-      }
-      return undefined;
-    },
-    []
   );
 
   const handleChange = (
@@ -138,30 +155,29 @@ export function AuthForm({
   };
 
   const getFieldRightElement = (field: AuthField) => {
-    if (field.showValidationIcon === "email") {
+    if (!field.showValidationIcon) return null;
+
+    if (field.validation === "email") {
       const status = getEmailStatus(values[field.name]);
       if (!touched[field.name] && status === "empty") return null;
       return <ValidationIcon status={status} />;
     }
 
-    if (field.showValidationIcon === "password") {
-      const value = values[field.name];
-      if (!value) return null;
-      const error = field.validate ? field.validate(value) : undefined;
-      if (error) {
-        return (
-          <X className="h-5 w-5 text-[var(--color-danger)]" strokeWidth={2.5} />
-        );
-      }
+    const value = values[field.name];
+    if (!value) return null;
+
+    const error = field.validation ? validators[field.validation](value) : undefined;
+    if (error) {
       return (
-        <Check
-          className="h-5 w-5 text-[var(--color-success)]"
-          strokeWidth={2.5}
-        />
+        <X className="h-5 w-5 text-[var(--color-danger)]" strokeWidth={2.5} />
       );
     }
-
-    return null;
+    return (
+      <Check
+        className="h-5 w-5 text-[var(--color-success)]"
+        strokeWidth={2.5}
+      />
+    );
   };
 
   const getFieldError = (field: AuthField) => {
