@@ -5,6 +5,7 @@ import {
   SUPPORTED_LANGUAGES,
   MAX_LANGUAGES,
   getLanguageName,
+  getLanguageFlag,
 } from "@/lib/constants/languages";
 import { ChevronDown, X, Search } from "lucide-react";
 
@@ -15,6 +16,16 @@ interface LanguageSelectProps {
   onChange: (selected: string[]) => void;
   placeholder?: string;
   max?: number;
+}
+
+function Flag({ code, className }: { code: string; className?: string }) {
+  const country = getLanguageFlag(code);
+  if (!country) return null;
+  return (
+    <span
+      className={["fi", `fi-${country}`, className].filter(Boolean).join(" ")}
+    />
+  );
 }
 
 export function LanguageSelect({
@@ -99,8 +110,9 @@ export function LanguageSelect({
             selected.map((code) => (
               <span
                 key={code}
-                className="inline-flex items-center gap-1 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-sm font-medium text-[var(--color-accent)]"
+                className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-sm font-medium text-[var(--color-accent)]"
               >
+                <Flag code={code} className="h-3 w-4 rounded-sm" />
                 {getLanguageName(code) ?? code}
                 <span
                   onClick={(e) => {
@@ -146,11 +158,14 @@ export function LanguageSelect({
                   type="button"
                   onClick={() => toggleLanguage(lang.code)}
                   disabled={selected.length >= max}
-                  className="w-full rounded-md px-3 py-2 text-left text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-page)] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-page)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {lang.name}{" "}
-                  <span className="text-[var(--color-text-tertiary)]">
-                    ({lang.code})
+                  <Flag code={lang.code} className="h-3.5 w-5 rounded-sm" />
+                  <span>
+                    {lang.name}{" "}
+                    <span className="text-[var(--color-text-tertiary)]">
+                      ({lang.code})
+                    </span>
                   </span>
                 </button>
               ))

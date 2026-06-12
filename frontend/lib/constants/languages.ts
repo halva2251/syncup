@@ -81,6 +81,82 @@ export const SUPPORTED_LANGUAGE_CODES = new Set(
 
 export const MAX_LANGUAGES = 10;
 
+// Map ISO 639-1 language codes to ISO 3166-1 alpha-2 country codes for flags.
+// Some mappings are approximate because languages span multiple countries.
+export const LANGUAGE_FLAG_MAP: Record<string, string> = {
+  en: "gb",
+  zh: "cn",
+  hi: "in",
+  es: "es",
+  fr: "fr",
+  ar: "sa",
+  bn: "bd",
+  pt: "pt",
+  ru: "ru",
+  ur: "pk",
+  id: "id",
+  de: "de",
+  ja: "jp",
+  mr: "in",
+  te: "in",
+  tr: "tr",
+  ta: "in",
+  vi: "vn",
+  ko: "kr",
+  it: "it",
+  gu: "in",
+  pl: "pl",
+  uk: "ua",
+  fa: "ir",
+  ml: "in",
+  kn: "in",
+  or: "in",
+  my: "mm",
+  th: "th",
+  ms: "my",
+  pa: "in",
+  tl: "ph",
+  sw: "ke",
+  nl: "nl",
+  ro: "ro",
+  az: "az",
+  kk: "kz",
+  sv: "se",
+  cs: "cz",
+  el: "gr",
+  hu: "hu",
+  sr: "rs",
+  bg: "bg",
+  ca: "es",
+  hr: "hr",
+  da: "dk",
+  fi: "fi",
+  sk: "sk",
+  no: "no",
+  sq: "al",
+  lt: "lt",
+  sl: "si",
+  lv: "lv",
+  et: "ee",
+  be: "by",
+  bs: "ba",
+  mk: "mk",
+  mt: "mt",
+  ga: "ie",
+  cy: "gb",
+  is: "is",
+  ka: "ge",
+  hy: "am",
+  he: "il",
+  eu: "es",
+  gl: "es",
+  lb: "lu",
+};
+
 export function getLanguageName(code: string): string | undefined {
   return SUPPORTED_LANGUAGES.find((lang) => lang.code === code)?.name;
+}
+
+export function getLanguageFlag(code: string): string | undefined {
+  return LANGUAGE_FLAG_MAP[code];
 }

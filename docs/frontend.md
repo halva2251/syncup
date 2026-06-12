@@ -282,7 +282,7 @@ async rewrites() {
 From `docs/roadmap.md` / `api-contract.md`:
 
 1. **Display name** — set at signup; `GET /api/onboarding/status` reports `has_display_name`.
-2. **Languages + interests** — optional languages via a searchable multi-select with ~70 real languages (fake/made-up codes rejected by backend); freeform interests become `manual_obsessions`.
+2. **Languages + interests** — optional languages via a searchable multi-select with ~70 real languages, each shown with a country flag via `flag-icons` (fake/made-up codes rejected by backend); freeform interests become `manual_obsessions`.
 3. **Connect services** — OAuth or CSV upload. User can also skip if they add ≥ 3 manual obsessions.
 4. **Taste card preview** — call `GET /api/me/taste`, let the user review, then `PATCH /api/me { is_matchable: true }`.
 
