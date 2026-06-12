@@ -1,0 +1,1 @@
+export type ProfileInput = any;
