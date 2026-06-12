@@ -1,7 +1,64 @@
-export async function createObsessionAction() {
-  return undefined as any;
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { createObsession, deleteObsession } from "@/lib/api/obsessions";
+import { ApiError } from "@/lib/api/client";
+import type { ManualObsession } from "@/types/api";
+
+const CATEGORIES = new Set([
+  "game",
+  "music",
+  "film",
+  "book",
+  "show",
+  "anime",
+  "manga",
+  "community",
+  "other",
+]);
+
+function validateName(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) return "Name is required.";
+  if (trimmed.length > 200) return "Name must be 200 characters or less.";
+  return null;
 }
 
-export async function deleteObsessionAction() {
-  return undefined as any;
+export async function createObsessionAction(formData: FormData) {
+  const category = formData.get("category") as string;
+  const name = formData.get("name") as string;
+
+  if (!category || !CATEGORIES.has(category)) {
+    return { error: "Please select a valid category." };
+  }
+
+  const nameError = validateName(name);
+  if (nameError) {
+    return { error: nameError };
+  }
+
+  try {
+    const obsession = await createObsession({ category, name: name.trim() });
+    revalidatePath("/onboarding/obsessions");
+    return { obsession };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return { error: err.message };
+    }
+    return { error: "Something went wrong. Please try again." };
+  }
+}
+
+export async function deleteObsessionAction(id: string) {
+  try {
+    await deleteObsession(id);
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return { error: err.message };
+    }
+    return { error: "Something went wrong. Please try again." };
+  }
+
+  revalidatePath("/onboarding/obsessions");
+  return { success: true };
 }

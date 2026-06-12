@@ -1,12 +1,31 @@
-export default function OnboardingObsessionsPage() {
+import { redirect } from "next/navigation";
+import { listObsessions } from "@/lib/api/obsessions";
+import { getCurrentUser } from "@/lib/api/me";
+import { getOnboardingStatus } from "@/lib/api/onboarding";
+import { ObsessionsStepForm } from "@/components/onboarding/obsessions-step-form";
+
+export default async function OnboardingObsessionsPage() {
+  let user;
+  let status;
+  let obsessions;
+
+  try {
+    const me = await getCurrentUser();
+    user = me.user;
+    status = await getOnboardingStatus();
+    obsessions = await listObsessions();
+  } catch {
+    redirect("/login");
+  }
+
+  if (status.next_step === null) {
+    redirect("/home");
+  }
+
   return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-8 shadow-sm sm:p-10">
-      <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">
-        What are you obsessed with?
-      </h1>
-      <p className="mt-2 text-[15px] text-[var(--color-text-secondary)]">
-        Step 2 is coming next. Add a few things that define your taste.
-      </p>
-    </div>
+    <ObsessionsStepForm
+      initialObsessions={obsessions}
+      key={user.id}
+    />
   );
 }
