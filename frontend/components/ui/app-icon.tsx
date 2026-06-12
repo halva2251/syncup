@@ -1,0 +1,152 @@
+import { useId } from "react";
+import type { LucideIcon } from "lucide-react";
+
+export type SimpleIcon = {
+  title: string;
+  path: string;
+};
+
+type Gradient = "blue" | "purple" | "green" | "orange" | "red" | "brand";
+
+const gradients: Record<Gradient, string> = {
+  blue: "from-[#60A5FA] to-[#1D4ED8]",
+  purple: "from-[#A78BFA] to-[#6D28D9]",
+  green: "from-[#34D399] to-[#047857]",
+  orange: "from-[#FBBF24] to-[#B45309]",
+  red: "from-[#FB7185] to-[#B91C1C]",
+  brand: "from-[#60A5FA] to-[#1D4ED8]",
+};
+
+const sizes = {
+  xs: "w-8 h-8",
+  sm: "w-10 h-10",
+  md: "w-12 h-12",
+  lg: "w-16 h-16",
+  xl: "w-20 h-20",
+  "2xl": "w-24 h-24",
+  "3xl": "w-32 h-32",
+  "4xl": "w-40 h-40",
+};
+
+const iconSizes = {
+  xs: 20,
+  sm: 24,
+  md: 30,
+  lg: 40,
+  xl: 50,
+  "2xl": 60,
+  "3xl": 80,
+  "4xl": 100,
+};
+
+const borderWidths: Record<keyof typeof sizes, number> = {
+  xs: 1.5,
+  sm: 2,
+  md: 2.5,
+  lg: 3,
+  xl: 4,
+  "2xl": 5,
+  "3xl": 5,
+  "4xl": 6,
+};
+
+type AppIconProps =
+  | {
+      icon: LucideIcon;
+      brand?: never;
+      size?: keyof typeof sizes;
+      gradient?: Gradient;
+      glossy?: boolean;
+      className?: string;
+    }
+  | {
+      icon?: never;
+      brand: SimpleIcon;
+      size?: keyof typeof sizes;
+      gradient?: Gradient;
+      glossy?: boolean;
+      className?: string;
+    };
+
+export function AppIcon({
+  icon,
+  brand,
+  size = "md",
+  gradient = "blue",
+  glossy = true,
+  className,
+}: AppIconProps) {
+  const id = useId().replace(/:/g, "");
+  const IconComponent = icon;
+  const gradientUrl = `url(#${id}-iconGradient)`;
+
+  return (
+    <span
+      className={[
+        "relative inline-flex items-center justify-center shrink-0 overflow-hidden",
+        "rounded-[22%] bg-gradient-to-b shadow-md",
+        sizes[size],
+        gradients[gradient],
+        className,
+      ].join(" ")}
+    >
+      {/* Raised bezel / inner border */}
+      <span
+        className="pointer-events-none absolute inset-0 rounded-[22%]"
+        style={{
+          border: `${borderWidths[size]}px solid transparent`,
+          background:
+            "linear-gradient(to bottom, rgba(0,0,0,0.18), rgba(255,255,255,0.22)) border-box, linear-gradient(to bottom, rgba(0,0,0,0.08), rgba(255,255,255,0.1)) padding-box",
+          WebkitMask: "linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0)",
+          WebkitMaskComposite: "xor",
+          maskComposite: "exclude",
+        }}
+      />
+
+      {/* Gloss overlay */}
+      {glossy && (
+        <span className="pointer-events-none absolute inset-0 rounded-[22%] bg-gradient-to-b from-white/25 via-transparent to-transparent" />
+      )}
+
+      {/* Gradient definition for the icon */}
+      <svg width="0" height="0" className="absolute">
+        <defs>
+          <linearGradient
+            id={`${id}-iconGradient`}
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="24"
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0%" stopColor="rgba(255, 255, 255, 1)" />
+            <stop offset="55%" stopColor="rgba(255, 255, 255, 0.65)" />
+            <stop offset="100%" stopColor="rgba(255, 255, 255, 0.25)" />
+          </linearGradient>
+        </defs>
+      </svg>
+
+      {/* Icon */}
+      {IconComponent ? (
+        <IconComponent
+          size={iconSizes[size]}
+          className="relative z-10 drop-shadow-2xl"
+          strokeWidth={2}
+          style={{ stroke: gradientUrl }}
+        />
+      ) : brand ? (
+        <svg
+          viewBox="0 0 24 24"
+          width={iconSizes[size]}
+          height={iconSizes[size]}
+          className="relative z-10 drop-shadow-2xl"
+          aria-label={brand.title}
+          role="img"
+          style={{ fill: gradientUrl }}
+        >
+          <path d={brand.path} />
+        </svg>
+      ) : null}
+    </span>
+  );
+}

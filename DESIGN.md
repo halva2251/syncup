@@ -204,11 +204,32 @@ Use small solid dots for status:
 
 ## 6. Iconography
 
-- Use a single line-icon set (e.g., Lucide).
+### UI icons
+
+- Use **Lucide React** for all interface icons.
 - Stroke width: `1.5px–2px`.
 - Size in nav: `18px–20px`.
 - Size in buttons/cards: `16px–18px`.
 - Keep icons muted (`--text-secondary`) unless active/primary.
+
+### App-style icons
+
+For feature cards, service tiles, or brand markers, use the `AppIcon` utility in `components/ui/app-icon.tsx`.
+
+- It renders a rounded-square container with a top-light to bottom-dark gradient background.
+- Supports Lucide icons and **Simple Icons** brand icons.
+- Available gradients: `blue`, `purple`, `green`, `orange`, `red`, `brand`.
+- Includes a glossy highlight and a subtle dark-top/light-bottom bezel.
+- Border width scales down on small sizes (`xs`–`lg`).
+
+```tsx
+import { ShieldCheck } from "lucide-react";
+import { siSpotify } from "simple-icons";
+import { AppIcon } from "@/components/ui/app-icon";
+
+<AppIcon icon={ShieldCheck} size="lg" gradient="blue" />
+<AppIcon brand={siSpotify} size="md" gradient="brand" />
+```
 
 ### Navigation icon mapping (SyncUp)
 
