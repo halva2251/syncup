@@ -112,7 +112,7 @@ export function ObsessionsStepForm({
       <form ref={formRef} action={formAction} className="space-y-5">
         {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="sm:w-56">
             <AccordionSelect
               name="category"
@@ -138,12 +138,14 @@ export function ObsessionsStepForm({
             className="flex-1"
           />
 
-          <div className="pt-7">
-            <Button type="submit" disabled={pending}>
-              {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Add
-            </Button>
-          </div>
+          <Button
+            type="submit"
+            disabled={pending}
+            className="h-[42px] w-full sm:w-auto"
+          >
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add
+          </Button>
         </div>
 
         <p className="text-[13px] text-[var(--color-text-tertiary)]">
