@@ -24,8 +24,21 @@ function validateName(name: string): string | null {
   return null;
 }
 
+function parseCategory(value: string): string | null {
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === "string") {
+      return parsed[0];
+    }
+  } catch {
+    // fall through
+  }
+  return value || null;
+}
+
 export async function createObsessionAction(formData: FormData) {
-  const category = formData.get("category") as string;
+  const categoryRaw = formData.get("category") as string;
+  const category = parseCategory(categoryRaw);
   const name = formData.get("name") as string;
 
   if (!category || !CATEGORIES.has(category)) {

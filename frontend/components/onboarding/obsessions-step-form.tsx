@@ -4,6 +4,7 @@ import { useActionState, useOptimistic, useRef, useState } from "react";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorMessage } from "@/components/ui/error-message";
+import { AccordionSelect } from "@/components/ui/accordion-select";
 import { AppIcon } from "@/components/ui/app-icon";
 import { Loader2, Heart, X } from "lucide-react";
 import {
@@ -12,16 +13,35 @@ import {
 } from "@/lib/actions/obsession-actions";
 import type { ManualObsession } from "@/types/api";
 
-const CATEGORIES: { value: string; label: string }[] = [
-  { value: "game", label: "Game" },
-  { value: "music", label: "Music" },
-  { value: "film", label: "Film" },
-  { value: "book", label: "Book" },
-  { value: "show", label: "Show" },
-  { value: "anime", label: "Anime" },
-  { value: "manga", label: "Manga" },
-  { value: "community", label: "Community" },
-  { value: "other", label: "Other" },
+interface CategoryItem {
+  value: string;
+  label: string;
+}
+
+const CATEGORY_SECTIONS = [
+  {
+    id: "media",
+    label: "Media & Entertainment",
+    items: [
+      { value: "game", label: "Game" },
+      { value: "music", label: "Music" },
+      { value: "film", label: "Film" },
+      { value: "book", label: "Book" },
+      { value: "show", label: "Show" },
+      { value: "anime", label: "Anime" },
+      { value: "manga", label: "Manga" },
+    ],
+  },
+  {
+    id: "community",
+    label: "Community",
+    items: [{ value: "community", label: "Community" }],
+  },
+  {
+    id: "other",
+    label: "Other",
+    items: [{ value: "other", label: "Other" }],
+  },
 ];
 
 interface ObsessionsStepFormProps {
@@ -35,6 +55,7 @@ export function ObsessionsStepForm({
   const [optimisticObsessions, setOptimisticObsessions] =
     useOptimistic(obsessions);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<CategoryItem[]>([]);
   const formRef = useRef<HTMLFormElement>(null);
 
   const [state, formAction, pending] = useActionState(
@@ -45,6 +66,7 @@ export function ObsessionsStepForm({
       }
       if ("obsession" in result && result.obsession) {
         setObsessions((prev) => [result.obsession!, ...prev]);
+        setSelectedCategory([]);
         formRef.current?.reset();
       }
       return null;
@@ -91,25 +113,19 @@ export function ObsessionsStepForm({
         {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-          <div className="sm:w-40">
-            <label
-              htmlFor="category"
-              className="mb-2 block text-[15px] font-medium text-[var(--color-text-primary)]"
-            >
-              Category
-            </label>
-            <select
-              id="category"
+          <div className="sm:w-56">
+            <AccordionSelect
               name="category"
-              required
-              className="h-[42px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3.5 text-[15px] text-[var(--color-text-primary)] transition-colors focus:border-[var(--color-accent)] focus:outline-none focus:ring-[3px] focus:ring-[var(--color-accent-soft)]"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
+              label="Category"
+              sections={CATEGORY_SECTIONS}
+              selected={selectedCategory}
+              onChange={setSelectedCategory}
+              getKey={(c) => c.value}
+              getLabel={(c) => c.label}
+              multiple={false}
+              placeholder="Select a category"
+              emptyMessage="No categories available"
+            />
           </div>
 
           <Input

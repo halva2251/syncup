@@ -29,6 +29,7 @@ export interface AccordionSelectProps<T> {
   placeholder?: string;
   searchEnabled?: boolean;
   searchPlaceholder?: string;
+  multiple?: boolean;
   max?: number;
   emptyMessage?: string;
   noSearchResultsMessage?: string;
@@ -48,6 +49,7 @@ export function AccordionSelect<T>({
   placeholder = "Select...",
   searchEnabled = false,
   searchPlaceholder = "Search...",
+  multiple = true,
   max,
   emptyMessage = "No items available",
   noSearchResultsMessage = "No items found",
@@ -134,7 +136,13 @@ export function AccordionSelect<T>({
   const toggleItem = (item: T) => {
     const key = getKey(item);
     if (selectedKeys.has(key)) {
-      onChange(selected.filter((s) => getKey(s) !== key));
+      onChange(multiple ? selected.filter((s) => getKey(s) !== key) : []);
+    } else if (!multiple) {
+      onChange([item]);
+      setIsOpen(false);
+      if (isSearching) {
+        setSearch("");
+      }
     } else if (max === undefined || selected.length < max) {
       onChange([...selected, item]);
       if (isSearching) {
