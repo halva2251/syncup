@@ -177,7 +177,7 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 
 | Route | Purpose | Key endpoints |
 |-------|---------|---------------|
-| `/onboarding` | 4-step wizard: languages → manual obsessions → connect services → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
+| `/onboarding` | 4-step wizard: languages → connect services → manual obsessions → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
 | `/home` | Dashboard landing after onboarding. | `GET /api/me` |
 | `/me/taste` | **Primary product.** Taste card with archetype, top items, share buttons, OG image. | `GET /api/me/taste`, `POST /api/me/recompute` |
 | `/me/connections` | Service grid, sync status, OAuth + CSV upload flows. | `GET /api/me`, `POST /api/sync/{service}`, connect endpoints |
@@ -283,8 +283,8 @@ From `docs/roadmap.md` / `api-contract.md`:
 
 1. **Display name** — set at signup; `GET /api/onboarding/status` reports `has_display_name`.
 2. **Languages** — optional languages via a searchable multi-select with ~70 real languages, each shown with a country flag via `flag-icons` (fake/made-up codes rejected by backend).
-3. **Obsessions** — freeform things the user is obsessed with (games, albums, books, etc.). Each gets a category and is stored as a `manual_obsession`. ≥ 3 satisfies the `has_connection_or_obsessions` gate, or the user can connect a service next.
-4. **Connect services** — OAuth or CSV upload to pull real library data.
+3. **Connect services** — OAuth or CSV upload to pull real library data. Skippable for now; the page is a placeholder.
+4. **Obsessions** — freeform things the user is obsessed with (games, albums, books, etc.). Each gets a category and is stored as a `manual_obsession`. ≥ 3 satisfies the `has_connection_or_obsessions` gate.
 5. **Taste card preview** — call `GET /api/me/taste`, let the user review, then `PATCH /api/me { is_matchable: true }`.
 
 `next_step` progression from the backend:

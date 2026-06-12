@@ -28,5 +28,5 @@ export async function updateOnboardingProfile(formData: FormData) {
     return { error: "Something went wrong. Please try again." };
   }
 
-  redirect("/onboarding/obsessions");
+  redirect("/onboarding/services");
 }

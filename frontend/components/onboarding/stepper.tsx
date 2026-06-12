@@ -5,8 +5,8 @@ import { Check } from "lucide-react";
 
 const steps = [
   { id: "profile", label: "Languages" },
-  { id: "obsessions", label: "Obsessions" },
   { id: "services", label: "Services" },
+  { id: "obsessions", label: "Obsessions" },
   { id: "taste", label: "Taste" },
   { id: "matchable", label: "Matching" },
 ];
