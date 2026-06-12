@@ -316,6 +316,7 @@ syncup/
 - [docs/api-contract.md](docs/api-contract.md) -- API surface: routes, request/response shapes, live vs planned
 - [docs/db-schema.md](docs/db-schema.md) -- full database schema
 - [docs/dev-guide.md](docs/dev-guide.md) -- internals, design decisions, what to build next
+- [docs/frontend.md](docs/frontend.md) -- frontend page plan, design system, and API integration
 - [docs/roadmap.md](docs/roadmap.md) -- phased build plan and current status
 - [docs/product-strategy.md](docs/product-strategy.md) -- cold start strategy, positioning, target user
 

@@ -12,6 +12,10 @@ Key points:
 - Tailwind CSS v4 is configured; prefer CSS variables/design tokens over hard-coded values.
 - Maintain both light and dark mode parity.
 
+## Frontend Documentation
+
+For page plan, API integration patterns, and build order, see [`docs/frontend.md`](./docs/frontend.md).
+
 ## Project Context
 
 - Backend: Python/FastAPI in `backend/`.
