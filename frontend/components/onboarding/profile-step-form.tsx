@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorMessage } from "@/components/ui/error-message";
+import { LanguageSelect } from "@/components/ui/language-select";
 import { Loader2, Sparkles } from "lucide-react";
 import { updateOnboardingProfile } from "@/lib/actions/profile-actions";
 
@@ -16,6 +17,10 @@ export function ProfileStepForm({
   displayName,
   languages,
 }: ProfileStepFormProps) {
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(
+    languages ?? []
+  );
+
   const [state, formAction, pending] = useActionState(
     async (_prevState: { error?: string } | null, formData: FormData) => {
       return await updateOnboardingProfile(formData);
@@ -52,18 +57,16 @@ export function ProfileStepForm({
           autoComplete="username"
         />
 
-        <Input
+        <LanguageSelect
           name="languages"
           label="Languages you speak (optional)"
-          type="text"
-          placeholder="English, German, Japanese"
-          defaultValue={languages?.join(", ") ?? ""}
-          autoComplete="off"
+          selected={selectedLanguages}
+          onChange={setSelectedLanguages}
+          placeholder="Search languages..."
         />
 
         <p className="text-[13px] text-[var(--color-text-tertiary)]">
-          Separate languages with commas. This helps us match you with people
-          you can actually talk to.
+          This helps us match you with people you can actually talk to.
         </p>
 
         <Button
