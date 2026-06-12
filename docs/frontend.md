@@ -15,7 +15,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Typeface | ✅ DM Sans loaded in `frontend/app/layout.tsx` |
 | App-style icons | ✅ `AppIcon` utility in `frontend/components/ui/app-icon.tsx` |
 | Scaffolded pages/components | ✅ Stripped to minimal shells (return `null`) |
-| Auth / login / signup | ⏸ Not built |
+| Auth / login / signup | ✅ Built |
 | Onboarding | ⏸ Not built |
 | Taste card | ⏸ Not built |
 | Matches feed | ⏸ Not built |
