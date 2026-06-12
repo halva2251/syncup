@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useState,
   useRef,
   useEffect,
@@ -205,9 +206,13 @@ export function AccordionSelect<T>({
             </span>
           ) : (
             selected.map((item) =>
-              renderChip
-                ? renderChip(item, () => removeItem(item))
-                : defaultChip(item, () => removeItem(item))
+              renderChip ? (
+                <Fragment key={getKey(item)}>
+                  {renderChip(item, () => removeItem(item))}
+                </Fragment>
+              ) : (
+                defaultChip(item, () => removeItem(item))
+              )
             )
           )}
         </span>
