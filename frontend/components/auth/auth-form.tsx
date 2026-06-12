@@ -41,17 +41,17 @@ export function AuthForm({
   );
 
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-6 shadow-sm sm:p-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">
+    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-auth-card)] p-8 shadow-sm sm:p-10">
+      <div className="mb-8">
+        <h1 className="text-[28px] font-semibold leading-tight tracking-tight text-[var(--color-text-primary)]">
           {title}
         </h1>
-        <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
+        <p className="mt-2 text-[15px] text-[var(--color-text-secondary)]">
           {subtitle}
         </p>
       </div>
 
-      <form action={formAction} className="space-y-4">
+      <form action={formAction} className="space-y-5">
         {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
 
         {fields.map((field) => (
@@ -69,7 +69,7 @@ export function AuthForm({
         <Button
           type="submit"
           size="lg"
-          className="w-full"
+          className="mt-2 w-full"
           disabled={pending}
         >
           {pending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -77,7 +77,7 @@ export function AuthForm({
         </Button>
       </form>
 
-      <div className="mt-6 text-center text-sm text-[var(--color-text-secondary)]">
+      <div className="mt-8 text-center text-sm text-[var(--color-text-secondary)]">
         {footer}
       </div>
     </div>

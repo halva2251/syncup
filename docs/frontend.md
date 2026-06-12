@@ -140,6 +140,23 @@ import { AppIcon } from "@/components/ui/app-icon";
 
 The frontend implements the routes defined in GitHub issue #21 ("DESIGN: frontend").
 
+### Auth pages
+
+Routes: `/login` and `/signup`.
+
+Design specifics:
+
+- **Logo:** `AppIcon` with `Sparkles` icon + "SyncUp" wordmark, centered above the card.
+- **Card background:** `#FAFAFA` (`--color-bg-auth-card`) — a warm off-white that separates the form from the `#F9FAFB` page background.
+- **Card shape:** `rounded-2xl`, border `var(--color-border)`, soft shadow.
+- **Title:** `28px` semibold, tight tracking.
+- **Subtitle:** `15px`, `--text-secondary`.
+- **Inputs:** `42px` height, `15px` label with medium weight, `8px` rounded corners, accent focus ring.
+- **Primary CTA:** full-width button.
+- **Footer link:** centered, accent color.
+
+Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the `syncup_session` cookie, and redirect on success.
+
 ### Public routes
 
 | Route | Purpose |
