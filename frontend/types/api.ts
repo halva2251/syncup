@@ -1,25 +1,120 @@
-export type ApiErrorBody = any;
+export interface ApiErrorBody {
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
 
-export type User = any;
+export interface User {
+  id: string;
+  email: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  discord_handle: string | null;
+  languages: string[] | null;
+  is_matchable: boolean;
+  onboarded: boolean;
+  vibe_summary: string | null;
+  archetype: string | null;
+  key_themes: string[] | null;
+  vibe_computed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
-export type ServiceConnection = any;
+export interface ServiceConnection {
+  service: string;
+  external_user_id: string;
+  sync_status: "pending" | "syncing" | "ok" | "error";
+  last_synced_at: string | null;
+  token_expires_at: string | null;
+  sync_error: string | null;
+}
 
-export type MeResponse = any;
+export interface MeResponse {
+  user: User;
+  connections: ServiceConnection[];
+}
 
-export type OnboardingStatus = any;
+export interface OnboardingStatus {
+  has_display_name: boolean;
+  has_languages: boolean;
+  has_connection_or_obsessions: boolean;
+  has_taste_data: boolean;
+  has_set_matchable: boolean;
+  next_step: "set_display_name" | "connect_service" | "set_matchable" | null;
+}
 
-export type TasteItem = any;
+export interface TasteItem {
+  id: string;
+  name: string;
+  hours?: number;
+  engagement_score?: number;
+}
 
-export type ManualObsession = any;
+export interface ManualObsession {
+  id: string;
+  category: string;
+  name: string;
+  weight: number;
+}
 
-export type PreferenceOverride = any;
+export interface PreferenceOverride {
+  id: string;
+  item: { id: string; name: string };
+  boost_multiplier: number;
+  note: string | null;
+}
 
-export type TasteResponse = any;
+export interface TasteServiceData {
+  top_games?: TasteItem[];
+  top_artists?: TasteItem[];
+  top_tracks?: TasteItem[];
+  top_albums?: TasteItem[];
+  top_films?: TasteItem[];
+  top_shows?: TasteItem[];
+  top_anime?: TasteItem[];
+  top_manga?: TasteItem[];
+  top_communities?: TasteItem[];
+}
 
-export type Match = any;
+export interface TasteResponse {
+  services: Record<string, TasteServiceData>;
+  manual_obsessions: ManualObsession[];
+  overrides: PreferenceOverride[];
+}
 
-export type MatchListResponse = any;
+export interface MatchUser {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  discord_handle: string | null;
+}
 
-export type Recommendation = any;
+export interface Match {
+  user: MatchUser;
+  score: number;
+  breakdown: Record<string, number>;
+  shared_highlights: { service: string; item_name: string }[];
+  computed_at: string;
+  matching_mode: "heuristic" | "semantic";
+}
 
-export type RecommendationsResponse = any;
+export interface MatchListResponse {
+  items: Match[];
+  next_cursor: string | null;
+}
+
+export interface Recommendation {
+  item_name: string;
+  service: string;
+  item_type: string;
+  similarity_score: number;
+}
+
+export interface RecommendationsResponse {
+  items: Recommendation[];
+}

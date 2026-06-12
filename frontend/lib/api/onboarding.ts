@@ -1,3 +1,6 @@
-export async function getOnboardingStatus() {
-  return undefined as any;
+import { apiFetch } from "@/lib/api/client";
+import type { OnboardingStatus } from "@/types/api";
+
+export async function getOnboardingStatus(): Promise<OnboardingStatus> {
+  return apiFetch<OnboardingStatus>("/onboarding/status");
 }
