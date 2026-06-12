@@ -144,7 +144,7 @@ interface ServiceCardProps {
     id: string;
     name: string;
     type: "username" | "oauth" | "csv";
-    brand: { title: string; path: string };
+    brand: { title: string; path: string; hex: string };
     description: string;
     oauthStartUrl?: string;
     csvLabel?: string;
@@ -162,7 +162,11 @@ function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
     <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-page)] p-4">
       <div className="mb-3 flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <AppIcon brand={service.brand} size="sm" gradient="brand" />
+          <AppIcon
+            brand={service.brand}
+            size="sm"
+            brandColor={`#${service.brand.hex}`}
+          />
           <div>
             <h3 className="font-semibold text-[var(--color-text-primary)]">
               {service.name}
@@ -172,14 +176,16 @@ function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
             </p>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
-          <span
-            className={["h-2 w-2 rounded-full", statusDotClass(status)].join(
-              " ",
-            )}
-          />
-          {formatStatus(status)}
-        </span>
+        {status !== "not_connected" && (
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
+            <span
+              className={["h-2 w-2 rounded-full", statusDotClass(status)].join(
+                " ",
+              )}
+            />
+            {formatStatus(status)}
+          </span>
+        )}
       </div>
 
       {connection?.sync_error && status === "error" && (

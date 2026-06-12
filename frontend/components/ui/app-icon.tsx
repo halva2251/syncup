@@ -56,6 +56,7 @@ type AppIconProps =
       brand?: never;
       size?: keyof typeof sizes;
       gradient?: Gradient;
+      brandColor?: string;
       glossy?: boolean;
       className?: string;
     }
@@ -64,6 +65,7 @@ type AppIconProps =
       brand: SimpleIcon;
       size?: keyof typeof sizes;
       gradient?: Gradient;
+      brandColor?: string;
       glossy?: boolean;
       className?: string;
     };
@@ -73,6 +75,7 @@ export function AppIcon({
   brand,
   size = "md",
   gradient = "blue",
+  brandColor,
   glossy = true,
   className,
 }: AppIconProps) {
@@ -84,11 +87,14 @@ export function AppIcon({
     <span
       className={[
         "relative inline-flex items-center justify-center shrink-0 overflow-hidden",
-        "rounded-[22%] bg-gradient-to-b shadow-md",
+        "rounded-[22%] shadow-md",
         sizes[size],
-        gradients[gradient],
+        brandColor ? "" : ["bg-gradient-to-b", gradients[gradient]].join(" "),
         className,
-      ].join(" ")}
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      style={brandColor ? { backgroundColor: brandColor } : undefined}
     >
       {/* Raised bezel / inner border */}
       <span
