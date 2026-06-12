@@ -123,6 +123,7 @@ export function ObsessionsStepForm({
               getKey={(c) => c.value}
               getLabel={(c) => c.label}
               multiple={false}
+              grouped={false}
               placeholder="Select a category"
               emptyMessage="No categories available"
             />

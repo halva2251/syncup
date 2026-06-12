@@ -31,6 +31,7 @@ export interface AccordionSelectProps<T> {
   searchEnabled?: boolean;
   searchPlaceholder?: string;
   multiple?: boolean;
+  grouped?: boolean;
   max?: number;
   emptyMessage?: string;
   noSearchResultsMessage?: string;
@@ -51,6 +52,7 @@ export function AccordionSelect<T>({
   searchEnabled = false,
   searchPlaceholder = "Search...",
   multiple = true,
+  grouped = true,
   max,
   emptyMessage = "No items available",
   noSearchResultsMessage = "No items found",
@@ -74,26 +76,33 @@ export function AccordionSelect<T>({
   const query = search.trim().toLowerCase();
   const isSearching = query.length > 0;
 
+  const filterItem = (item: T) => {
+    if (!isSearching) return true;
+    const labelText = getLabel(item).toLowerCase();
+    const keyText = getKey(item).toLowerCase();
+    const sectionKeys = getSectionKeys
+      ? getSectionKeys(item).join(" ").toLowerCase()
+      : "";
+    return (
+      labelText.includes(query) ||
+      keyText.includes(query) ||
+      sectionKeys.includes(query)
+    );
+  };
+
   const filteredSections = useMemo(() => {
     if (!searchEnabled || !isSearching) return sections;
     return sections
       .map((section) => ({
         ...section,
-        items: section.items.filter((item) => {
-          const labelText = getLabel(item).toLowerCase();
-          const keyText = getKey(item).toLowerCase();
-          const sectionKeys = getSectionKeys
-            ? getSectionKeys(item).join(" ").toLowerCase()
-            : "";
-          return (
-            labelText.includes(query) ||
-            keyText.includes(query) ||
-            sectionKeys.includes(query)
-          );
-        }),
+        items: section.items.filter(filterItem),
       }))
       .filter((section) => section.items.length > 0);
-  }, [sections, searchEnabled, isSearching, query, getKey, getLabel, getSectionKeys]);
+  }, [sections, searchEnabled, isSearching, filterItem]);
+
+  const filteredFlatItems = useMemo(() => {
+    return sections.flatMap((section) => section.items).filter(filterItem);
+  }, [sections, filterItem]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -155,6 +164,30 @@ export function AccordionSelect<T>({
   const removeItem = (item: T) => {
     const key = getKey(item);
     onChange(selected.filter((s) => getKey(s) !== key));
+  };
+
+  const renderItem = (item: T) => {
+    const key = getKey(item);
+    const isSelected = selectedKeys.has(key);
+    const isDisabled =
+      !isSelected && max !== undefined && selected.length >= max;
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={() => toggleItem(item)}
+        disabled={isDisabled}
+        className={[
+          "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
+          "hover:bg-[var(--color-bg-page)] disabled:cursor-not-allowed disabled:opacity-50",
+          isSelected
+            ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+            : "text-[var(--color-text-primary)]",
+        ].join(" ")}
+      >
+        {renderOption ? renderOption(item) : getLabel(item)}
+      </button>
+    );
   };
 
   const defaultChip = (item: T, onRemove: () => void) => (
@@ -238,11 +271,19 @@ export function AccordionSelect<T>({
           )}
 
           <div className="max-h-60 overflow-auto">
-            {filteredSections.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-[var(--color-text-tertiary)]">
-                {isSearching ? noSearchResultsMessage : emptyMessage}
-              </p>
-            ) : (
+            {grouped
+              ? filteredSections.length === 0 && (
+                  <p className="px-3 py-2 text-sm text-[var(--color-text-tertiary)]">
+                    {isSearching ? noSearchResultsMessage : emptyMessage}
+                  </p>
+                )
+              : filteredFlatItems.length === 0 && (
+                  <p className="px-3 py-2 text-sm text-[var(--color-text-tertiary)]">
+                    {isSearching ? noSearchResultsMessage : emptyMessage}
+                  </p>
+                )}
+
+            {grouped ? (
               filteredSections.map((section) => {
                 const isExpanded = openSections.has(section.id);
                 return (
@@ -267,36 +308,16 @@ export function AccordionSelect<T>({
                     </button>
                     {isExpanded && (
                       <div className="pb-2">
-                        {section.items.map((item) => {
-                          const key = getKey(item);
-                          const isSelected = selectedKeys.has(key);
-                          const isDisabled =
-                            !isSelected &&
-                            max !== undefined &&
-                            selected.length >= max;
-                          return (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={() => toggleItem(item)}
-                              disabled={isDisabled}
-                              className={[
-                                "flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors",
-                                "hover:bg-[var(--color-bg-page)] disabled:cursor-not-allowed disabled:opacity-50",
-                                isSelected
-                                  ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                                  : "text-[var(--color-text-primary)]",
-                              ].join(" ")}
-                            >
-                              {renderOption ? renderOption(item) : getLabel(item)}
-                            </button>
-                          );
-                        })}
+                        {section.items.map((item) => renderItem(item))}
                       </div>
                     )}
                   </div>
                 );
               })
+            ) : (
+              <div className="py-1">
+                {filteredFlatItems.map((item) => renderItem(item))}
+              </div>
             )}
           </div>
 
