@@ -16,7 +16,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | App-style icons | ✅ `AppIcon` utility in `frontend/components/ui/app-icon.tsx` |
 | Scaffolded pages/components | ✅ Stripped to minimal shells (return `null`) |
 | Auth / login / signup | ✅ Built |
-| Onboarding | 🚧 Step 1 (profile) built |
+| Onboarding | 🚧 Step 1 (languages) built |
 | Taste card | ⏸ Not built |
 | Matches feed | ⏸ Not built |
 | Recommendations | ⏸ Not built |
@@ -72,7 +72,7 @@ All frontend work must follow the design system in [`DESIGN.md`](./DESIGN.md) at
 Highlights:
 
 - **Aesthetic:** clean, card-based dashboard/SaaS look with rounded corners, soft borders, and generous whitespace.
-- **Color:** mostly neutral surfaces; blue (`#2563EB`) is reserved for primary actions and brand.
+- **Color:** mostly neutral surfaces; blue (`#2563EB`) is reserved for primary actions and brand. A lighter accent variant (`--color-accent-light`) is available for completed/inactive states.
 - **Typography:** DM Sans, base `14px`, weights 400–700.
 - **Layout:** fixed `240px` left sidebar, scrollable main area with `24px–32px` padding.
 - **Dark mode:** supported with inverted surface colors and a slightly brighter accent.
@@ -177,7 +177,7 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 
 | Route | Purpose | Key endpoints |
 |-------|---------|---------------|
-| `/onboarding` | 4-step wizard: display name → languages/obsessions → connect services → taste card preview. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
+| `/onboarding` | 4-step wizard: languages → obsessions → connect services → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
 | `/home` | Dashboard landing after onboarding. | `GET /api/me` |
 | `/me/taste` | **Primary product.** Taste card with archetype, top items, share buttons, OG image. | `GET /api/me/taste`, `POST /api/me/recompute` |
 | `/me/connections` | Service grid, sync status, OAuth + CSV upload flows. | `GET /api/me`, `POST /api/sync/{service}`, connect endpoints |

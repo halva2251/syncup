@@ -5,35 +5,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorMessage } from "@/components/ui/error-message";
 import { LanguageSelect } from "@/components/ui/language-select";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Languages } from "lucide-react";
+import { AppIcon } from "@/components/ui/app-icon";
 import { updateOnboardingProfile } from "@/lib/actions/profile-actions";
 
 interface ProfileStepFormProps {
-  displayName: string;
   languages: string[] | null;
 }
 
-export function ProfileStepForm({
-  displayName,
-  languages,
-}: ProfileStepFormProps) {
+export function ProfileStepForm({ languages }: ProfileStepFormProps) {
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(
-    languages ?? []
+    languages ?? [],
   );
 
   const [state, formAction, pending] = useActionState(
     async (_prevState: { error?: string } | null, formData: FormData) => {
       return await updateOnboardingProfile(formData);
     },
-    null
+    null,
   );
 
   return (
     <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-8 shadow-sm sm:p-10">
       <div className="mb-8 flex items-start gap-4">
-        <div className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[var(--color-accent-soft)] text-[var(--color-accent)]">
-          <Sparkles className="h-6 w-6" />
-        </div>
+        <AppIcon icon={Languages} size="md" gradient="brand" />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
             Welcome to SyncUp
@@ -46,16 +41,6 @@ export function ProfileStepForm({
 
       <form action={formAction} className="space-y-5">
         {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
-
-        <Input
-          name="display_name"
-          label="Display name"
-          type="text"
-          placeholder="alex"
-          defaultValue={displayName}
-          required
-          autoComplete="username"
-        />
 
         <LanguageSelect
           name="languages"

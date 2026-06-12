@@ -19,10 +19,5 @@ export default async function OnboardingProfilePage() {
     redirect("/home");
   }
 
-  return (
-    <ProfileStepForm
-      displayName={user.display_name}
-      languages={user.languages}
-    />
-  );
+  return <ProfileStepForm languages={user.languages} />;
 }

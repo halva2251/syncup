@@ -106,17 +106,17 @@ export async function login(formData: FormData) {
 }
 
 export async function signup(formData: FormData) {
-  const displayName = formData.get("display_name") as string;
   const email = formData.get("email") as string;
+  const displayName = formData.get("display_name") as string;
   const password = formData.get("password") as string;
 
-  if (!displayName || !email || !password) {
-    return { error: "All fields are required." };
+  if (!email || !displayName?.trim() || !password) {
+    return { error: "Email, display name, and password are required." };
   }
 
   const result = await postAuth("/auth/signup", {
-    display_name: displayName,
     email,
+    display_name: displayName.trim(),
     password,
   });
 
