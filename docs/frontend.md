@@ -16,7 +16,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | App-style icons | ✅ `AppIcon` utility in `frontend/components/ui/app-icon.tsx` |
 | Scaffolded pages/components | ✅ Stripped to minimal shells (return `null`) |
 | Auth / login / signup | ✅ Built |
-| Onboarding | 🚧 Step 1 (languages) + Step 2 (obsessions) built |
+| Onboarding | 🚧 Step 1 (languages) + Step 2 (services) + Step 3 (obsessions) built |
 | Taste card | ⏸ Not built |
 | Matches feed | ⏸ Not built |
 | Recommendations | ⏸ Not built |
@@ -283,7 +283,7 @@ From `docs/roadmap.md` / `api-contract.md`:
 
 1. **Display name** — set at signup; `GET /api/onboarding/status` reports `has_display_name`.
 2. **Languages** — optional languages via a searchable multi-select with ~70 real languages, each shown with a country flag via `flag-icons` (fake/made-up codes rejected by backend).
-3. **Connect services** — OAuth or CSV upload to pull real library data. Skippable for now; the page is a placeholder.
+3. **Connect services** — OAuth or CSV upload to pull real library data. The page shows a tile per service (Spotify, Steam, Last.fm, Letterboxd, AniList, Trakt, Reddit, RateYourMusic) with status, username forms, CSV imports, and OAuth links. Skippable.
 4. **Obsessions** — freeform things the user is obsessed with (games, albums, books, etc.). Each gets a category and is stored as a `manual_obsession`. ≥ 3 satisfies the `has_connection_or_obsessions` gate.
 5. **Taste card preview** — call `GET /api/me/taste`, let the user review, then `PATCH /api/me { is_matchable: true }`.
 

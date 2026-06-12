@@ -70,7 +70,7 @@ export function AccordionSelect<T>({
 
   const selectedKeys = useMemo(
     () => new Set(selected.map(getKey)),
-    [selected, getKey]
+    [selected, getKey],
   );
 
   const query = search.trim().toLowerCase();
@@ -245,7 +245,7 @@ export function AccordionSelect<T>({
                 </Fragment>
               ) : (
                 defaultChip(item, () => removeItem(item))
-              )
+              ),
             )
           )}
         </span>
