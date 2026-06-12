@@ -16,6 +16,10 @@ export default function SignupPage() {
           placeholder: "alex",
           required: true,
           autoComplete: "username",
+          validate: (value) =>
+            value.trim().length > 100
+              ? "Display name must be 100 characters or less."
+              : undefined,
         },
         {
           name: "email",
@@ -24,6 +28,7 @@ export default function SignupPage() {
           placeholder: "you@example.com",
           required: true,
           autoComplete: "email",
+          showValidationIcon: "email",
         },
         {
           name: "password",
@@ -32,6 +37,13 @@ export default function SignupPage() {
           placeholder: "••••••••",
           required: true,
           autoComplete: "new-password",
+          showValidationIcon: "password",
+          validate: (value) =>
+            value.length < 8
+              ? "Password must be at least 8 characters."
+              : value.length > 128
+                ? "Password must be 128 characters or less."
+                : undefined,
         },
       ]}
       submitLabel="Create account"

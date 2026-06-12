@@ -157,6 +157,12 @@ Design specifics:
 
 Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the `syncup_session` cookie, and redirect on success.
 
+**Client-side validation:**
+- Email: required, validated against a simple email regex. Shows a red `X` (Lucide) when invalid and a green checkmark when valid.
+- Password (signup): minimum 8 characters, maximum 128. Shows a red `X` while below 8 characters and a green checkmark once valid.
+- Display name (signup): required, max 100 characters.
+- Validation icons render inside the input field on the right side.
+
 ### Public routes
 
 | Route | Purpose |

@@ -16,6 +16,7 @@ export default function LoginPage() {
           placeholder: "you@example.com",
           required: true,
           autoComplete: "email",
+          showValidationIcon: "email",
         },
         {
           name: "password",
