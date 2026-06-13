@@ -197,17 +197,25 @@ export function AccordionSelect<T>({
       className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-sm font-medium text-[var(--color-accent)]"
     >
       {renderOption ? renderOption(item) : getLabel(item)}
-      <button
-        type="button"
+      <span
+        role="button"
+        tabIndex={0}
         onClick={(e) => {
           e.stopPropagation();
           onRemove();
         }}
-        className="inline-flex items-center rounded-sm hover:bg-[var(--color-accent)]/10"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            e.stopPropagation();
+            onRemove();
+          }
+        }}
+        className="inline-flex cursor-pointer items-center rounded-sm hover:bg-[var(--color-accent)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
         aria-label={`Remove ${getLabel(item)}`}
       >
         <X className="h-3.5 w-3.5" />
-      </button>
+      </span>
     </span>
   );
 
