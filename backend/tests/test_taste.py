@@ -402,6 +402,31 @@ def test_taste_returns_letterboxd_films(
     assert films[0]["score"] == pytest.approx(1.0)
 
 
+def test_taste_returns_rateyourmusic_albums_with_rating_and_artist(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    row = _taste_row(
+        "rateyourmusic",
+        "album",
+        "Eyes of the Mind",
+        engagement_score=0.89,
+        raw_value=9.0,
+        meta={"title_normalized": "eyes of the mind", "release_year": 1981, "artist_normalized": "casiopea"},
+    )
+    _set_execute_results(mock_db, [row])
+
+    resp = taste_client.get("/api/me/taste")
+    assert resp.status_code == 200
+    services = resp.json()["services"]
+    assert "rateyourmusic" in services
+    albums = services["rateyourmusic"]["top_albums"]
+    assert len(albums) == 1
+    assert albums[0]["name"] == "Eyes of the Mind"
+    assert albums[0]["artist"] == "casiopea"
+    assert albums[0]["rating"] == pytest.approx(9.0)
+    assert albums[0]["release_year"] == 1981
+
+
 # ---------------------------------------------------------------------------
 # Manual obsessions
 # ---------------------------------------------------------------------------

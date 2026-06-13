@@ -80,6 +80,7 @@ class LetterboxdServiceOut(BaseModel):
 class RateYourMusicAlbumOut(TasteItemOut):
     release_year: int
     artist: str
+    rating: float
 
 
 class RateYourMusicServiceOut(BaseModel):
@@ -185,6 +186,7 @@ def _to_rateyourmusic_album(row: Any) -> RateYourMusicAlbumOut:
         score=row.engagement_score,
         release_year=row.meta.get("release_year", 0),
         artist=row.meta.get("artist_normalized", ""),
+        rating=row.raw_value or 0.0,
     )
 
 
