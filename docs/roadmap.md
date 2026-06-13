@@ -85,6 +85,8 @@ Concrete, ordered build plan. Strategy and "why" lives in [product-strategy.md](
 | 1009 passing tests | `backend/tests/` |
 | ML-pipeline validation pass (2026-06-11) — full re-review (ml-reviewer: all 8 Phase 2 invariants re-confirmed, zero CRITICAL/HIGH; python-reviewer: zero CRITICAL/HIGH) + 9/9 independent fake-data probes (dimension-weight authority incl. 50-vs-5-item slider invariance, boost, exclusion, engagement lean, cross-domain artist ranking) + 22/22 qa_sweep. Fixed eval–production drift: `evaluate.py` `_ann_item_query` now mirrors `recommendations.py` owned-by-title + title-dedup filtering (`filter_candidates_production_style`, oversample `limit*5`), holdout hits counted by normalized-title equivalence; Hit Rate@10 re-baselined 0.80 (empty catalog) → 0.50 (403-item catalog) — see §2.8 catalog-sensitivity note | `backend/scripts/evaluate.py`, `backend/tests/test_evaluate.py` |
 | 1015 passing tests | `backend/tests/` |
+| Category-aware autocomplete for obsessions — `GET /api/items/search` (Steam Store, TMDB, AniList, MusicBrainz, Open Library) + frontend `Autocomplete` component | `syncup/ingest/search/`, `syncup/api/routes/search.py`, `frontend/components/ui/autocomplete.tsx` |
+| 1069 passing tests | `backend/tests/` |
 
 ---
 
@@ -807,6 +809,11 @@ Multi-step wizard:
 2. Languages + interests (populates `manual_obsessions`)
 3. "Connect your first service" (or "Skip — I'll add 3 obsessions instead")
 4. Taste card preview → "Enable matching"
+
+**Onboarding improvement — autocomplete for obsessions:**
+- `GET /api/items/search` provides category-aware suggestions from Steam Store (games), TMDB (films/shows), AniList (anime/manga), MusicBrainz (artists), and Open Library (books).
+- Frontend `Autocomplete` component in the obsessions step prefills the name field from a suggestion while still allowing free-text entry.
+- Selecting a suggestion does **not** link it to a canonical item in this version; it only makes manual entry easier.
 
 ### 3.4 Taste Card Page (`/me/taste`)
 

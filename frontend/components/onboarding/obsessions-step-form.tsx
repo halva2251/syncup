@@ -1,11 +1,11 @@
 "use client";
 
 import { useActionState, useOptimistic, useRef, useState } from "react";
-import { Button, ButtonLink } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Autocomplete } from "@/components/ui/autocomplete";
 import { ErrorMessage } from "@/components/ui/error-message";
 import { AccordionSelect } from "@/components/ui/accordion-select";
-import { AppIcon } from "@/components/ui/app-icon";
+import { OnboardingStep } from "@/components/onboarding/onboarding-step";
 import { Loader2, Heart, X } from "lucide-react";
 import {
   createObsessionAction,
@@ -56,6 +56,7 @@ export function ObsessionsStepForm({
     useOptimistic(obsessions);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<CategoryItem[]>([]);
+  const [autocompleteKey, setAutocompleteKey] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
 
   const [state, formAction, pending] = useActionState(
@@ -67,6 +68,7 @@ export function ObsessionsStepForm({
       if ("obsession" in result && result.obsession) {
         setObsessions((prev) => [result.obsession!, ...prev]);
         setSelectedCategory([]);
+        setAutocompleteKey((prev) => prev + 1);
         formRef.current?.reset();
       }
       return null;
@@ -95,20 +97,13 @@ export function ObsessionsStepForm({
   const displayList = optimisticObsessions;
 
   return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-8 shadow-sm sm:p-10">
-      <div className="mb-8 flex items-start gap-4">
-        <AppIcon icon={Heart} size="md" gradient="brand" />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--color-text-primary)]">
-            What are you obsessed with?
-          </h1>
-          <p className="mt-1 text-[15px] text-[var(--color-text-secondary)]">
-            Add at least 3 things that define your taste — games, albums, books,
-            shows, communities, anything.
-          </p>
-        </div>
-      </div>
-
+    <OnboardingStep
+      icon={Heart}
+      title="What are you obsessed with?"
+      description="Add at least 3 things that define your taste — games, albums, books, shows, communities, anything."
+      backHref="/onboarding/services"
+      continueHref="/onboarding/taste"
+    >
       <form ref={formRef} action={formAction} className="space-y-5">
         {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
 
@@ -129,12 +124,13 @@ export function ObsessionsStepForm({
             />
           </div>
 
-          <Input
+          <Autocomplete
+            key={autocompleteKey}
             name="name"
             label="Name"
             placeholder="e.g. Disco Elysium"
             required
-            autoComplete="off"
+            category={selectedCategory[0]?.value ?? ""}
             className="flex-1"
           />
 
@@ -183,19 +179,6 @@ export function ObsessionsStepForm({
         </ul>
       )}
 
-      <div className="mt-8 flex items-center justify-between gap-3">
-        <ButtonLink
-          href="/onboarding/services"
-          variant="secondary"
-          size="lg"
-          className="bg-[var(--color-bg-card)]"
-        >
-          Back
-        </ButtonLink>
-        <ButtonLink href="/onboarding/taste" size="lg">
-          Continue
-        </ButtonLink>
-      </div>
-    </div>
+    </OnboardingStep>
   );
 }
