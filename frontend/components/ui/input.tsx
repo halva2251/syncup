@@ -33,7 +33,7 @@ export function Input({
           id={inputId}
           className={[
             "w-full rounded-lg border bg-[var(--color-bg-card)] px-3.5 py-2 text-[15px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
-            "h-[42px] transition-colors",
+            "h-[42px] transition-colors hover:bg-[var(--color-bg-page)]",
             "focus:outline-none focus:border-[var(--color-accent)] focus:ring-[3px] focus:ring-[var(--color-accent-soft)]",
             rightElement ? "pr-10" : "",
             error

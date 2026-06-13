@@ -84,17 +84,17 @@ export function LanguageSelect({
         <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-sm font-medium text-[var(--color-accent)]">
           <Flag code={lang.code} className="h-3 w-4 rounded-sm" />
           {lang.name}
-          <button
-            type="button"
+          <span
             onClick={(e) => {
               e.stopPropagation();
               onRemove();
             }}
-            className="rounded-sm hover:bg-[var(--color-accent)]/10"
+            className="cursor-pointer rounded-sm hover:bg-[var(--color-accent)]/10"
             aria-label={`Remove ${lang.name}`}
+            role="button"
           >
             <X className="h-3.5 w-3.5" />
-          </button>
+          </span>
         </span>
       )}
       renderOption={(lang) => (
