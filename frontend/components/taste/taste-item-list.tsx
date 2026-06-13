@@ -55,7 +55,7 @@ export function TasteItemList({
         const label = getLabel ? getLabel(item) : item.name;
         return (
           <li
-            key={item.id}
+            key={`${item.id}-${index}`}
             className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-page)] px-2.5 py-1.5 text-sm"
           >
             <span className="flex items-center gap-2 min-w-0">

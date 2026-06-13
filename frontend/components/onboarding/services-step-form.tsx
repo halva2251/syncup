@@ -152,6 +152,7 @@ function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
 
   return (
     <div className="relative grid row-span-2 grid-rows-subgrid h-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-page)] p-4">
+      {/* grid-rows-subgrid is CSS Grid Level 2; supported in all modern browsers as of 2026. */}
       {isConnected && (
         <div className="absolute bottom-3 right-3 z-10 rotate-[-8deg] rounded-lg bg-[var(--color-success)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
           Connected

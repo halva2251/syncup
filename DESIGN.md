@@ -62,6 +62,23 @@ A clean, modern dashboard aesthetic inspired by the Duplicati reference screensh
 | `--warning` | `#FBBF24` | Warning indicators |
 | `--danger` | `#F87171` | Error indicators |
 
+### Radius tokens
+
+Custom radius scale lives in `frontend/app/globals.css` under `@theme inline`.
+
+| Token | Value | Tailwind class |
+|---|---|---|
+| `--radius-xs` | `0.15rem` | `rounded-xs` |
+| `--radius-sm` | `0.3rem` | `rounded-sm` |
+| `--radius-md` | `0.45rem` | `rounded-md` |
+| `--radius-lg` | `0.6rem` | `rounded-lg` |
+| `--radius-xl` | `0.9rem` | `rounded-xl` |
+| `--radius-2xl` | `1.2rem` | `rounded-2xl` |
+| `--radius-3xl` | `1.8rem` | `rounded-3xl` |
+| `--radius-4xl` | `2.4rem` | `rounded-4xl` |
+
+Use these tokens for all rounded corners instead of hard-coded pixel values.
+
 ### Status colors
 
 Use small solid dots for status:
@@ -116,7 +133,7 @@ Use small solid dots for status:
 
 - Background: `--bg-card`
 - Border: `1px solid --border`
-- Border radius: `12px` (`rounded-xl`)
+- Border radius: `var(--radius-xl)` (`0.9rem` / `rounded-xl`)
 - Padding: `20px–24px`
 - Shadow: none or very subtle `0 1px 2px rgba(0,0,0,0.03)`
 - Optional small icon/illustration in top-left corner of promotional cards.

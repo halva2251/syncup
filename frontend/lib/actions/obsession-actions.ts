@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { createObsession, deleteObsession } from "@/lib/api/obsessions";
 import { ApiError } from "@/lib/api/client";
-import type { ManualObsession } from "@/types/api";
 
 const CATEGORIES = new Set([
   "game",
@@ -40,6 +39,8 @@ export async function createObsessionAction(formData: FormData) {
   const categoryRaw = formData.get("category") as string;
   const category = parseCategory(categoryRaw);
   const name = formData.get("name") as string;
+  const externalId = formData.get("name_external_id") as string | null;
+  const service = formData.get("name_service") as string | null;
 
   if (!category || !CATEGORIES.has(category)) {
     return { error: "Please select a valid category." };
@@ -51,7 +52,12 @@ export async function createObsessionAction(formData: FormData) {
   }
 
   try {
-    const obsession = await createObsession({ category, name: name.trim() });
+    const obsession = await createObsession({
+      category,
+      name: name.trim(),
+      external_id: externalId || null,
+      service: service || null,
+    });
     revalidatePath("/onboarding/obsessions");
     return { obsession };
   } catch (err) {

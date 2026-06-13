@@ -24,22 +24,23 @@ export function ProfileStepForm({ languages }: ProfileStepFormProps) {
   );
 
   return (
-    <form action={formAction} className="space-y-5">
-      <OnboardingStep
-        icon={Languages}
-        title="Welcome to SyncUp"
-        description="Let's set up your profile. You can always change this later."
-        continueButton={{
-          type: "submit",
-          disabled: pending,
-          children: (
-            <>
-              {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Continue
-            </>
-          ),
-        }}
-      >
+    <OnboardingStep
+      icon={Languages}
+      title="Welcome to SyncUp"
+      description="Let's set up your profile. You can always change this later."
+      action={formAction}
+      continueButton={{
+        type: "submit",
+        disabled: pending,
+        children: (
+          <>
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Continue
+          </>
+        ),
+      }}
+    >
+      <div className="space-y-5">
         {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
 
         <LanguageSelect
@@ -53,7 +54,7 @@ export function ProfileStepForm({ languages }: ProfileStepFormProps) {
         <p className="text-[13px] text-[var(--color-text-tertiary)]">
           This helps us match you with people you can actually talk to.
         </p>
-      </OnboardingStep>
-    </form>
+      </div>
+    </OnboardingStep>
   );
 }

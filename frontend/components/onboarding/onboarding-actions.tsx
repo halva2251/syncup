@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { ButtonLink } from "@/components/ui/button";
 import { GlossyButton, GlossyButtonLink } from "@/components/ui/glossy-button";
+import { cn } from "@/lib/utils/cn";
 
 interface OnboardingActionsProps {
   backHref?: string;
@@ -26,7 +27,7 @@ export function OnboardingActions({
   const justifyClass = backHref ? "justify-between" : "justify-end";
 
   return (
-    <div className={`mt-8 flex items-center gap-3 ${justifyClass}`}>
+    <div className={cn("mt-8 flex items-center gap-3", justifyClass)}>
       {backHref && (
         <ButtonLink
           href={backHref}

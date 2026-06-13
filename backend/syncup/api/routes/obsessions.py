@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.auth.router import RequireAuth
-from syncup.db.models import ManualObsession
+from syncup.db.models import Item, ManualObsession
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
@@ -28,6 +28,8 @@ class ObsessionIn(BaseModel):
     category: _Category
     name: str = Field(min_length=1, max_length=200)
     weight: float = Field(default=1.0, gt=0, le=10.0)
+    external_id: str | None = None
+    service: str | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -36,6 +38,13 @@ class ObsessionIn(BaseModel):
             v = v.strip()
             if not v:
                 raise ValueError("cannot be blank")
+        return v
+
+    @field_validator("external_id", "service", mode="before")
+    @classmethod
+    def _blank_to_none(cls, v: object) -> object | None:
+        if isinstance(v, str) and not v.strip():
+            return None
         return v
 
 
@@ -72,12 +81,24 @@ def create_obsession(
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> ObsessionOut:
+    item_id: uuid.UUID | None = None
+    if body.external_id and body.service:
+        item = db.scalar(
+            select(Item).where(
+                Item.service == body.service,
+                Item.external_id == body.external_id,
+            )
+        )
+        if item is not None:
+            item_id = item.id
+
     obs = ManualObsession(
         id=uuid.uuid4(),
         created_at=datetime.now(UTC),
         user_id=user.id,
         category=body.category,
         name=body.name,
+        item_id=item_id,
         weight=body.weight,
     )
     db.add(obs)

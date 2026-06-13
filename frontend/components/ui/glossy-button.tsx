@@ -19,13 +19,16 @@ interface GlossyButtonProps
 
 const shellClasses =
   "group relative inline-flex items-center justify-center overflow-hidden " +
-  "rounded-lg bg-gradient-to-b from-[#60A5FA] to-[#1D4ED8] " +
+  "rounded-lg bg-gradient-to-b from-[var(--color-accent-light)] to-[var(--color-accent-hover)] " +
   "px-5 py-2.5 text-sm font-semibold text-white shadow-md " +
   "transition-all duration-300 ease-out hover:shadow-lg active:scale-[0.98] " +
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)] " +
   "focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-page)] " +
   "disabled:cursor-not-allowed disabled:opacity-60";
 
+// Vendor-prefixed mask properties are required for the border-box gradient
+// bezel effect in Safari and older Chromium. Standard maskComposite is not
+// yet universally supported for this use-case.
 const bezelStyle: React.CSSProperties = {
   border: "2px solid transparent",
   background:

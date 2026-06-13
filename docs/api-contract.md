@@ -213,11 +213,20 @@ Paginated raw items for a service/type.
 ### `POST /me/obsessions` — Live ✅
 ```json
 // req
-{ "category": "book", "name": "Blindsight", "weight": 1.5 }
+{
+  "category": "book",
+  "name": "Blindsight",
+  "weight": 1.5,
+  "external_id": "optional-canonical-id",
+  "service": "optional-service-name"
+}
 // category ∈ game | music | film | book | show | anime | manga | community | other
 // (anime, manga, community added in migration 0007 for AniList and Reddit support)
 // weight defaults to 1.0, must be > 0 and ≤ 10.0
 // name is stripped of leading/trailing whitespace; blank-after-strip → 422
+// external_id + service are optional; when provided, the backend links the obsession
+// to the matching items row by (service, external_id) and stores items.id in
+// manual_obsessions.item_id. If no matching item exists, item_id is left null.
 ```
 ### `DELETE /me/obsessions/{id}` — Live ✅
 
@@ -268,7 +277,7 @@ Query params:
 
 ### `GET /items/search` — Live ✅
 
-Category-aware autocomplete for manual obsessions. Returns suggestions from public upstream APIs; selecting a suggestion on the client only prefills the obsession name.
+Category-aware autocomplete for manual obsessions. Returns suggestions from public upstream APIs; selecting a suggestion on the client can link the obsession to a canonical item when `external_id` + `service` are forwarded to `POST /me/obsessions`.
 
 **Query params:**
 - `q` (required, 1–200 chars): search term

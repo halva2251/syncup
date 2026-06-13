@@ -1,3 +1,5 @@
+"use client";
+
 import { Sparkles, Heart, SlidersHorizontal } from "lucide-react";
 import { AppIcon } from "@/components/ui/app-icon";
 import { TasteServiceCarousel } from "@/components/taste/taste-service-carousel";

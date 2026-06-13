@@ -10,6 +10,7 @@ import {
   Loader2,
   Heart,
   X,
+  HelpCircle,
 } from "lucide-react";
 import { CATEGORY_ICONS } from "@/lib/constants/category-icons";
 import {
@@ -56,7 +57,7 @@ function CategoryIcon({
   category: string;
   className?: string;
 }) {
-  const Icon = CATEGORY_ICONS[category.toLowerCase()];
+  const Icon = CATEGORY_ICONS[category.toLowerCase()] ?? HelpCircle;
   return <Icon className={className} aria-label={category} aria-hidden="false" />;
 }
 

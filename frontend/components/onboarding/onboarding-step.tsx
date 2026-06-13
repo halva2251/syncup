@@ -21,6 +21,7 @@ interface OnboardingStepProps {
     loading?: boolean;
   };
   continueLabel?: ReactNode;
+  action?: string | ((formData: FormData) => void | Promise<void>);
 }
 
 export function OnboardingStep({
@@ -33,9 +34,10 @@ export function OnboardingStep({
   continueHref,
   continueButton,
   continueLabel,
+  action,
 }: OnboardingStepProps) {
-  return (
-    <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-8 shadow-sm sm:p-10">
+  const cardContent = (
+    <>
       <div className="mb-8 flex items-start gap-4">
         <AppIcon icon={icon} size="md" gradient="brand" />
         <div>
@@ -57,6 +59,19 @@ export function OnboardingStep({
         continueButton={continueButton}
         continueLabel={continueLabel}
       />
-    </div>
+    </>
   );
+
+  const className =
+    "rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-8 shadow-sm sm:p-10";
+
+  if (action) {
+    return (
+      <form action={action} className={className}>
+        {cardContent}
+      </form>
+    );
+  }
+
+  return <div className={className}>{cardContent}</div>;
 }

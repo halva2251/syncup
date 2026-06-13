@@ -23,6 +23,12 @@ interface AutocompleteProps {
   debounceMs?: number;
 }
 
+function str(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  return null;
+}
+
 function formatSuggestionExtra(suggestion: SearchSuggestion): string | null {
   const extra = suggestion.extra;
   if (!extra) return null;
@@ -34,15 +40,20 @@ function formatSuggestionExtra(suggestion: SearchSuggestion): string | null {
     case "manga":
     case "book": {
       const parts: string[] = [];
-      if (extra.year) parts.push(String(extra.year));
-      if (extra.author) parts.push(String(extra.author));
-      if (extra.artist) parts.push(String(extra.artist));
+      const year = str(extra.year);
+      const author = str(extra.author);
+      const artist = str(extra.artist);
+      if (year) parts.push(year);
+      if (author) parts.push(author);
+      if (artist) parts.push(artist);
       return parts.length > 0 ? parts.join(" · ") : null;
     }
     case "music": {
       const parts: string[] = [];
-      if (extra.country) parts.push(String(extra.country));
-      if (extra.disambiguation) parts.push(String(extra.disambiguation));
+      const country = str(extra.country);
+      const disambiguation = str(extra.disambiguation);
+      if (country) parts.push(country);
+      if (disambiguation) parts.push(disambiguation);
       return parts.length > 0 ? parts.join(" · ") : null;
     }
     default:
@@ -71,6 +82,10 @@ export function Autocomplete({
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [selectedExternalId, setSelectedExternalId] = useState<string | null>(
+    null,
+  );
+  const [selectedService, setSelectedService] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -103,6 +118,8 @@ export function Autocomplete({
       setQuery(value);
       setIsOpen(false);
       setError(null);
+      setSelectedExternalId(null);
+      setSelectedService(null);
 
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
@@ -127,6 +144,8 @@ export function Autocomplete({
       const suggestion = suggestions[index];
       if (!suggestion) return;
       setQuery(suggestion.name);
+      setSelectedExternalId(suggestion.external_id);
+      setSelectedService(suggestion.service);
       setSuggestions([]);
       setIsOpen(false);
       setHighlightedIndex(-1);
@@ -234,6 +253,16 @@ export function Autocomplete({
             <Search className="h-4 w-4" />
           )}
         </div>
+        <input
+          type="hidden"
+          name={`${name}_external_id`}
+          value={selectedExternalId ?? ""}
+        />
+        <input
+          type="hidden"
+          name={`${name}_service`}
+          value={selectedService ?? ""}
+        />
       </div>
 
       {error && (

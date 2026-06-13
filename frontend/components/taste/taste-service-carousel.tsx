@@ -18,6 +18,7 @@ export function TasteServiceCarousel({
 }: TasteServiceCarouselProps) {
   const [index, setIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   const next = useCallback(() => {
     setIndex((prev) => (prev + 1) % serviceIds.length);
@@ -35,11 +36,11 @@ export function TasteServiceCarousel({
   );
 
   useEffect(() => {
-    if (isHovered || serviceIds.length <= 1) return;
+    if (isHovered || isFocused || serviceIds.length <= 1) return;
 
     const timer = setInterval(next, 10000);
     return () => clearInterval(timer);
-  }, [isHovered, next, serviceIds.length]);
+  }, [isHovered, isFocused, next, serviceIds.length]);
 
   if (serviceIds.length === 0) return null;
 
@@ -53,6 +54,8 @@ export function TasteServiceCarousel({
         className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
       >
         <div
           className="flex gap-4 transition-transform duration-500 ease-in-out"
@@ -92,7 +95,7 @@ export function TasteServiceCarousel({
                       <AppIcon
                         brand={service.brand}
                         size="xs"
-                        brandColor={isCurrent ? `#${service.brand.hex}` : "#9CA3AF"}
+                        brandColor={isCurrent ? `#${service.brand.hex}` : "var(--color-text-tertiary)"}
                         className={isCurrent ? "" : "opacity-40"}
                       />
                     ) : (
