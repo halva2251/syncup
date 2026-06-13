@@ -17,7 +17,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Scaffolded pages/components | ✅ Stripped to minimal shells (return `null`) |
 | Auth / login / signup | ✅ Built |
 | Onboarding | ✅ 4-step wizard built (languages, services, obsessions, taste preview) |
-| Taste card | ⏸ Not built |
+| Taste card | ✅ Component built; `/me/taste` page is still a shell |
 | Matches feed | ⏸ Not built |
 | Recommendations | ⏸ Not built |
 | Settings / dimensions | ⏸ Not built |
@@ -279,6 +279,8 @@ async rewrites() {
 
 ## Onboarding Flow
 
+The onboarding wizard is documented in detail in [`docs/frontend-onboarding.md`](./frontend-onboarding.md). The summary below describes the user flow; the dedicated doc covers the component architecture, data fetching, and carousel behavior.
+
 From `docs/roadmap.md` / `api-contract.md`:
 
 1. **Display name** — set at signup; `GET /api/onboarding/status` reports `has_display_name`.
@@ -331,13 +333,26 @@ Letterboxd, RateYourMusic.
 
 ## Taste Card Design Notes
 
-The taste card is the **primary product during cold start** (see [`product-strategy.md`](./product-strategy.md)). It should:
+The taste card is the **primary product during cold start** (see [`product-strategy.md`](./product-strategy.md)). The reusable `TasteCard` component is implemented and used by the onboarding taste preview step; the dedicated `/me/taste` page is still a shell.
+
+Current behavior:
 
 - Show the user's archetype label and vibe summary (if LLM key is configured).
-- Display top items per connected service.
-- Show manual obsessions and preference overrides.
-- Include "Share to X" and "Copy link" buttons.
-- Generate a shareable OG image (future: `@vercel/og` or similar).
+- Display top items per connected service in a carousel (`TasteServiceCarousel`):
+  - Auto-advances every 10 seconds; pauses on hover.
+  - Service icons act as dot-style controls (current in color, others muted).
+  - Prev/next arrow controls at the bottom right.
+  - Slides move left/right inside a fixed border card.
+  - Each bucket shows up to 5 items.
+  - Single-bucket services use the full card width; multi-bucket services use two columns.
+  - RYM albums render as `Album - Artist` and show the raw CSV rating instead of a rank number.
+- Show manual obsessions and preference overrides below the carousel.
+- Include an empty state when no taste data exists.
+
+Future additions for the public `/me/taste` page:
+
+- "Share to X" and "Copy link" buttons.
+- Generate a shareable OG image (`@vercel/og` or similar).
 - Surface a "This isn't me" entry point into the settings page.
 
 ---
@@ -415,6 +430,7 @@ These are documented in the project docs and should be revisited before building
 - [`DESIGN.md`](../DESIGN.md) — full design system.
 - [`AGENTS.md`](../AGENTS.md) — agent-facing frontend rules.
 - [`docs/api-contract.md`](./api-contract.md) — backend API spec.
+- [`docs/frontend-onboarding.md`](./frontend-onboarding.md) — detailed onboarding wizard docs.
 - [`docs/product-strategy.md`](./product-strategy.md) — cold-start strategy and taste-card rationale.
 - [`docs/roadmap.md`](./roadmap.md) — phased build plan.
 - [`docs/dev-guide.md`](./dev-guide.md) — backend internals.
@@ -422,4 +438,4 @@ These are documented in the project docs and should be revisited before building
 
 ---
 
-*Last updated: 2026-06-12*
+*Last updated: 2026-06-13*
