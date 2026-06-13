@@ -10,6 +10,14 @@ export default function SignupPage() {
       subtitle="Start finding people who share your actual taste."
       fields={[
         {
+          name: "display_name",
+          label: "Display name",
+          type: "text",
+          placeholder: "alex",
+          required: true,
+          autoComplete: "username",
+        },
+        {
           name: "email",
           label: "Email",
           type: "email",
@@ -18,14 +26,6 @@ export default function SignupPage() {
           autoComplete: "email",
           validation: "email",
           showValidationIcon: true,
-        },
-        {
-          name: "display_name",
-          label: "Display name",
-          type: "text",
-          placeholder: "alex",
-          required: true,
-          autoComplete: "username",
         },
         {
           name: "password",
