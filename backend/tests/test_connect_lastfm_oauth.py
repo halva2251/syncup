@@ -5,6 +5,7 @@ GET /api/connect/lastfm/oauth/callback
 
 from __future__ import annotations
 
+import urllib.parse
 import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime
@@ -44,6 +45,7 @@ def lastfm_client(
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("LASTFM_API_KEY", "test-lastfm-key")
     monkeypatch.setenv("LASTFM_SHARED_SECRET", "test-lastfm-secret")
+    monkeypatch.setenv("FRONTEND_URL", "")
     monkeypatch.setenv("DEBUG", "true")
 
     from syncup.api.app import app
@@ -71,6 +73,7 @@ def lastfm_client_no_creds(
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("LASTFM_API_KEY", "test-lastfm-key")
     monkeypatch.setenv("LASTFM_SHARED_SECRET", "")
+    monkeypatch.setenv("FRONTEND_URL", "")
     monkeypatch.setenv("DEBUG", "true")
 
     from syncup.api.app import app
@@ -94,6 +97,7 @@ def unauthed_lastfm_client(
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("LASTFM_API_KEY", "test-lastfm-key")
     monkeypatch.setenv("LASTFM_SHARED_SECRET", "test-lastfm-secret")
+    monkeypatch.setenv("FRONTEND_URL", "")
     monkeypatch.setenv("DEBUG", "true")
 
     from syncup.api.app import app
@@ -119,6 +123,10 @@ def test_lastfm_oauth_start_redirects_to_lastfm(lastfm_client: TestClient) -> No
     location = resp.headers["location"]
     assert "last.fm/api/auth" in location
     assert "api_key=test-lastfm-key" in location
+    parsed = urllib.parse.urlparse(location)
+    params = urllib.parse.parse_qs(parsed.query)
+    assert "cb" in params
+    assert "state=" in params["cb"][0]
 
 
 def test_lastfm_oauth_start_sets_state_cookie(lastfm_client: TestClient) -> None:

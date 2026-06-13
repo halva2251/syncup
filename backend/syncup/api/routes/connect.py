@@ -11,12 +11,14 @@ from typing import Annotated, Literal, Self, TypedDict
 import httpx
 from fastapi import APIRouter, Depends, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
+from syncup.api.routes.sync import _do_sync_generic
 from syncup.api.schemas import ServiceConnectionOut
 from syncup.auth.router import RequireAuth, require_auth
 from syncup.config import Settings
@@ -84,6 +86,31 @@ def _oauth_cookie_opts(settings: Settings, *, max_age: int = 600) -> CookieOpts:
         max_age=max_age,
         secure=not settings.debug,
     )
+
+
+def _post_auth_redirect(settings: Settings) -> str:
+    """Return the landing URL after a successful OAuth/web-auth/OpenID callback."""
+    return settings.frontend_url or "/"
+
+
+def _enqueue_post_connect_sync(
+    response: RedirectResponse,
+    request: Request,
+    user_id: uuid.UUID,
+    service: str,
+) -> RedirectResponse:
+    """Kick off a background sync after a successful OAuth/web-auth/OpenID connection."""
+    settings: Settings = request.app.state.settings
+    response.background = BackgroundTask(
+        _do_sync_generic,
+        request.app.state.db,
+        user_id,
+        service,
+        settings.llm_api_key,
+        settings.llm_base_url,
+        settings.llm_model,
+    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +261,209 @@ def connect_lastfm(
     conn = _upsert_connection(db, user.id, "lastfm", body.username)
     logger.info("User %s connected Last.fm (username=%s)", user.id, body.username)
     return ServiceConnectionOut.model_validate(conn)
+
+
+# ===========================================================================
+# Last.fm web-auth (token-based, not OAuth 2.0)
+# ===========================================================================
+
+_LASTFM_STATE_COOKIE = "lastfm_state"
+
+
+def _lastfm_client(settings: Settings) -> LastfmClient:
+    if not settings.lastfm_api_key or not settings.lastfm_shared_secret:
+        raise SyncUpError(
+            "SERVICE_NOT_CONFIGURED",
+            "Last.fm web-auth is not configured — set LASTFM_API_KEY and LASTFM_SHARED_SECRET",
+            503,
+        )
+    return LastfmClient(
+        api_key=settings.lastfm_api_key,
+        shared_secret=settings.lastfm_shared_secret,
+        redirect_uri=settings.lastfm_redirect_uri,
+    )
+
+
+@router.get("/lastfm/oauth/start")
+@limiter.limit("10/minute")
+def lastfm_oauth_start(
+    request: Request,
+    user: RequireAuth,
+) -> RedirectResponse:
+    """Redirect the user to Last.fm's web-auth authorization page."""
+    settings: Settings = request.app.state.settings
+    client = _lastfm_client(settings)
+
+    state = secrets.token_urlsafe(16)
+    url = client.get_authorize_url(state=state)
+
+    response = RedirectResponse(url=url, status_code=302)
+    response.set_cookie(_LASTFM_STATE_COOKIE, state, **_oauth_cookie_opts(settings))
+    return response
+
+
+@router.get("/lastfm/oauth/callback")
+@limiter.limit("10/minute")
+def lastfm_oauth_callback(
+    request: Request,
+    token: Annotated[str, Query(min_length=1)],
+    state: Annotated[str, Query(min_length=1)],
+    db: Annotated[DbSession, Depends(get_db)],
+) -> RedirectResponse:
+    """Complete the Last.fm web-auth flow."""
+    cookie_state = request.cookies.get(_LASTFM_STATE_COOKIE)
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    user = require_auth(request=request, db=db)
+    settings: Settings = request.app.state.settings
+
+    with _lastfm_client(settings) as client:
+        try:
+            tokens, username = client.exchange_token(token)
+        except SyncClientError as exc:
+            logger.warning("Last.fm authorization error: %s", exc)
+            raise SyncUpError(
+                "LASTFM_TOKEN_ERROR",
+                "Last.fm authorization failed — please reconnect",
+                400,
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Last.fm token exchange failed (status=%s): %s",
+                exc.response.status_code,
+                exc.response.text,
+            )
+            raise SyncUpError(
+                "LASTFM_TOKEN_ERROR",
+                "Last.fm token exchange failed — please reconnect",
+                exc.response.status_code,
+            ) from exc
+        except httpx.RequestError as exc:
+            raise SyncUpError(
+                "UPSTREAM_UNAVAILABLE", "Could not reach Last.fm — please retry", 502
+            ) from exc
+
+    access_enc = encrypt_token(tokens.access_token)
+
+    existing = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == "lastfm",
+        )
+    )
+    if existing is not None:
+        existing.external_user_id = username
+        existing.access_token_encrypted = access_enc
+        existing.refresh_token_encrypted = None
+        existing.token_expires_at = None
+        existing.sync_status = "pending"
+        existing.sync_error = None
+    else:
+        db.add(
+            ServiceConnection(
+                user_id=user.id,
+                service="lastfm",
+                external_user_id=username,
+                access_token_encrypted=access_enc,
+                sync_status="pending",
+            )
+        )
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        logger.warning("Last.fm upsert race on user %s", user.id)
+
+    logger.info("User %s connected Last.fm via web-auth (username=%s)", user.id, username)
+
+    response = RedirectResponse(_post_auth_redirect(settings), status_code=302)
+    response.delete_cookie(_LASTFM_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
+    response = _enqueue_post_connect_sync(response, request, user.id, "lastfm")
+    return response
+
+
+# ===========================================================================
+# Steam OpenID 2.0
+# ===========================================================================
+
+_STEAM_STATE_COOKIE = "steam_state"
+
+
+def _steam_client(settings: Settings) -> SteamClient:
+    if not settings.steam_api_key:
+        raise SyncUpError(
+            "SERVICE_NOT_CONFIGURED",
+            "Steam is not configured — set STEAM_API_KEY",
+            503,
+        )
+    return SteamClient(api_key=settings.steam_api_key)
+
+
+@router.get("/steam/openid/start")
+@limiter.limit("10/minute")
+def steam_openid_start(
+    request: Request,
+    user: RequireAuth,
+) -> RedirectResponse:
+    """Redirect the user to Steam's OpenID provider."""
+    settings: Settings = request.app.state.settings
+    client = _steam_client(settings)
+
+    state = secrets.token_urlsafe(16)
+    url = client.get_openid_authorize_url(
+        state=state,
+        return_to=settings.steam_openid_return_to,
+        realm=settings.steam_openid_realm,
+    )
+
+    response = RedirectResponse(url=url, status_code=302)
+    response.set_cookie(_STEAM_STATE_COOKIE, state, **_oauth_cookie_opts(settings))
+    return response
+
+
+@router.get("/steam/openid/callback")
+@limiter.limit("10/minute")
+def steam_openid_callback(
+    request: Request,
+    state: Annotated[str, Query(min_length=1)],
+    db: Annotated[DbSession, Depends(get_db)],
+) -> RedirectResponse:
+    """Complete the Steam OpenID flow."""
+    cookie_state = request.cookies.get(_STEAM_STATE_COOKIE)
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    user = require_auth(request=request, db=db)
+    settings: Settings = request.app.state.settings
+
+    with _steam_client(settings) as client:
+        try:
+            steam_id = client.validate_openid_assertion(dict(request.query_params))
+            client.get_player_summary(steam_id)
+        except SyncClientError as exc:
+            logger.warning("Steam OpenID error: %s", exc)
+            raise SyncUpError("STEAM_OPENID_INVALID", str(exc), 400) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Steam API error (status=%s): %s", exc.response.status_code, exc.response.text
+            )
+            raise SyncUpError(
+                "UPSTREAM_UNAVAILABLE", "Steam returned an error — please retry", 502
+            ) from exc
+        except httpx.RequestError as exc:
+            raise SyncUpError(
+                "UPSTREAM_UNAVAILABLE", "Could not reach Steam — please retry", 502
+            ) from exc
+
+    conn = _upsert_connection(db, user.id, "steam", steam_id)
+    logger.info("User %s connected Steam via OpenID (steam_id=%s)", user.id, steam_id)
+
+    response = RedirectResponse(_post_auth_redirect(settings), status_code=302)
+    response.delete_cookie(_STEAM_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
+    response = _enqueue_post_connect_sync(response, request, user.id, "steam")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -514,8 +744,9 @@ def anilist_oauth_callback(
 
     logger.info("User %s connected AniList (anilist_id=%s)", user.id, anilist_user_id)
 
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse(_post_auth_redirect(settings), status_code=302)
     response.delete_cookie(_ANILIST_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
+    response = _enqueue_post_connect_sync(response, request, user.id, "anilist")
     return response
 
 
@@ -633,8 +864,9 @@ def trakt_oauth_callback(
 
     logger.info("User %s connected Trakt (trakt_username=%s)", user.id, trakt_username)
 
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse(_post_auth_redirect(settings), status_code=302)
     response.delete_cookie(_TRAKT_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
+    response = _enqueue_post_connect_sync(response, request, user.id, "trakt")
     return response
 
 
@@ -759,8 +991,9 @@ def reddit_oauth_callback(
 
     logger.info("User %s connected Reddit (reddit_username=%s)", user.id, reddit_username)
 
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse(_post_auth_redirect(settings), status_code=302)
     response.delete_cookie(_REDDIT_STATE_COOKIE, **_oauth_cookie_delete_opts(settings))
+    response = _enqueue_post_connect_sync(response, request, user.id, "reddit")
     return response
 
 
@@ -1013,7 +1246,8 @@ def spotify_callback(
     logger.info("User %s connected Spotify (external_id=%s)", user.id, spotify_user_id)
 
     _state_cookie_del_opts = _oauth_cookie_delete_opts(settings)
-    response = RedirectResponse("/", status_code=302)
+    response = RedirectResponse(_post_auth_redirect(settings), status_code=302)
     response.delete_cookie("spotify_state", **_state_cookie_del_opts)
     response.delete_cookie("spotify_verifier", **_state_cookie_del_opts)
+    response = _enqueue_post_connect_sync(response, request, user.id, "spotify")
     return response

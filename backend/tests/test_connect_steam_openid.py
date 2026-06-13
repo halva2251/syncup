@@ -43,7 +43,11 @@ def steam_client(
 ) -> Generator[TestClient, None, None]:
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("STEAM_API_KEY", "test-steam-key")
+    monkeypatch.setenv("FRONTEND_URL", "")
     monkeypatch.setenv("DEBUG", "true")
+    monkeypatch.setattr(
+        "syncup.api.routes.connect._do_sync_generic", lambda *args, **kwargs: None
+    )
 
     from syncup.api.app import app
     from syncup.auth.router import require_auth
@@ -69,7 +73,11 @@ def steam_client_no_creds(
     """Client fixture with Steam API key NOT configured."""
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("STEAM_API_KEY", "")
+    monkeypatch.setenv("FRONTEND_URL", "")
     monkeypatch.setenv("DEBUG", "true")
+    monkeypatch.setattr(
+        "syncup.api.routes.connect._do_sync_generic", lambda *args, **kwargs: None
+    )
 
     from syncup.api.app import app
     from syncup.auth.router import require_auth
@@ -91,6 +99,7 @@ def unauthed_steam_client(
 ) -> Generator[TestClient, None, None]:
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("STEAM_API_KEY", "test-steam-key")
+    monkeypatch.setenv("FRONTEND_URL", "")
     monkeypatch.setenv("DEBUG", "true")
 
     from syncup.api.app import app

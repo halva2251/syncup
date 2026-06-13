@@ -61,7 +61,11 @@ def anilist_client(
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("ANILIST_CLIENT_ID", "test-anilist-client-id")
     monkeypatch.setenv("ANILIST_CLIENT_SECRET", "test-anilist-secret")
+    monkeypatch.setenv("FRONTEND_URL", "")
     monkeypatch.setenv("DEBUG", "true")
+    monkeypatch.setattr(
+        "syncup.api.routes.connect._do_sync_generic", lambda *args, **kwargs: None
+    )
 
     from syncup.api.app import app
     from syncup.auth.router import require_auth
@@ -87,9 +91,13 @@ def anilist_client_no_creds(
     """Client fixture with AniList credentials NOT configured."""
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test-id")
     monkeypatch.setenv("DEBUG", "true")
+    monkeypatch.setenv("FRONTEND_URL", "")
     # Explicitly blank — prevents real .env values leaking into this fixture.
     monkeypatch.setenv("ANILIST_CLIENT_ID", "")
     monkeypatch.setenv("ANILIST_CLIENT_SECRET", "")
+    monkeypatch.setattr(
+        "syncup.api.routes.connect._do_sync_generic", lambda *args, **kwargs: None
+    )
 
     from syncup.api.app import app
     from syncup.auth.router import require_auth
