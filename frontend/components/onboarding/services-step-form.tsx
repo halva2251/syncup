@@ -3,7 +3,6 @@
 import {
   useActionState,
   useEffect,
-  useId,
   useState,
   useTransition,
 } from "react";
@@ -118,7 +117,7 @@ export function ServicesStepForm({
       backHref="/onboarding/profile"
       continueHref="/onboarding/obsessions"
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 grid-rows-[auto_auto]">
         {SERVICES.map((service) => (
           <ServiceCard
             key={service.id}
@@ -152,42 +151,49 @@ function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
   const isConnected = status === "ok";
 
   return (
-    <div className="flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-page)] p-4">
-      <div className="mb-3 flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <AppIcon
-            brand={service.brand}
-            size="sm"
-            brandColor={`#${service.brand.hex}`}
-          />
-          <div>
-            <h3 className="font-semibold text-[var(--color-text-primary)]">
-              {service.name}
-            </h3>
-            <p className="text-xs text-[var(--color-text-tertiary)]">
-              {service.description}
-            </p>
-          </div>
+    <div className="relative grid row-span-2 grid-rows-subgrid h-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-page)] p-4">
+      {isConnected && (
+        <div className="absolute bottom-3 right-3 z-10 rotate-[-8deg] rounded-lg bg-[var(--color-success)] px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
+          Connected
         </div>
-        {status !== "not_connected" && (
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
-            <span
-              className={["h-2 w-2 rounded-full", statusDotClass(status)].join(
-                " ",
-              )}
+      )}
+      <div className="row-start-1">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <AppIcon
+              brand={service.brand}
+              size="sm"
+              brandColor={`#${service.brand.hex}`}
             />
-            {formatStatus(status)}
-          </span>
+            <div>
+              <h3 className="font-semibold text-[var(--color-text-primary)]">
+                {service.name}
+              </h3>
+              <p className="text-xs text-[var(--color-text-tertiary)]">
+                {service.description}
+              </p>
+            </div>
+          </div>
+          {status !== "not_connected" && status !== "ok" && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
+              <span
+                className={["h-2 w-2 rounded-full", statusDotClass(status)].join(
+                  " ",
+                )}
+              />
+              {formatStatus(status)}
+            </span>
+          )}
+        </div>
+
+        {connection?.sync_error && status === "error" && (
+          <ErrorMessage className="mt-3 text-xs">
+            {connection.sync_error}
+          </ErrorMessage>
         )}
       </div>
 
-      {connection?.sync_error && status === "error" && (
-        <ErrorMessage className="mb-3 text-xs">
-          {connection.sync_error}
-        </ErrorMessage>
-      )}
-
-      <div className="mt-auto">
+      <div className="row-start-2 self-end">
         {service.type === "oauth" && service.oauthStartUrl && (
           <OAuthConnect
             service={service}
@@ -253,17 +259,16 @@ function OAuthConnect({
 
   if (isConnected) {
     return (
-      <Button
-        variant="primary"
-        size="sm"
-        className="w-full"
+      <button
+        type="button"
         onClick={handleSync}
         disabled={isBusy || isPending}
+        className="inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-light)] px-3.5 py-2 text-sm font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-accent-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-page)] disabled:opacity-50"
       >
         {(isBusy || isPending) && <Loader2 className="h-4 w-4 animate-spin" />}
         <RefreshCw className="h-4 w-4" />
         Sync
-      </Button>
+      </button>
     );
   }
 
@@ -293,8 +298,6 @@ function OAuthOrUsernameConnect({
   onConnected: () => void;
 }) {
   const [showManual, setShowManual] = useState(false);
-  const [manualError, setManualError] = useState<string | null>(null);
-  const usernameFormId = useId();
 
   if (isConnected) {
     return (
@@ -308,11 +311,11 @@ function OAuthOrUsernameConnect({
   }
 
   return (
-    <div>
+    <div className="space-y-2">
       <button
         type="button"
         onClick={() => setShowManual((prev) => !prev)}
-        className="mb-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-text-secondary)] underline-offset-2 hover:text-[var(--color-text-primary)] hover:underline"
+        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-text-secondary)] underline-offset-2 hover:text-[var(--color-text-primary)] hover:underline"
       >
         manual entry
         {showManual ? (
@@ -322,118 +325,25 @@ function OAuthOrUsernameConnect({
         )}
       </button>
 
-      <div className="flex">
-        <div
-          className={[
-            "min-w-0 overflow-hidden transition-all duration-300 ease-in-out",
-            showManual
-              ? "mr-2 w-full flex-1 opacity-100"
-              : "mr-0 w-0 opacity-0",
-          ].join(" ")}
-          aria-hidden={!showManual}
+      {showManual ? (
+        <UsernameConnect
+          service={service}
+          isConnected={false}
+          isBusy={isBusy}
+          onConnected={onConnected}
+        />
+      ) : (
+        <a
+          href={service.oauthStartUrl}
+          onClick={() => onConnect()}
+          className="inline-flex h-[42px] w-full items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-light)] px-3.5 py-2 text-sm font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-accent-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-page)] disabled:opacity-50"
         >
-          {manualError && <ManualError error={manualError} />}
-          <UsernameConnectInline
-            id={usernameFormId}
-            service={service}
-            isBusy={isBusy}
-            onConnected={onConnected}
-            onError={setManualError}
-          />
-        </div>
-
-        <div
-          className={[
-            "relative h-[42px] min-w-0 shrink-0 overflow-hidden transition-all duration-300 ease-in-out",
-            showManual ? "w-[42px]" : "w-full flex-1",
-          ].join(" ")}
-        >
-          <a
-            href={service.oauthStartUrl}
-            onClick={() => onConnect()}
-            className={[
-              "absolute inset-0 inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-light)] px-3.5 text-sm font-medium text-[var(--color-text-primary)] transition-opacity duration-300 ease-in-out hover:bg-[var(--color-accent-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-page)] disabled:opacity-50 whitespace-nowrap",
-              showManual ? "pointer-events-none opacity-0" : "opacity-100",
-            ].join(" ")}
-            aria-hidden={showManual}
-            tabIndex={showManual ? -1 : 0}
-          >
-            {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-            <span>Connect</span>
-          </a>
-
-          <button
-            type="submit"
-            form={usernameFormId}
-            disabled={isBusy}
-            tabIndex={showManual ? 0 : -1}
-            className={[
-              "absolute right-0 top-0 flex h-[42px] w-[42px] items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-accent-light)] text-[var(--color-text-primary)] transition-opacity duration-300 ease-in-out hover:bg-[var(--color-accent-soft)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent-soft)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-page)] disabled:opacity-50",
-              showManual ? "opacity-100" : "pointer-events-none opacity-0",
-            ].join(" ")}
-            aria-hidden={!showManual}
-            aria-label="Connect"
-          >
-            {isBusy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <SendHorizontal className="h-4 w-4" />
-            )}
-          </button>
-        </div>
-      </div>
+          {isBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+          Connect
+        </a>
+      )}
     </div>
   );
-}
-
-function UsernameConnectInline({
-  id,
-  service,
-  isBusy,
-  onConnected,
-  onError,
-}: {
-  id: string;
-  service: ServiceCardProps["service"];
-  isBusy: boolean;
-  onConnected: () => void;
-  onError: (error: string | null) => void;
-}) {
-  const [, formAction, pending] = useActionState(
-    async (_prevState: { error?: string } | null, formData: FormData) => {
-      const action =
-        service.id === "steam" ? connectSteamAction : connectLastfmAction;
-      const result = await action(formData);
-      if ("error" in result && result.error) {
-        onError(result.error);
-        return { error: result.error };
-      }
-      onConnected();
-      return null;
-    },
-    null,
-  );
-
-  const inputName = service.id === "steam" ? "steam_input" : "lastfm_username";
-  const placeholder =
-    service.id === "steam" ? "Steam ID or vanity URL" : "Last.fm username";
-
-  return (
-    <form id={id} action={formAction} className="h-[42px]">
-      <Input
-        name={inputName}
-        placeholder={placeholder}
-        required
-        autoComplete="off"
-        disabled={isBusy || pending}
-        className="h-full w-full"
-      />
-    </form>
-  );
-}
-
-function ManualError({ error }: { error: string }) {
-  return <ErrorMessage className="mb-2 text-xs">{error}</ErrorMessage>;
 }
 
 function UsernameConnect({
