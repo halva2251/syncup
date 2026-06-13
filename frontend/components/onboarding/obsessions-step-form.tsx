@@ -10,17 +10,8 @@ import {
   Loader2,
   Heart,
   X,
-  Music,
-  Gamepad2,
-  Film,
-  BookOpen,
-  Tv,
-  Sparkles,
-  BookOpenText,
-  Users,
-  HelpCircle,
-  LucideIcon,
 } from "lucide-react";
+import { CATEGORY_ICONS } from "@/lib/constants/category-icons";
 import {
   createObsessionAction,
   deleteObsessionAction,
@@ -58,18 +49,6 @@ const CATEGORY_SECTIONS = [
   },
 ];
 
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  game: Gamepad2,
-  music: Music,
-  film: Film,
-  book: BookOpen,
-  show: Tv,
-  anime: Sparkles,
-  manga: BookOpenText,
-  community: Users,
-  other: HelpCircle,
-};
-
 function CategoryIcon({
   category,
   className = "h-4 w-4 shrink-0 text-[var(--color-text-tertiary)]",
@@ -77,7 +56,7 @@ function CategoryIcon({
   category: string;
   className?: string;
 }) {
-  const Icon = CATEGORY_ICONS[category.toLowerCase()] ?? HelpCircle;
+  const Icon = CATEGORY_ICONS[category.toLowerCase()];
   return <Icon className={className} aria-label={category} aria-hidden="false" />;
 }
 
