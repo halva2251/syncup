@@ -6,7 +6,21 @@ import { Autocomplete } from "@/components/ui/autocomplete";
 import { ErrorMessage } from "@/components/ui/error-message";
 import { AccordionSelect } from "@/components/ui/accordion-select";
 import { OnboardingStep } from "@/components/onboarding/onboarding-step";
-import { Loader2, Heart, X } from "lucide-react";
+import {
+  Loader2,
+  Heart,
+  X,
+  Music,
+  Gamepad2,
+  Film,
+  BookOpen,
+  Tv,
+  Sparkles,
+  BookOpenText,
+  Users,
+  HelpCircle,
+  LucideIcon,
+} from "lucide-react";
 import {
   createObsessionAction,
   deleteObsessionAction,
@@ -43,6 +57,29 @@ const CATEGORY_SECTIONS = [
     items: [{ value: "other", label: "Other" }],
   },
 ];
+
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  game: Gamepad2,
+  music: Music,
+  film: Film,
+  book: BookOpen,
+  show: Tv,
+  anime: Sparkles,
+  manga: BookOpenText,
+  community: Users,
+  other: HelpCircle,
+};
+
+function CategoryIcon({
+  category,
+  className = "h-4 w-4 shrink-0 text-[var(--color-text-tertiary)]",
+}: {
+  category: string;
+  className?: string;
+}) {
+  const Icon = CATEGORY_ICONS[category.toLowerCase()] ?? HelpCircle;
+  return <Icon className={className} aria-label={category} aria-hidden="false" />;
+}
 
 interface ObsessionsStepFormProps {
   initialObsessions: ManualObsession[];
@@ -117,6 +154,18 @@ export function ObsessionsStepForm({
               onChange={setSelectedCategory}
               getKey={(c) => c.value}
               getLabel={(c) => c.label}
+              renderOption={(c) => (
+                <span className="inline-flex items-center gap-2">
+                  <CategoryIcon category={c.value} />
+                  <span>{c.label}</span>
+                </span>
+              )}
+              renderChip={(c) => (
+                <span className="inline-flex items-center gap-1.5 text-[var(--color-text-primary)]">
+                  <CategoryIcon category={c.value} />
+                  <span>{c.label}</span>
+                </span>
+              )}
               multiple={false}
               grouped={false}
               placeholder="Select a category"
@@ -157,10 +206,10 @@ export function ObsessionsStepForm({
               key={obsession.id}
               className="inline-flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-page)] px-3 py-2 text-sm text-[var(--color-text-primary)]"
             >
-              <span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-tertiary)]">
-                {obsession.category}
+              <span className="inline-flex items-center gap-2">
+                <CategoryIcon category={obsession.category} />
+                <span className="max-w-[200px] truncate">{obsession.name}</span>
               </span>
-              <span className="max-w-[200px] truncate">{obsession.name}</span>
               <button
                 type="button"
                 onClick={() => handleDelete(obsession.id)}
