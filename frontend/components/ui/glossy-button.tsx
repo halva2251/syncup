@@ -1,17 +1,20 @@
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 
 interface GlossyButtonLinkProps
   extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "className" | "children"> {
   href: string;
   children: ReactNode;
   className?: string;
+  loading?: boolean;
 }
 
 interface GlossyButtonProps
   extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className" | "children"> {
   children: ReactNode;
   className?: string;
+  loading?: boolean;
 }
 
 const shellClasses =
@@ -33,7 +36,13 @@ const bezelStyle: React.CSSProperties = {
   maskComposite: "exclude",
 };
 
-function GlossyShell({ children }: { children: ReactNode }) {
+function GlossyShell({
+  children,
+  loading,
+}: {
+  children: ReactNode;
+  loading?: boolean;
+}) {
   return (
     <>
       {/* Raised bezel / inner stroke */}
@@ -44,7 +53,12 @@ function GlossyShell({ children }: { children: ReactNode }) {
       {/* Gloss overlay — intensifies on hover so the lighter gradient stop appears even lighter */}
       <span className="pointer-events-none absolute inset-0 rounded-lg bg-gradient-to-b from-white/25 via-transparent to-transparent transition-all duration-300 ease-out group-hover:from-white/50" />
       {/* Content */}
-      <span className="relative z-10 drop-shadow-md">{children}</span>
+      <span className="relative z-10 inline-flex items-center justify-center drop-shadow-md">
+        <span className={loading ? "invisible" : undefined}>{children}</span>
+        {loading && (
+          <Loader2 className="absolute h-4 w-4 animate-spin" />
+        )}
+      </span>
     </>
   );
 }
@@ -53,11 +67,12 @@ export function GlossyButtonLink({
   href,
   children,
   className,
+  loading,
   ...props
 }: GlossyButtonLinkProps) {
   return (
     <Link href={href} className={[shellClasses, className].filter(Boolean).join(" ")} {...props}>
-      <GlossyShell>{children}</GlossyShell>
+      <GlossyShell loading={loading}>{children}</GlossyShell>
     </Link>
   );
 }
@@ -65,6 +80,7 @@ export function GlossyButtonLink({
 export function GlossyButton({
   children,
   className,
+  loading,
   type = "button",
   ...props
 }: GlossyButtonProps) {
@@ -74,7 +90,7 @@ export function GlossyButton({
       className={[shellClasses, className].filter(Boolean).join(" ")}
       {...props}
     >
-      <GlossyShell>{children}</GlossyShell>
+      <GlossyShell loading={loading}>{children}</GlossyShell>
     </button>
   );
 }

@@ -18,6 +18,7 @@ interface OnboardingStepProps {
     "className" | "children"
   > & {
     children?: ReactNode;
+    loading?: boolean;
   };
   continueLabel?: ReactNode;
 }

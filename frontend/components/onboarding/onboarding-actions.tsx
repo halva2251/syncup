@@ -11,6 +11,7 @@ interface OnboardingActionsProps {
     "className" | "children"
   > & {
     children?: ReactNode;
+    loading?: boolean;
   };
   continueLabel?: ReactNode;
 }
@@ -47,6 +48,7 @@ export function OnboardingActions({
       ) : continueButton ? (
         <GlossyButton
           {...continueButton}
+          loading={continueButton.loading}
           className={backHref ? undefined : "w-full"}
         >
           {continueButton.children ?? continueLabel}
