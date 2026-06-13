@@ -50,8 +50,14 @@ export interface OnboardingStatus {
 export interface TasteItem {
   id: string;
   name: string;
+  score?: number;
+  rating?: number;
   hours?: number;
   engagement_score?: number;
+  artist?: string;
+  artists?: string[];
+  release_year?: number;
+  play_count?: number;
 }
 
 export interface ManualObsession {

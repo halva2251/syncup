@@ -8,7 +8,6 @@ const steps = [
   { id: "services", label: "Services" },
   { id: "obsessions", label: "Obsessions" },
   { id: "taste", label: "Taste" },
-  { id: "matchable", label: "Matching" },
 ];
 
 export function OnboardingStepper() {
