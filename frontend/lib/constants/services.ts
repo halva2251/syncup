@@ -10,7 +10,7 @@ import {
 } from "simple-icons";
 import type { SimpleIcon } from "simple-icons";
 
-export type ConnectionType = "username" | "oauth" | "csv";
+export type ConnectionType = "oauth" | "username" | "csv" | "oauth_or_username";
 
 export interface ServiceMeta {
   id: string;
@@ -34,16 +34,18 @@ export const SERVICES: ServiceMeta[] = [
   {
     id: "steam",
     name: "Steam",
-    type: "username",
+    type: "oauth_or_username",
     brand: siSteam,
     description: "Games and playtime",
+    oauthStartUrl: "/api/connect/steam/openid/start",
   },
   {
     id: "lastfm",
     name: "Last.fm",
-    type: "username",
+    type: "oauth_or_username",
     brand: siLastdotfm,
     description: "Top artists and scrobbles",
+    oauthStartUrl: "/api/connect/lastfm/oauth/start",
   },
   {
     id: "letterboxd",

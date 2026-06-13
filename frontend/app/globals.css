@@ -3,6 +3,16 @@
 @theme inline {
   --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
 
+  /* Radius scale — bumped ~20% for a softer, rounder look */
+  --radius-xs: 0.15rem;
+  --radius-sm: 0.3rem;
+  --radius-md: 0.45rem;
+  --radius-lg: 0.6rem;
+  --radius-xl: 0.9rem;
+  --radius-2xl: 1.2rem;
+  --radius-3xl: 1.8rem;
+  --radius-4xl: 2.4rem;
+
   /* Light mode tokens */
   --color-bg-page: #F9FAFB;
   --color-bg-card: #FFFFFF;

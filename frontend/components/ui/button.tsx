@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, AnchorHTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+type ButtonVariant = "primary" | "accent-light" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md" | "lg" | "icon";
 
 interface SharedProps {
@@ -18,6 +18,8 @@ interface ButtonProps
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
     "bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)] border-transparent",
+  "accent-light":
+    "bg-[var(--color-accent-light)] text-[var(--color-text-primary)] hover:bg-[var(--color-accent-soft)] border-transparent",
   secondary:
     "bg-transparent text-[var(--color-text-primary)] border-[var(--color-border)] hover:bg-[var(--color-bg-page)]",
   ghost:

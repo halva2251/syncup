@@ -6,6 +6,7 @@ import {
   useRef,
   useEffect,
   useMemo,
+  useCallback,
   type ReactNode,
 } from "react";
 import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
@@ -59,11 +60,7 @@ export function AccordionSelect<T>({
 }: AccordionSelectProps<T>) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [openSections, setOpenSections] = useState<Set<string>>(() => {
-    const initial = new Set<string>();
-    sections.forEach((s) => initial.add(s.id));
-    return initial;
-  });
+  const [closedSections, setClosedSections] = useState<Set<string>>(new Set());
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -76,19 +73,22 @@ export function AccordionSelect<T>({
   const query = search.trim().toLowerCase();
   const isSearching = query.length > 0;
 
-  const filterItem = (item: T) => {
-    if (!isSearching) return true;
-    const labelText = getLabel(item).toLowerCase();
-    const keyText = getKey(item).toLowerCase();
-    const sectionKeys = getSectionKeys
-      ? getSectionKeys(item).join(" ").toLowerCase()
-      : "";
-    return (
-      labelText.includes(query) ||
-      keyText.includes(query) ||
-      sectionKeys.includes(query)
-    );
-  };
+  const filterItem = useCallback(
+    (item: T) => {
+      if (!isSearching) return true;
+      const labelText = getLabel(item).toLowerCase();
+      const keyText = getKey(item).toLowerCase();
+      const sectionKeys = getSectionKeys
+        ? getSectionKeys(item).join(" ").toLowerCase()
+        : "";
+      return (
+        labelText.includes(query) ||
+        keyText.includes(query) ||
+        sectionKeys.includes(query)
+      );
+    },
+    [isSearching, query, getLabel, getKey, getSectionKeys],
+  );
 
   const filteredSections = useMemo(() => {
     if (!searchEnabled || !isSearching) return sections;
@@ -103,6 +103,15 @@ export function AccordionSelect<T>({
   const filteredFlatItems = useMemo(() => {
     return sections.flatMap((section) => section.items).filter(filterItem);
   }, [sections, filterItem]);
+
+  const openSections = useMemo(() => {
+    if (isSearching) {
+      return new Set(filteredSections.map((s) => s.id));
+    }
+    const next = new Set(sections.map((s) => s.id));
+    closedSections.forEach((id) => next.delete(id));
+    return next;
+  }, [isSearching, filteredSections, sections, closedSections]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -123,16 +132,8 @@ export function AccordionSelect<T>({
     }
   }, [isOpen, searchEnabled]);
 
-  useEffect(() => {
-    if (isSearching) {
-      setOpenSections(new Set(filteredSections.map((s) => s.id)));
-    } else {
-      setOpenSections(new Set(sections.map((s) => s.id)));
-    }
-  }, [isSearching, filteredSections, sections]);
-
   const toggleSection = (sectionId: string) => {
-    setOpenSections((prev) => {
+    setClosedSections((prev) => {
       const next = new Set(prev);
       if (next.has(sectionId)) {
         next.delete(sectionId);
@@ -196,17 +197,17 @@ export function AccordionSelect<T>({
       className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-sm font-medium text-[var(--color-accent)]"
     >
       {renderOption ? renderOption(item) : getLabel(item)}
-      <button
-        type="button"
+      <span
         onClick={(e) => {
           e.stopPropagation();
           onRemove();
         }}
-        className="rounded-sm hover:bg-[var(--color-accent)]/10"
+        className="cursor-pointer rounded-sm hover:bg-[var(--color-accent)]/10"
         aria-label={`Remove ${getLabel(item)}`}
+        role="button"
       >
         <X className="h-3.5 w-3.5" />
-      </button>
+      </span>
     </span>
   );
 
