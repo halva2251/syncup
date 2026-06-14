@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { BACKEND_URL } from "./lib/constants/backend-url";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
@@ -6,7 +7,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:3000/api/:path*",
+        destination: `${BACKEND_URL}/api/:path*`,
       },
     ];
   },

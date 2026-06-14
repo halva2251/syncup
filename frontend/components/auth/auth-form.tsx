@@ -222,8 +222,11 @@ export function AuthForm({
           className="mt-2 w-full"
           disabled={pending}
         >
-          {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-          {submitLabel}
+          {pending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            submitLabel
+          )}
         </Button>
       </form>
 

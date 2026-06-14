@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export async function buildEmbedding() {
   return undefined as any;
 }

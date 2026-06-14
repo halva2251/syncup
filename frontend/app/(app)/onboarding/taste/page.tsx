@@ -10,10 +10,14 @@ export default async function OnboardingTastePage() {
   let taste;
 
   try {
-    const me = await getCurrentUser();
+    const [me, onboardingStatus, tasteProfile] = await Promise.all([
+      getCurrentUser(),
+      getOnboardingStatus(),
+      getTasteProfile(),
+    ]);
     user = me.user;
-    status = await getOnboardingStatus();
-    taste = await getTasteProfile();
+    status = onboardingStatus;
+    taste = tasteProfile;
   } catch {
     redirect("/login");
   }

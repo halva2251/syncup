@@ -31,6 +31,8 @@ A clean, modern dashboard aesthetic inspired by the Duplicati reference screensh
 | `--accent` | `#2563EB` | Primary buttons, active nav item, links, brand |
 | `--accent-hover` | `#1D4ED8` | Primary button hover |
 | `--accent-soft` | `#EFF6FF` | Light blue badges, selected states |
+| `--color-accent-light` | `#93C5FD` | Soft accent backgrounds, secondary buttons |
+| `--color-bg-auth-card` | `#FAFAFA` | Auth card surface (slightly off-white) |
 | `--success` | `#22C55E` | Online, ok, success status |
 | `--warning` | `#F59E0B` | Warning, syncing, partial states |
 | `--danger` | `#EF4444` | Offline, error, destructive actions |
@@ -58,6 +60,9 @@ A clean, modern dashboard aesthetic inspired by the Duplicati reference screensh
 | `--accent` | `#3B82F6` | Primary actions (slightly brighter in dark) |
 | `--accent-hover` | `#2563EB` | Primary button hover |
 | `--accent-soft` | `#172554` | Selected/dark blue backgrounds |
+| `--color-accent-light` | `#60A5FA` | Soft accent backgrounds, secondary buttons |
+| `--color-bg-auth-card` | `#141414` | Auth card surface |
+| `--color-danger-soft` | `#450A0A` | Soft danger focus rings/backgrounds |
 | `--success` | `#4ADE80` | Success indicators |
 | `--warning` | `#FBBF24` | Warning indicators |
 | `--danger` | `#F87171` | Error indicators |

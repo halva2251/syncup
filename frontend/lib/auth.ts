@@ -2,8 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:3000";
+import { BACKEND_URL } from "@/lib/constants/backend-url";
 
 interface AuthResponse {
   user: {
@@ -23,11 +22,15 @@ interface BackendError {
 
 function parseSetCookieHeader(header: string) {
   const [nameValue, ...attrs] = header.split(";").map((part) => part.trim());
-  const [name, value] = nameValue.split("=");
+  const eqIndex = nameValue.indexOf("=");
+  const name = eqIndex >= 0 ? nameValue.slice(0, eqIndex) : nameValue;
+  const value = eqIndex >= 0 ? nameValue.slice(eqIndex + 1) : "";
   const options: Record<string, unknown> = {};
 
   for (const attr of attrs) {
-    const [key, rawValue] = attr.split("=");
+    const eq = attr.indexOf("=");
+    const key = eq >= 0 ? attr.slice(0, eq) : attr;
+    const rawValue = eq >= 0 ? attr.slice(eq + 1) : "";
     const lowerKey = key.toLowerCase();
     if (lowerKey === "expires") {
       options.expires = new Date(rawValue);
@@ -56,7 +59,13 @@ async function forwardCookies(response: Response) {
   for (const header of setCookieHeader) {
     if (!header) continue;
     const { name, value, options } = parseSetCookieHeader(header);
-    cookieStore.set(name, decodeURIComponent(value), {
+    let decodedValue = value;
+    try {
+      decodedValue = decodeURIComponent(value);
+    } catch {
+      // Backend may not URL-encode the token; use the raw value.
+    }
+    cookieStore.set(name, decodedValue, {
       path: "/",
       ...options,
     });
@@ -84,7 +93,7 @@ async function postAuth(path: string, body: object) {
     };
   }
 
-  forwardCookies(response);
+  await forwardCookies(response);
   return { user: (data as AuthResponse).user };
 }
 

@@ -9,9 +9,12 @@ export default async function OnboardingServicesPage() {
   let connections;
 
   try {
-    const me = await getCurrentUser();
+    const [me, onboardingStatus] = await Promise.all([
+      getCurrentUser(),
+      getOnboardingStatus(),
+    ]);
     user = me.user;
-    status = await getOnboardingStatus();
+    status = onboardingStatus;
     connections = me.connections;
   } catch {
     redirect("/login");

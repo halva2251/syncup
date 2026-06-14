@@ -69,9 +69,8 @@ export interface ManualObsession {
 
 export interface PreferenceOverride {
   id: string;
-  item: { id: string; name: string };
+  item: { name: string };
   boost_multiplier: number;
-  note: string | null;
 }
 
 export interface TasteServiceData {

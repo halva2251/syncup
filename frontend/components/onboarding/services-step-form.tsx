@@ -76,6 +76,8 @@ export function ServicesStepForm({
     );
   });
 
+  const activeServicesKey = Array.from(activeServices).sort().join(",");
+
   useEffect(() => {
     if (activeServices.size === 0) return;
 
@@ -103,7 +105,7 @@ export function ServicesStepForm({
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [activeServices]);
+  }, [activeServicesKey, activeServices.size]);
 
   function markActive(service: string) {
     setActiveServices((prev) => new Set(prev).add(service));

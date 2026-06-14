@@ -1,13 +1,17 @@
 import { redirect } from "next/navigation";
 import { getOnboardingStatus } from "@/lib/api/onboarding";
+import { ApiError } from "@/lib/api/client";
 
 export default async function IndexPage() {
   let status;
 
   try {
     status = await getOnboardingStatus();
-  } catch {
-    redirect("/login");
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      redirect("/login");
+    }
+    throw err;
   }
 
   if (status.next_step === "set_display_name") {

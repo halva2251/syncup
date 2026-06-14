@@ -63,7 +63,7 @@ export function OnboardingStep({
   );
 
   const className =
-    "rounded-2xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-8 shadow-sm sm:p-10";
+    "rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-8 shadow-sm sm:p-10";
 
   if (action) {
     return (

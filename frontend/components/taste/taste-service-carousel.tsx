@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useId } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { AppIcon } from "@/components/ui/app-icon";
 import { TasteServiceSection } from "@/components/taste/taste-service-section";
@@ -19,6 +19,9 @@ export function TasteServiceCarousel({
   const [index, setIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const labelId = useId();
+
+  const safeIndex = Math.max(0, Math.min(index, serviceIds.length - 1));
 
   const next = useCallback(() => {
     setIndex((prev) => (prev + 1) % serviceIds.length);
@@ -46,11 +49,17 @@ export function TasteServiceCarousel({
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">
+      <h3
+        id={labelId}
+        className="text-sm font-medium text-[var(--color-text-secondary)]"
+      >
         From your connected services
       </h3>
 
       <div
+        role="region"
+        aria-roledescription="carousel"
+        aria-labelledby={labelId}
         className="overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4"
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -59,13 +68,13 @@ export function TasteServiceCarousel({
       >
         <div
           className="flex gap-4 transition-transform duration-500 ease-in-out"
-          style={{ transform: `translateX(calc(-${index} * (100% + 16px)))` }}
+          style={{ transform: `translateX(calc(-${safeIndex} * (100% + 16px)))` }}
         >
           {serviceIds.map((serviceId) => (
             <div
               key={serviceId}
               className="w-full flex-shrink-0"
-              aria-hidden={serviceIds[index] !== serviceId}
+              aria-hidden={serviceIds[safeIndex] !== serviceId}
             >
               <TasteServiceSection
                 serviceId={serviceId}
@@ -82,7 +91,7 @@ export function TasteServiceCarousel({
             <div className="flex items-center gap-1.5">
               {serviceIds.map((serviceId, i) => {
                 const service = SERVICE_BY_ID.get(serviceId);
-                const isCurrent = i === index;
+                const isCurrent = i === safeIndex;
                 return (
                   <button
                     key={serviceId}

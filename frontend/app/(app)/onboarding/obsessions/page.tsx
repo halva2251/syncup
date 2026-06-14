@@ -10,10 +10,14 @@ export default async function OnboardingObsessionsPage() {
   let obsessions;
 
   try {
-    const me = await getCurrentUser();
+    const [me, onboardingStatus, obsessionsList] = await Promise.all([
+      getCurrentUser(),
+      getOnboardingStatus(),
+      listObsessions(),
+    ]);
     user = me.user;
-    status = await getOnboardingStatus();
-    obsessions = await listObsessions();
+    status = onboardingStatus;
+    obsessions = obsessionsList;
   } catch {
     redirect("/login");
   }

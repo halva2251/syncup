@@ -20,3 +20,13 @@ export async function updateProfile(body: ProfileUpdate): Promise<User> {
     body: JSON.stringify(body),
   });
 }
+
+export async function updateItemExclusion(
+  itemId: string,
+  excluded: boolean,
+): Promise<void> {
+  return apiFetch<void>(`/me/items/${itemId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ excluded }),
+  });
+}

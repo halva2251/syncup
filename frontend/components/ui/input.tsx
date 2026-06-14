@@ -1,4 +1,5 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { useId, type InputHTMLAttributes, type ReactNode } from "react";
+import { cn } from "@/lib/utils/cn";
 
 interface InputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, "className"> {
@@ -16,7 +17,8 @@ export function Input({
   id,
   ...props
 }: InputProps) {
-  const inputId = id ?? (label ? label.toLowerCase().replace(/\s+/g, "-") : undefined);
+  const generatedId = useId();
+  const inputId = id ?? generatedId;
 
   return (
     <div className={className}>
@@ -31,15 +33,15 @@ export function Input({
       <div className="relative">
         <input
           id={inputId}
-          className={[
+          className={cn(
             "w-full rounded-lg border bg-[var(--color-bg-card)] px-3.5 py-2 text-[15px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]",
             "h-[42px] transition-colors hover:bg-[var(--color-bg-page)]",
             "focus:outline-none focus:border-[var(--color-accent)] focus:ring-[3px] focus:ring-[var(--color-accent-soft)]",
-            rightElement ? "pr-10" : "",
+            rightElement ? "pr-10" : undefined,
             error
-              ? "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-red-100"
+              ? "border-[var(--color-danger)] focus:border-[var(--color-danger)] focus:ring-[var(--color-danger-soft)]"
               : "border-[var(--color-border)]",
-          ].join(" ")}
+          )}
           {...props}
         />
         {rightElement && (

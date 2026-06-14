@@ -9,6 +9,7 @@ import {
   type Language,
 } from "@/lib/constants/languages";
 import { AccordionSelect } from "@/components/ui/accordion-select";
+import { cn } from "@/lib/utils/cn";
 import { X } from "lucide-react";
 
 interface LanguageSelectProps {
@@ -25,7 +26,7 @@ function Flag({ code, className }: { code: string; className?: string }) {
   if (!country) return null;
   return (
     <span
-      className={["fi", `fi-${country}`, className].filter(Boolean).join(" ")}
+      className={cn("fi", `fi-${country}`, className)}
     />
   );
 }
@@ -84,25 +85,17 @@ export function LanguageSelect({
         <span className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-sm font-medium text-[var(--color-accent)]">
           <Flag code={lang.code} className="h-3 w-4 rounded-sm" />
           {lang.name}
-          <span
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onRemove();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                onRemove();
-              }
             }}
             className="inline-flex cursor-pointer items-center rounded-sm hover:bg-[var(--color-accent)]/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
             aria-label={`Remove ${lang.name}`}
           >
             <X className="h-3.5 w-3.5" />
-          </span>
+          </button>
         </span>
       )}
       renderOption={(lang) => (

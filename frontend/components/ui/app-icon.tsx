@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 export type SimpleIcon = {
   title: string;
@@ -85,15 +86,14 @@ export function AppIcon({
 
   return (
     <span
-      className={[
+      className={cn(
         "relative inline-flex items-center justify-center shrink-0 overflow-hidden",
         "rounded-[22%] shadow-md",
         sizes[size],
-        brandColor ? "" : ["bg-gradient-to-b", gradients[gradient]].join(" "),
+        !brandColor && "bg-gradient-to-b",
+        !brandColor && gradients[gradient],
         className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      )}
       style={brandColor ? { backgroundColor: brandColor } : undefined}
     >
       {/* Raised bezel / inner border */}

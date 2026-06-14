@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
+import { BACKEND_URL } from "@/lib/constants/backend-url";
 import type { ApiErrorBody } from "@/types/api";
-
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:3000";
 
 export class ApiError extends Error {
   constructor(

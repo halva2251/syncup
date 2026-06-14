@@ -1,6 +1,12 @@
 "use client";
 
-import { useActionState, useOptimistic, useRef, useState } from "react";
+import {
+  useActionState,
+  useOptimistic,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Autocomplete } from "@/components/ui/autocomplete";
 import { ErrorMessage } from "@/components/ui/error-message";
@@ -58,7 +64,7 @@ function CategoryIcon({
   className?: string;
 }) {
   const Icon = CATEGORY_ICONS[category.toLowerCase()] ?? HelpCircle;
-  return <Icon className={className} aria-label={category} aria-hidden="false" />;
+  return <Icon className={className} aria-hidden="true" />;
 }
 
 interface ObsessionsStepFormProps {
@@ -74,6 +80,7 @@ export function ObsessionsStepForm({
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<CategoryItem[]>([]);
   const [autocompleteKey, setAutocompleteKey] = useState(0);
+  const [, startDeleteTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
 
   const [state, formAction, pending] = useActionState(
@@ -94,18 +101,16 @@ export function ObsessionsStepForm({
   );
 
   async function handleDelete(id: string) {
+    const previousObsessions = obsessions;
     setPendingDeleteId(id);
-    setOptimisticObsessions((prev) => prev.filter((o) => o.id !== id));
+    startDeleteTransition(() => {
+      setOptimisticObsessions((prev) => prev.filter((o) => o.id !== id));
+    });
     const result = await deleteObsessionAction(id);
     setPendingDeleteId(null);
     if (result.error) {
-      // Rollback on error
-      setObsessions((prev) => {
-        const removed = initialObsessions.find((o) => o.id === id);
-        return removed && !prev.some((o) => o.id === id)
-          ? [...prev, removed]
-          : prev;
-      });
+      // Rollback on error using the snapshot taken before the optimistic update.
+      setObsessions(previousObsessions);
       return;
     }
     setObsessions((prev) => prev.filter((o) => o.id !== id));

@@ -9,6 +9,7 @@ import {
   useTransition,
 } from "react";
 import { Loader2, Search } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 import { searchItems, type SearchSuggestion } from "@/lib/api/search";
 
 interface AutocompleteProps {
@@ -213,7 +214,7 @@ export function Autocomplete({
   }, [highlightedIndex]);
 
   return (
-    <div className={["relative", className].filter(Boolean).join(" ")}>
+    <div className={cn("relative", className)}>
       {label && (
         <label
           htmlFor={id}
@@ -286,12 +287,10 @@ export function Autocomplete({
                 aria-selected={index === highlightedIndex}
                 onMouseEnter={() => setHighlightedIndex(index)}
                 onClick={() => selectSuggestion(index)}
-                className={[
+                className={cn(
                   "cursor-pointer px-3.5 py-2 text-[15px]",
-                  index === highlightedIndex
-                    ? "bg-[var(--color-accent-soft)]"
-                    : "",
-                ].join(" ")}
+                  index === highlightedIndex && "bg-[var(--color-accent-soft)]",
+                )}
               >
                 <div className="text-[var(--color-text-primary)]">
                   {suggestion.name}

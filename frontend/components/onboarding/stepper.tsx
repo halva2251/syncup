@@ -23,7 +23,11 @@ export function OnboardingStepper() {
           const isCurrent = index === currentIndex;
 
           return (
-            <li key={step.id} className="flex flex-1 flex-col items-center">
+            <li
+              key={step.id}
+              className="flex flex-1 flex-col items-center"
+              aria-current={isCurrent ? "step" : undefined}
+            >
               <div className="relative flex h-8 w-full items-center justify-center">
                 <div
                   className={[

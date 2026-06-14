@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+import { ItemExclusionToggle } from "@/components/taste/item-exclusion-toggle";
 import type { TasteItem } from "@/types/api";
 
 interface TasteItemListProps {
@@ -5,6 +9,7 @@ interface TasteItemListProps {
   emptyMessage?: string;
   rankMode?: "index" | "score" | "rating" | "none";
   getLabel?: (item: TasteItem) => string;
+  excludable?: boolean;
 }
 
 function formatEngagement(item: TasteItem) {
@@ -40,8 +45,13 @@ export function TasteItemList({
   emptyMessage = "No items yet",
   rankMode = "index",
   getLabel,
+  excludable = false,
 }: TasteItemListProps) {
-  if (items.length === 0) {
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+
+  const visibleItems = items.filter((item) => !excludedIds.has(item.id));
+
+  if (visibleItems.length === 0) {
     return (
       <p className="text-sm text-[var(--color-text-tertiary)]">{emptyMessage}</p>
     );
@@ -49,7 +59,7 @@ export function TasteItemList({
 
   return (
     <ol className="space-y-1">
-      {items.map((item, index) => {
+      {visibleItems.map((item, index) => {
         const meta = formatEngagement(item);
         const rankLabel = formatRankLabel(item, index, rankMode);
         const label = getLabel ? getLabel(item) : item.name;
@@ -68,11 +78,21 @@ export function TasteItemList({
                 {label}
               </span>
             </span>
-            {meta && rankMode !== "score" && rankMode !== "rating" && (
-              <span className="shrink-0 text-xs text-[var(--color-text-tertiary)]">
-                {meta}
-              </span>
-            )}
+            <span className="inline-flex items-center gap-2 shrink-0">
+              {meta && rankMode !== "score" && rankMode !== "rating" && (
+                <span className="text-xs text-[var(--color-text-tertiary)]">
+                  {meta}
+                </span>
+              )}
+              {excludable && (
+                <ItemExclusionToggle
+                  itemId={item.id}
+                  onSuccess={(itemId) =>
+                    setExcludedIds((prev) => new Set(prev).add(itemId))
+                  }
+                />
+              )}
+            </span>
           </li>
         );
       })}

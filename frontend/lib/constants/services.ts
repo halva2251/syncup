@@ -83,6 +83,8 @@ export const SERVICES: ServiceMeta[] = [
     id: "rateyourmusic",
     name: "RateYourMusic",
     type: "csv",
+    // RateYourMusic is not in Simple Icons yet; MusicBrainz is the closest
+    // music-metadata brand available, so we use it as a stand-in.
     brand: siMusicbrainz,
     description: "Album ratings export",
     csvLabel: "Import RYM ratings CSV",

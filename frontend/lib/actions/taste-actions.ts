@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { updateProfile } from "@/lib/api/me";
+import { updateProfile, updateItemExclusion } from "@/lib/api/me";
 import { ApiError } from "@/lib/api/client";
 
 export async function enableMatchingAction() {
@@ -15,6 +15,18 @@ export async function enableMatchingAction() {
   }
 
   redirect("/home");
+}
+
+export async function excludeItemAction(itemId: string, excluded: boolean) {
+  try {
+    await updateItemExclusion(itemId, excluded);
+    return { success: true };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return { error: err.message };
+    }
+    return { error: "Something went wrong. Please try again." };
+  }
 }
 
 export async function buildEmbeddingAction(): Promise<void> {

@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, AnchorHTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
+import { cn } from "@/lib/utils/cn";
 
 type ButtonVariant = "primary" | "accent-light" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md" | "lg" | "icon";
@@ -43,9 +44,7 @@ function buildClassName(
   size: ButtonSize,
   className?: string
 ) {
-  return [baseClasses, variantClasses[variant], sizeClasses[size], className]
-    .filter(Boolean)
-    .join(" ");
+  return cn(baseClasses, variantClasses[variant], sizeClasses[size], className);
 }
 
 export function Button({

@@ -1,6 +1,7 @@
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 interface GlossyButtonLinkProps
   extends Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "className" | "children"> {
@@ -74,7 +75,7 @@ export function GlossyButtonLink({
   ...props
 }: GlossyButtonLinkProps) {
   return (
-    <Link href={href} className={[shellClasses, className].filter(Boolean).join(" ")} {...props}>
+    <Link href={href} className={cn(shellClasses, className)} {...props}>
       <GlossyShell loading={loading}>{children}</GlossyShell>
     </Link>
   );
@@ -90,7 +91,7 @@ export function GlossyButton({
   return (
     <button
       type={type}
-      className={[shellClasses, className].filter(Boolean).join(" ")}
+      className={cn(shellClasses, className)}
       {...props}
     >
       <GlossyShell loading={loading}>{children}</GlossyShell>

@@ -79,6 +79,7 @@ export function TasteServiceSection({
               items={items.slice(0, 5)}
               rankMode={rankMode}
               getLabel={(item) => getItemLabel(serviceId, bucket, item)}
+              excludable
             />
           </div>
         ))}
