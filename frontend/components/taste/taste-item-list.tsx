@@ -87,8 +87,15 @@ export function TasteItemList({
               {excludable && (
                 <ItemExclusionToggle
                   itemId={item.id}
-                  onSuccess={(itemId) =>
+                  onExcluded={(itemId) =>
                     setExcludedIds((prev) => new Set(prev).add(itemId))
+                  }
+                  onIncluded={(itemId) =>
+                    setExcludedIds((prev) => {
+                      const next = new Set(prev);
+                      next.delete(itemId);
+                      return next;
+                    })
                   }
                 />
               )}

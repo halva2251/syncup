@@ -33,7 +33,7 @@ export function ItemExclusionToggle({
     startTransition(async () => {
       const result = await excludeItemAction(itemId, next);
       if ("error" in result) {
-        setError(result.error);
+        setError(result.error ?? "Failed to update item");
         // Rollback the optimistic update.
         if (next) {
           onIncluded?.(itemId);
