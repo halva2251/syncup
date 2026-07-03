@@ -27,12 +27,13 @@ from syncup.api.routes.dimensions import router as dimensions_router  # noqa: E4
 from syncup.api.routes.embeddings import router as embeddings_router  # noqa: E402
 from syncup.api.routes.items import router as items_router  # noqa: E402
 from syncup.api.routes.matches import _cleanup_stale_match_cache  # noqa: E402
-from syncup.api.routes.matches import router as matches_router
+from syncup.api.routes.matches import router as matches_router  # noqa: E402
 from syncup.api.routes.me import router as me_router  # noqa: E402
 from syncup.api.routes.obsessions import router as obsessions_router  # noqa: E402
 from syncup.api.routes.onboarding import router as onboarding_router  # noqa: E402
 from syncup.api.routes.overrides import router as overrides_router  # noqa: E402
 from syncup.api.routes.recommendations import router as recommendations_router  # noqa: E402
+from syncup.api.routes.search import router as search_router  # noqa: E402
 from syncup.api.routes.sync import router as sync_router  # noqa: E402
 from syncup.api.routes.taste import router as taste_router  # noqa: E402
 from syncup.auth.router import router as auth_router  # noqa: E402
@@ -42,6 +43,7 @@ from syncup.exceptions import SyncUpError  # noqa: E402
 from syncup.ingest.crypto import validate_key  # noqa: E402
 from syncup.ingest.registry import close_all as close_all_clients  # noqa: E402
 from syncup.ingest.registry import register_default_clients  # noqa: E402
+from syncup.ingest.search.registry import close_all as close_all_search_clients  # noqa: E402
 from syncup.ingest.spotify import SpotifyClient  # noqa: E402
 from syncup.limiter import limiter  # noqa: E402
 
@@ -157,6 +159,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cleanup_task.cancel()
     app.state.spotify.close()
     close_all_clients()
+    close_all_search_clients()
     logger.info("SyncUp API shut down")
 
 
@@ -277,4 +280,5 @@ app.include_router(matches_router)
 app.include_router(onboarding_router)
 app.include_router(embeddings_router)
 app.include_router(items_router)
+app.include_router(search_router)
 app.include_router(recommendations_router)

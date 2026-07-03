@@ -11,6 +11,11 @@ from sqlalchemy.orm import Session as DbSession
 
 from syncup.api.schemas import ServiceConnectionOut
 from syncup.auth.router import RequireAuth, UserOut
+from syncup.constants.languages import (
+    MAX_LANGUAGE_CODE_LENGTH,
+    MAX_LANGUAGES,
+    SUPPORTED_LANGUAGE_CODES,
+)
 from syncup.db.models import ServiceConnection
 from syncup.db.session import get_db
 from syncup.limiter import limiter
@@ -29,6 +34,7 @@ class ProfilePatch(BaseModel):
     discord_handle: str | None = Field(default=None, max_length=100)
     avatar_url: str | None = Field(default=None, max_length=500)
     is_matchable: StrictBool | None = None
+    languages: list[str] | None = None
 
     @field_validator("display_name", "bio", "discord_handle", mode="before")
     @classmethod
@@ -53,6 +59,29 @@ class ProfilePatch(BaseModel):
             if not (v.startswith("http://") or v.startswith("https://")):
                 raise ValueError("must be an http(s) URL")
         return v
+
+    @field_validator("languages", mode="before")
+    @classmethod
+    def validate_languages(cls, v: object) -> object:
+        if v is None:
+            return v
+        if not isinstance(v, list):
+            raise ValueError("languages must be a list")
+        seen: set[str] = set()
+        for code in v:
+            if not isinstance(code, str):
+                raise ValueError("each language must be a string code")
+            code = code.strip().lower()
+            if not code:
+                raise ValueError("language code cannot be blank")
+            if len(code) > MAX_LANGUAGE_CODE_LENGTH:
+                raise ValueError("invalid language code")
+            if code not in SUPPORTED_LANGUAGE_CODES:
+                raise ValueError(f"unsupported language code: {code}")
+            seen.add(code)
+        if len(seen) > MAX_LANGUAGES:
+            raise ValueError(f"at most {MAX_LANGUAGES} languages allowed")
+        return sorted(seen)
 
 
 @router.get("/me", response_model=MeOut)
@@ -94,6 +123,8 @@ def patch_me(
         user.avatar_url = body.avatar_url
     if "is_matchable" in fields and body.is_matchable is not None:
         user.is_matchable = body.is_matchable
+    if "languages" in fields:
+        user.languages = body.languages
 
     db.commit()
     db.refresh(user)

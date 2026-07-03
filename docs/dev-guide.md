@@ -298,6 +298,28 @@ alembic upgrade head
 
 ---
 
+## Autocomplete search (`syncup/ingest/search/`) — Phase 3
+
+The obsessions onboarding step uses category-aware autocomplete backed by lightweight search clients. These clients are separate from the `ServiceClient` ingest clients because they only fetch suggestions, not user libraries, and they intentionally do not create or link canonical `items`.
+
+```
+syncup/ingest/search/
+  models.py       → SearchSuggestion dataclass
+  registry.py     → category-to-client dispatch + in-memory TTL cache
+  steam.py        → Steam Store search for games
+  tmdb.py         → TMDB search for films/shows (requires TMDB_API_KEY)
+  anilist.py      → AniList GraphQL search for anime/manga
+  musicbrainz.py  → MusicBrainz artist search (requires descriptive User-Agent)
+  google_books.py → Google Books search for books (fast; requires GOOGLE_BOOKS_API_KEY)
+  openlibrary.py  → Open Library search for books (fallback; no key)
+```
+
+`GET /api/items/search` is the only route-facing entry point. It validates `category` and `q`, dispatches to the right client, and returns normalized suggestions. Rate-limited to 30 req/min per IP; results cached in memory for 5 minutes.
+
+When a user selects a suggestion, the frontend prefills the obsession `name` field and submits through the existing `POST /api/me/obsessions` endpoint. The suggestion's `external_id` is **not** stored and does not affect embeddings/matching in this version.
+
+---
+
 ## Embedding pipeline (`syncup/embeddings/`) — Phase 2 (live)
 
 This is the current, live pipeline. It replaced the original Item2Vec-on-public-datasets plan — see `docs/brainstorm.md §ML Architecture Decisions` for why separate per-service Item2Vec models can't support cross-domain matching.

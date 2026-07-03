@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
 
-from syncup.db.models import ManualObsession, User
+from syncup.db.models import Item, ManualObsession, User
 
 # ---------------------------------------------------------------------------
 # Builders
@@ -318,3 +318,71 @@ def test_create_obsession_community_category_accepted(obs_client: TestClient) ->
         json={"category": "community", "name": "r/aboringdystopia"},
     )
     assert resp.status_code == 201
+
+
+def test_create_obsession_with_external_id_links_item(
+    obs_client: TestClient, mock_db: MagicMock
+) -> None:
+    """Selecting an autocomplete suggestion links the obsession to the canonical item."""
+    item = Item(
+        id=uuid.uuid4(),
+        service="steam",
+        item_type="game",
+        external_id="12345",
+        name="Disco Elysium",
+    )
+    mock_db.scalar.return_value = item
+
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={
+            "category": "game",
+            "name": "Disco Elysium",
+            "external_id": "12345",
+            "service": "steam",
+        },
+    )
+    assert resp.status_code == 201
+    added = mock_db.add.call_args[0][0]
+    assert isinstance(added, ManualObsession)
+    assert added.item_id == item.id
+
+
+def test_create_obsession_with_unknown_external_id_stores_null_item_id(
+    obs_client: TestClient, mock_db: MagicMock
+) -> None:
+    """Free-text obsessions keep item_id null when the canonical item is not found."""
+    mock_db.scalar.return_value = None
+
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={
+            "category": "game",
+            "name": "Disco Elysium",
+            "external_id": "unknown",
+            "service": "steam",
+        },
+    )
+    assert resp.status_code == 201
+    added = mock_db.add.call_args[0][0]
+    assert isinstance(added, ManualObsession)
+    assert added.item_id is None
+
+
+def test_create_obsession_blank_external_id_treated_as_none(
+    obs_client: TestClient, mock_db: MagicMock
+) -> None:
+    """Empty hidden inputs from the autocomplete are treated as a free-text entry."""
+    resp = obs_client.post(
+        "/api/me/obsessions",
+        json={
+            "category": "game",
+            "name": "Disco Elysium",
+            "external_id": "",
+            "service": "",
+        },
+    )
+    assert resp.status_code == 201
+    added = mock_db.add.call_args[0][0]
+    assert isinstance(added, ManualObsession)
+    assert added.item_id is None

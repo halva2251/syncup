@@ -237,9 +237,69 @@ def test_patch_me_response_includes_all_profile_fields(
     assert "discord_handle" in body
     assert "display_name" in body
     assert "is_matchable" in body
+    assert "languages" in body
     assert "id" in body
     assert "email" in body
     assert "created_at" in body
+
+
+# ---------------------------------------------------------------------------
+# Languages
+# ---------------------------------------------------------------------------
+
+
+def test_patch_me_updates_languages(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"languages": ["en", "de"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["languages"] == ["de", "en"]
+
+
+def test_patch_me_clears_languages_to_null(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, user = patch_client
+    user.languages = ["en", "fr"]
+    resp = c.patch("/api/me", json={"languages": None})
+    assert resp.status_code == 200
+    assert resp.json()["languages"] is None
+
+
+def test_patch_me_normalizes_language_case(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"languages": ["EN", " De "]})
+    assert resp.status_code == 200
+    assert resp.json()["languages"] == ["de", "en"]
+
+
+def test_patch_me_deduplicates_languages(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"languages": ["en", "en", "de"]})
+    assert resp.status_code == 200
+    assert resp.json()["languages"] == ["de", "en"]
+
+
+def test_patch_me_invalid_language_code_returns_422(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"languages": ["en", "klingon"]})
+    assert resp.status_code == 422
+
+
+def test_patch_me_too_many_languages_returns_422(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch("/api/me", json={"languages": ["en", "de", "fr", "es", "it", "pt", "ru", "zh", "ja", "ko", "hi"]})
+    assert resp.status_code == 422
 
 
 # ---------------------------------------------------------------------------

@@ -80,6 +80,7 @@ class LetterboxdServiceOut(BaseModel):
 class RateYourMusicAlbumOut(TasteItemOut):
     release_year: int
     artist: str
+    rating: float
 
 
 class RateYourMusicServiceOut(BaseModel):
@@ -126,7 +127,7 @@ class TasteOut(BaseModel):
 
 def _to_steam_game(row: Any) -> SteamGameOut:
     return SteamGameOut(
-        id=row.external_id,
+        id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
         hours=round((row.raw_value or 0.0) / 60, 1),
@@ -135,7 +136,7 @@ def _to_steam_game(row: Any) -> SteamGameOut:
 
 def _to_lastfm_artist(row: Any) -> LastfmArtistOut:
     return LastfmArtistOut(
-        id=row.external_id,
+        id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
         play_count=row.raw_value,
@@ -144,7 +145,7 @@ def _to_lastfm_artist(row: Any) -> LastfmArtistOut:
 
 def _to_lastfm_track(row: Any) -> LastfmTrackOut:
     return LastfmTrackOut(
-        id=row.external_id,
+        id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
         artist=row.meta.get("artist", ""),
@@ -154,7 +155,7 @@ def _to_lastfm_track(row: Any) -> LastfmTrackOut:
 
 def _to_spotify_artist(row: Any) -> SpotifyArtistOut:
     return SpotifyArtistOut(
-        id=row.external_id,
+        id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
     )
@@ -162,7 +163,7 @@ def _to_spotify_artist(row: Any) -> SpotifyArtistOut:
 
 def _to_spotify_track(row: Any) -> SpotifyTrackOut:
     return SpotifyTrackOut(
-        id=row.external_id,
+        id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
         artists=row.meta.get("artists", []),
@@ -171,7 +172,7 @@ def _to_spotify_track(row: Any) -> SpotifyTrackOut:
 
 def _to_letterboxd_film(row: Any) -> LetterboxdFilmOut:
     return LetterboxdFilmOut(
-        id=row.external_id,
+        id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
         release_year=row.meta.get("release_year", 0),
@@ -180,11 +181,12 @@ def _to_letterboxd_film(row: Any) -> LetterboxdFilmOut:
 
 def _to_rateyourmusic_album(row: Any) -> RateYourMusicAlbumOut:
     return RateYourMusicAlbumOut(
-        id=row.external_id,
+        id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
         release_year=row.meta.get("release_year", 0),
         artist=row.meta.get("artist_normalized", ""),
+        rating=row.raw_value or 0.0,
     )
 
 
@@ -223,6 +225,7 @@ def get_taste(
 
     subq = (
         select(
+            UserItem.id.label("user_item_id"),
             UserItem.engagement_score,
             UserItem.raw_value,
             Item.external_id,

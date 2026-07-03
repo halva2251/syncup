@@ -50,6 +50,7 @@ def _taste_row(
     name: str,
     *,
     external_id: str = "ext-1",
+    user_item_id: uuid.UUID | None = None,
     engagement_score: float = 0.8,
     raw_value: float | None = None,
     meta: dict | None = None,
@@ -59,6 +60,7 @@ def _taste_row(
     row.item_type = item_type
     row.name = name
     row.external_id = external_id
+    row.user_item_id = user_item_id or uuid.uuid4()
     row.engagement_score = engagement_score
     row.raw_value = raw_value
     row.meta = meta or {}
@@ -167,8 +169,9 @@ def test_taste_returns_empty_profile(taste_client: TestClient) -> None:
 
 
 def test_taste_returns_steam_top_games(taste_client: TestClient, mock_db: MagicMock) -> None:
+    user_item_id = uuid.uuid4()
     row = _taste_row(
-        "steam", "game", "Disco Elysium", external_id="2136", engagement_score=0.9, raw_value=720.0
+        "steam", "game", "Disco Elysium", user_item_id=user_item_id, external_id="2136", engagement_score=0.9, raw_value=720.0
     )
     _set_execute_results(mock_db, [row])
 
@@ -176,7 +179,7 @@ def test_taste_returns_steam_top_games(taste_client: TestClient, mock_db: MagicM
     assert resp.status_code == 200
     games = resp.json()["services"]["steam"]["top_games"]
     assert len(games) == 1
-    assert games[0]["id"] == "2136"
+    assert games[0]["id"] == str(user_item_id)
     assert games[0]["name"] == "Disco Elysium"
     assert games[0]["score"] == pytest.approx(0.9)
     assert games[0]["hours"] == pytest.approx(12.0)  # 720 min / 60
@@ -400,6 +403,31 @@ def test_taste_returns_letterboxd_films(
     assert films[0]["name"] == "Stalker"
     assert films[0]["release_year"] == 1979
     assert films[0]["score"] == pytest.approx(1.0)
+
+
+def test_taste_returns_rateyourmusic_albums_with_rating_and_artist(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    row = _taste_row(
+        "rateyourmusic",
+        "album",
+        "Eyes of the Mind",
+        engagement_score=0.89,
+        raw_value=9.0,
+        meta={"title_normalized": "eyes of the mind", "release_year": 1981, "artist_normalized": "casiopea"},
+    )
+    _set_execute_results(mock_db, [row])
+
+    resp = taste_client.get("/api/me/taste")
+    assert resp.status_code == 200
+    services = resp.json()["services"]
+    assert "rateyourmusic" in services
+    albums = services["rateyourmusic"]["top_albums"]
+    assert len(albums) == 1
+    assert albums[0]["name"] == "Eyes of the Mind"
+    assert albums[0]["artist"] == "casiopea"
+    assert albums[0]["rating"] == pytest.approx(9.0)
+    assert albums[0]["release_year"] == 1981
 
 
 # ---------------------------------------------------------------------------

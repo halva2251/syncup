@@ -1,6 +1,8 @@
 """Last.fm API client for fetching public user listening data."""
 from __future__ import annotations
 
+import hashlib
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -11,6 +13,7 @@ from syncup.ingest._text import normalize_title
 from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 _BASE_URL = "https://ws.audioscrobbler.com/2.0/"
+_AUTH_URL = "https://www.last.fm/api/auth"
 
 _VALID_PERIODS = frozenset({"overall", "7day", "1month", "3month", "6month", "12month"})
 _MIN_LIMIT = 1
@@ -22,6 +25,8 @@ class LastfmClient:
     service_name: ClassVar[str] = "lastfm"
 
     api_key: str
+    shared_secret: str = ""
+    redirect_uri: str = ""
     http: httpx.Client = field(
         default_factory=lambda: httpx.Client(timeout=httpx.Timeout(10.0)), repr=False
     )
@@ -53,6 +58,52 @@ class LastfmClient:
             code = body["error"]
             message = body.get("message", "")
             raise SyncClientError(f"Last.fm API error {code}: {message}")
+
+    def _sign(self, params: dict[str, str]) -> str:
+        """Build a Last.fm API signature per https://www.last.fm/api/webauth."""
+        items = sorted((k, v) for k, v in params.items() if k != "format")
+        sig_str = "".join(f"{k}{v}" for k, v in items) + self.shared_secret
+        return hashlib.md5(sig_str.encode("utf-8")).hexdigest()
+
+    def get_authorize_url(self, state: str = "") -> str:
+        """Return the Last.fm web-auth authorization URL."""
+        # Embed state in the callback URL query so Last.fm returns it on redirect.
+        cb = self.redirect_uri
+        if state:
+            separator = "&" if "?" in cb else "?"
+            cb = f"{cb}{separator}state={urllib.parse.quote(state, safe='')}"
+        params = {"api_key": self.api_key, "cb": cb}
+        return f"{_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+    def exchange_token(self, token: str) -> tuple[TokenPair, str]:
+        """Exchange a single-use Last.fm auth token for a session key and username."""
+        params: dict[str, str] = {
+            "method": "auth.getSession",
+            "api_key": self.api_key,
+            "token": token,
+        }
+        params["api_sig"] = self._sign(params)
+        params["format"] = "json"
+
+        resp = self.http.get(_BASE_URL, params=params)
+        resp.raise_for_status()
+        body: dict = resp.json()
+        self._check_api_error(body)
+
+        session = body.get("session") or {}
+        session_key = session.get("key")
+        username = session.get("name")
+        if not session_key or not username:
+            raise SyncClientError("Last.fm auth.getSession response missing session data")
+
+        return (
+            TokenPair(
+                access_token=str(session_key),
+                refresh_token=None,
+                expires_at=None,
+            ),
+            str(username),
+        )
 
     def get_top_artists(
         self,

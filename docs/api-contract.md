@@ -213,11 +213,20 @@ Paginated raw items for a service/type.
 ### `POST /me/obsessions` — Live ✅
 ```json
 // req
-{ "category": "book", "name": "Blindsight", "weight": 1.5 }
+{
+  "category": "book",
+  "name": "Blindsight",
+  "weight": 1.5,
+  "external_id": "optional-canonical-id",
+  "service": "optional-service-name"
+}
 // category ∈ game | music | film | book | show | anime | manga | community | other
 // (anime, manga, community added in migration 0007 for AniList and Reddit support)
 // weight defaults to 1.0, must be > 0 and ≤ 10.0
 // name is stripped of leading/trailing whitespace; blank-after-strip → 422
+// external_id + service are optional; when provided, the backend links the obsession
+// to the matching items row by (service, external_id) and stores items.id in
+// manual_obsessions.item_id. If no matching item exists, item_id is left null.
 ```
 ### `DELETE /me/obsessions/{id}` — Live ✅
 
@@ -264,9 +273,46 @@ Query params:
 - 422 `NO_EMBEDDING_AVAILABLE` if the user has no `combined` embedding yet — build one via `POST /api/embeddings/build`.
 - Rate-limited: 30/min per IP.
 
+## 6. Search — Live ✅
+
+### `GET /items/search` — Live ✅
+
+Category-aware autocomplete for manual obsessions. Returns suggestions from public upstream APIs; selecting a suggestion on the client can link the obsession to a canonical item when `external_id` + `service` are forwarded to `POST /me/obsessions`.
+
+**Query params:**
+- `q` (required, 1–200 chars): search term
+- `category` (required): `game` | `music` | `film` | `book` | `show` | `anime` | `manga` | `community` | `other`
+- `limit` (optional, default 10, max 20)
+
+**Upstream sources:**
+- `game` → Steam Store (no key)
+- `film` / `show` → TMDB (requires `TMDB_API_KEY`)
+- `anime` / `manga` → AniList (no key required)
+- `music` → MusicBrainz (requires descriptive `MUSICBRAINZ_USER_AGENT`)
+- `book` → Google Books (requires `GOOGLE_BOOKS_API_KEY`) or Open Library fallback (no key)
+- `community` / `other` → no upstream search, empty result
+
+```json
+// GET /api/items/search?q=disco&category=game&limit=2
+{
+  "items": [
+    {
+      "name": "Disco Elysium",
+      "service": "steam",
+      "item_type": "game",
+      "external_id": "632470",
+      "extra": {}
+    }
+  ]
+}
+```
+
+- Rate-limited: 30/min per IP.
+- Results are cached in memory for 5 minutes.
+
 ---
 
-## 6. Dimension weights
+## 7. Dimension weights
 
 ### `GET /me/dimensions` — Live ✅
 ```json
@@ -285,7 +331,7 @@ Valid services: any service registered in `ServiceRegistry` (currently `steam`, 
 
 ---
 
-## 7. Embeddings — Live ✅
+## 8. Embeddings — Live ✅
 
 ### `POST /embeddings/build` — Live ✅ *(Phase 2 Block D)*
 
@@ -314,7 +360,7 @@ Rate-limited to 5/min per user.
 
 ---
 
-## 8. Item exclusion — Live ✅ *(Phase 2 Block E)*
+## 9. Item exclusion — Live ✅ *(Phase 2 Block E)*
 
 ### `PATCH /me/items/{item_id}` — Live ✅
 
@@ -347,7 +393,7 @@ Setting `excluded: false` re-includes the item. Both directions are idempotent.
 
 ---
 
-## 9. Matches — Live ✅
+## 10. Matches — Live ✅
 
 **Preconditions:**
 - `is_matchable = true`
@@ -399,7 +445,7 @@ Background tasks triggered (in order):
 
 ---
 
-## 10. Onboarding helpers — Sketch
+## 11. Onboarding helpers — Sketch
 
 ### `GET /onboarding/status` — Live ✅
 What the user still needs to do before becoming matchable.

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -30,11 +33,20 @@ class Settings(BaseSettings):
 
     # ── Steam ────────────────────────────────────────────────────────────────
     steam_api_key: str = ""
+    steam_openid_return_to: str = "http://127.0.0.1:3000/api/connect/steam/openid/callback"
+    steam_openid_realm: str = "http://127.0.0.1:3000"
 
     # ── Last.fm ──────────────────────────────────────────────────────────────
-    # No shared secret — we only call read-only public-data methods (by
-    # username), which don't require request signing. See docs/api-keys.md.
+    # Public-data methods (by username) only need an API key. The shared secret
+    # is required for the optional web-auth flow. See docs/api-keys.md.
     lastfm_api_key: str = ""
+    lastfm_shared_secret: str = ""
+    lastfm_redirect_uri: str = "http://127.0.0.1:3000/api/connect/lastfm/oauth/callback"
+
+    # ── Post-auth redirect ───────────────────────────────────────────────────
+    # URL to send users after OAuth/web-auth/OpenID callbacks.
+    # In dev, this should be the frontend origin (e.g. http://127.0.0.1:3001).
+    frontend_url: str = "http://127.0.0.1:3001"
 
     # ── AniList ──────────────────────────────────────────────────────────────
     # Register at https://anilist.co/settings/developer before use.
@@ -68,8 +80,29 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com"
     llm_model: str = "deepseek-chat"
 
-    # TMDB API key for film/show genre enrichment. Optional — if unset,
-    # films embed with name+year only (acceptable fallback).
+    # TMDB API key for film/show genre enrichment and autocomplete. Optional —
+    # if unset, films/shows embed with name+year only and autocomplete for
+    # those categories returns empty results.
     tmdb_api_key: str | None = None
+
+    # MusicBrainz requires a custom User-Agent header. No API key required.
+    # Format: "AppName/Version (ContactEmail or URL)"
+    musicbrainz_user_agent: str = "SyncUp/0.1.0"
+
+    # Google Books API key. Optional — if set, book autocomplete uses Google
+    # Books (much faster); otherwise falls back to Open Library.
+    google_books_api_key: str | None = None
+
+    @field_validator("frontend_url", mode="before")
+    @classmethod
+    def validate_frontend_url(cls, v: object) -> str:
+        if v is None or v == "":
+            return "http://127.0.0.1:3001"
+        if not isinstance(v, str):
+            raise ValueError("FRONTEND_URL must be a string")
+        parsed = urlparse(v)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("FRONTEND_URL must be an absolute http(s) URL")
+        return v.rstrip("/")
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
