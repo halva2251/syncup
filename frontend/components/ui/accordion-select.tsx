@@ -372,7 +372,7 @@ export function AccordionSelect<T>({
         type="button"
         onClick={() => (isOpen ? setIsOpen(false) : openDropdown())}
         onKeyDown={handleTriggerKeyDown}
-        aria-haspopup="listbox"
+        aria-haspopup={grouped ? "dialog" : "listbox"}
         aria-expanded={isOpen}
         aria-controls={isOpen ? listboxId : undefined}
         className={cn(
@@ -414,29 +414,21 @@ export function AccordionSelect<T>({
             </div>
           )}
 
-          <div
-            id={listboxId}
-            role="listbox"
-            aria-multiselectable={multiple}
-            aria-label={label ?? placeholder}
-            onKeyDown={handleListKeyDown}
-            tabIndex={-1}
-            className="max-h-60 overflow-auto focus:outline-none"
-          >
-            {grouped
-              ? filteredSections.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-[var(--color-text-tertiary)]">
-                    {isSearching ? noSearchResultsMessage : emptyMessage}
-                  </p>
-                )
-              : filteredFlatItems.length === 0 && (
-                  <p className="px-3 py-2 text-sm text-[var(--color-text-tertiary)]">
-                    {isSearching ? noSearchResultsMessage : emptyMessage}
-                  </p>
-                )}
+          {grouped ? (
+            <div
+              id={listboxId}
+              role="dialog"
+              aria-label={label ?? placeholder}
+              onKeyDown={handleListKeyDown}
+              className="max-h-60 overflow-auto focus:outline-none"
+            >
+              {filteredSections.length === 0 && (
+                <p className="px-3 py-2 text-sm text-[var(--color-text-tertiary)]">
+                  {isSearching ? noSearchResultsMessage : emptyMessage}
+                </p>
+              )}
 
-            {grouped ? (
-              filteredSections.map((section) => {
+              {filteredSections.map((section) => {
                 const isExpanded = openSections.has(section.id);
                 return (
                   <div
@@ -446,6 +438,7 @@ export function AccordionSelect<T>({
                     <button
                       type="button"
                       onClick={() => toggleSection(section.id)}
+                      aria-expanded={isExpanded}
                       className="flex w-full items-center justify-between px-2 py-2 text-left text-sm font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-page)]"
                     >
                       <span>
@@ -462,7 +455,12 @@ export function AccordionSelect<T>({
                       />
                     </button>
                     {isExpanded && (
-                      <div className="pb-2">
+                      <div
+                        role="listbox"
+                        aria-multiselectable={multiple}
+                        aria-label={section.label}
+                        className="pb-2"
+                      >
                         {section.items.map((item) => {
                           const index = optionIndexByKey.get(getKey(item));
                           return index !== undefined
@@ -473,15 +471,30 @@ export function AccordionSelect<T>({
                     )}
                   </div>
                 );
-              })
-            ) : (
+              })}
+            </div>
+          ) : (
+            <div
+              id={listboxId}
+              role="listbox"
+              aria-multiselectable={multiple}
+              aria-label={label ?? placeholder}
+              onKeyDown={handleListKeyDown}
+              tabIndex={-1}
+              className="max-h-60 overflow-auto focus:outline-none"
+            >
+              {filteredFlatItems.length === 0 && (
+                <p className="px-3 py-2 text-sm text-[var(--color-text-tertiary)]">
+                  {isSearching ? noSearchResultsMessage : emptyMessage}
+                </p>
+              )}
               <div className="py-1">
                 {filteredFlatItems.map((item, index) =>
                   renderItem(item, index),
                 )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {max !== undefined && (
             <p className="mt-2 border-t border-[var(--color-border-subtle)] px-2 pt-2 text-xs text-[var(--color-text-tertiary)]">

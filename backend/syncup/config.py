@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -41,10 +44,9 @@ class Settings(BaseSettings):
     lastfm_redirect_uri: str = "http://127.0.0.1:3000/api/connect/lastfm/oauth/callback"
 
     # ── Post-auth redirect ───────────────────────────────────────────────────
-    # Optional URL to send users after OAuth/web-auth/OpenID callbacks.
-    # In dev, set this to the frontend origin (e.g. http://127.0.0.1:3001).
-    # If unset, callbacks redirect to "/" (current behavior).
-    frontend_url: str = ""
+    # URL to send users after OAuth/web-auth/OpenID callbacks.
+    # In dev, this should be the frontend origin (e.g. http://127.0.0.1:3001).
+    frontend_url: str = "http://127.0.0.1:3001"
 
     # ── AniList ──────────────────────────────────────────────────────────────
     # Register at https://anilist.co/settings/developer before use.
@@ -90,5 +92,17 @@ class Settings(BaseSettings):
     # Google Books API key. Optional — if set, book autocomplete uses Google
     # Books (much faster); otherwise falls back to Open Library.
     google_books_api_key: str | None = None
+
+    @field_validator("frontend_url", mode="before")
+    @classmethod
+    def validate_frontend_url(cls, v: object) -> str:
+        if v is None or v == "":
+            return "http://127.0.0.1:3001"
+        if not isinstance(v, str):
+            raise ValueError("FRONTEND_URL must be a string")
+        parsed = urlparse(v)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("FRONTEND_URL must be an absolute http(s) URL")
+        return v.rstrip("/")
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}

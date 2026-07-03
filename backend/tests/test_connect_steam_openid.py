@@ -10,11 +10,22 @@ from collections.abc import Generator
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session as DbSession
+from starlette.requests import Request
 
+from syncup.api.routes.connect import (
+    _sign_oauth_state,
+    _validate_session_bound_oauth_state,
+)
+from syncup.config import Settings
 from syncup.db.models import User
+from syncup.exceptions import SyncUpError
+from syncup.ingest.protocol import SyncClientError
+from syncup.ingest.steam import SteamClient
+from tests.http_helpers import make_http
 
 
 def _make_user(**kwargs: object) -> User:
@@ -187,7 +198,7 @@ def test_steam_openid_callback_success_redirects_home(
     monkeypatch.setattr("syncup.api.routes.connect.require_auth", lambda **_: fake_user)
     monkeypatch.setattr(
         "syncup.api.routes.connect.SteamClient.validate_openid_assertion",
-        lambda self, params: "76561197960434622",
+        lambda self, params, **_: "76561197960434622",
     )
     monkeypatch.setattr(
         "syncup.api.routes.connect.SteamClient.get_player_summary",
@@ -205,7 +216,7 @@ def test_steam_openid_callback_success_redirects_home(
         cookies={"steam_state": "matching-state"},
     )
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "http://127.0.0.1:3001"
 
 
 def test_steam_openid_callback_stores_steam_id(
@@ -220,7 +231,7 @@ def test_steam_openid_callback_stores_steam_id(
     monkeypatch.setattr("syncup.api.routes.connect.require_auth", lambda **_: fake_user)
     monkeypatch.setattr(
         "syncup.api.routes.connect.SteamClient.validate_openid_assertion",
-        lambda self, params: steam_id,
+        lambda self, params, **_: steam_id,
     )
     monkeypatch.setattr(
         "syncup.api.routes.connect.SteamClient.get_player_summary",
@@ -261,3 +272,121 @@ def test_steam_openid_callback_uses_compare_digest(
         cookies={"steam_state": "st"},
     )
     assert called, "secrets.compare_digest was not called for Steam state validation"
+
+
+def test_validate_openid_assertion_checks_provider_return_to_and_identity() -> None:
+    steam_id = "76561197960434622"
+    return_to = "http://127.0.0.1:3000/api/connect/steam/openid/callback?state=st"
+    realm = "http://127.0.0.1:3000"
+    client = SteamClient(
+        api_key="test",
+        http=make_http([httpx.Response(200, text="ns:http://specs.openid.net/auth/2.0\nis_valid:true\n")]),
+    )
+
+    assert client.validate_openid_assertion(
+        {
+            "openid.op_endpoint": "https://steamcommunity.com/openid/login",
+            "openid.return_to": return_to,
+            "openid.realm": realm,
+            "openid.identity": f"https://steamcommunity.com/openid/id/{steam_id}",
+            "openid.claimed_id": f"https://steamcommunity.com/openid/id/{steam_id}",
+            "openid.mode": "id_res",
+        },
+        expected_return_to=return_to,
+        expected_realm=realm,
+    ) == steam_id
+
+
+def test_validate_openid_assertion_rejects_claimed_id_mismatch() -> None:
+    steam_id = "76561197960434622"
+    return_to = "http://127.0.0.1:3000/api/connect/steam/openid/callback?state=st"
+    client = SteamClient(api_key="test", http=make_http([]))
+
+    with pytest.raises(SyncClientError, match="identity mismatch"):
+        client.validate_openid_assertion(
+            {
+                "openid.op_endpoint": "https://steamcommunity.com/openid/login",
+                "openid.return_to": return_to,
+                "openid.identity": f"https://steamcommunity.com/openid/id/{steam_id}",
+                "openid.claimed_id": "https://steamcommunity.com/openid/id/111",
+                "openid.mode": "id_res",
+            },
+            expected_return_to=return_to,
+            expected_realm="http://127.0.0.1:3000",
+        )
+
+
+def test_validate_openid_assertion_rejects_unexpected_return_to() -> None:
+    steam_id = "76561197960434622"
+    client = SteamClient(api_key="test", http=make_http([]))
+
+    with pytest.raises(SyncClientError, match="return URL"):
+        client.validate_openid_assertion(
+            {
+                "openid.op_endpoint": "https://steamcommunity.com/openid/login",
+                "openid.return_to": "http://attacker.example/callback?state=st",
+                "openid.identity": f"https://steamcommunity.com/openid/id/{steam_id}",
+                "openid.claimed_id": f"https://steamcommunity.com/openid/id/{steam_id}",
+                "openid.mode": "id_res",
+            },
+            expected_return_to=(
+                "http://127.0.0.1:3000/api/connect/steam/openid/callback?state=st"
+            ),
+            expected_realm="http://127.0.0.1:3000",
+        )
+
+
+def test_validate_openid_assertion_rejects_unexpected_provider() -> None:
+    steam_id = "76561197960434622"
+    return_to = "http://127.0.0.1:3000/api/connect/steam/openid/callback?state=st"
+    client = SteamClient(api_key="test", http=make_http([]))
+
+    with pytest.raises(SyncClientError, match="provider"):
+        client.validate_openid_assertion(
+            {
+                "openid.op_endpoint": "https://example.com/openid/login",
+                "openid.return_to": return_to,
+                "openid.identity": f"https://steamcommunity.com/openid/id/{steam_id}",
+                "openid.claimed_id": f"https://steamcommunity.com/openid/id/{steam_id}",
+                "openid.mode": "id_res",
+            },
+            expected_return_to=return_to,
+            expected_realm="http://127.0.0.1:3000",
+        )
+
+
+def _request_with_cookies(cookies: dict[str, str]) -> Request:
+    cookie_header = "; ".join(f"{key}={value}" for key, value in cookies.items())
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"cookie", cookie_header.encode())],
+        }
+    )
+
+
+def test_session_bound_oauth_state_accepts_matching_session_and_state() -> None:
+    settings = Settings(
+        database_url="sqlite://", spotify_client_id="test", session_secret="test-secret"
+    )
+    cookie_value = _sign_oauth_state(settings, "session-a", "state-a")
+    request = _request_with_cookies(
+        {"syncup_session": "session-a", "steam_state": cookie_value}
+    )
+
+    _validate_session_bound_oauth_state(request, settings, "steam_state", "state-a")
+
+
+def test_session_bound_oauth_state_rejects_different_session() -> None:
+    settings = Settings(
+        database_url="sqlite://", spotify_client_id="test", session_secret="test-secret"
+    )
+    cookie_value = _sign_oauth_state(settings, "session-a", "state-a")
+    request = _request_with_cookies(
+        {"syncup_session": "session-b", "steam_state": cookie_value}
+    )
+
+    with pytest.raises(SyncUpError, match="OAuth state mismatch"):
+        _validate_session_bound_oauth_state(request, settings, "steam_state", "state-a")

@@ -70,7 +70,7 @@ def get_recommendations(
     Returns 422 NO_EMBEDDING_AVAILABLE when the user has no combined embedding.
     Build one via POST /api/embeddings/build or POST /api/me/recompute.
 
-    The DB is oversampled (limit * 3, capped at 150) before Python post-filtering,
+    The DB is oversampled (limit * 5, capped at 200) before Python post-filtering,
     so up to `limit` items are returned even when some candidates have score <= 0.
     """
     embedding = db.execute(

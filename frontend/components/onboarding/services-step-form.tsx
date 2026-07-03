@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { ErrorMessage } from "@/components/ui/error-message";
 import { OnboardingStep } from "@/components/onboarding/onboarding-step";
 import { SERVICES } from "@/lib/constants/services";
+import { SYNC_POLL_INTERVAL_MS } from "@/lib/utils/polling";
+import { cn } from "@/lib/utils/cn";
 import {
   connectSteamAction,
   connectLastfmAction,
@@ -102,7 +104,7 @@ export function ServicesStepForm({
         // Stop polling on error to avoid spamming
         setActiveServices(new Set());
       }
-    }, 2000);
+    }, SYNC_POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [activeServicesKey, activeServices.size]);
@@ -180,9 +182,7 @@ function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
           {status !== "not_connected" && status !== "ok" && (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--color-text-secondary)]">
               <span
-                className={["h-2 w-2 rounded-full", statusDotClass(status)].join(
-                  " ",
-                )}
+                className={cn("h-2 w-2 rounded-full", statusDotClass(status))}
               />
               {formatStatus(status)}
             </span>
@@ -448,12 +448,12 @@ function CsvImport({
     <div className="space-y-2">
       {error && <ErrorMessage className="text-xs">{error}</ErrorMessage>}
       <label
-        className={[
+        className={cn(
           "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors",
           isConnected
             ? "border-transparent bg-[var(--color-accent)] text-white hover:bg-[var(--color-accent-hover)]"
             : "border-[var(--color-border)] bg-[var(--color-accent-light)] text-[var(--color-text-primary)] hover:bg-[var(--color-accent-soft)]",
-        ].join(" ")}
+        )}
       >
         <span className="truncate">
           {isBusy || isPending ? (

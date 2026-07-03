@@ -238,7 +238,7 @@ def test_reddit_oauth_callback_success_redirects_home(
         cookies={"reddit_state": "matching-state"},
     )
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "http://127.0.0.1:3001"
 
 
 def test_reddit_oauth_callback_stores_reddit_username(

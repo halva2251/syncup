@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import functools
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 
 import httpx
@@ -16,9 +17,12 @@ from syncup.ingest.search.openlibrary import OpenLibrarySearchClient
 from syncup.ingest.search.steam import SteamSearchClient
 from syncup.ingest.search.tmdb import TmdbSearchClient
 
-# In-memory TTL cache for search results: {(category, query, limit): (expires_at, results)}.
-_cache: dict[tuple[str, str, int], tuple[float, list[SearchSuggestion]]] = {}
+# In-memory TTL/LRU cache for search results: {(category, query, limit): (expires_at, results)}.
+_cache: OrderedDict[tuple[str, str, int], tuple[float, list[SearchSuggestion]]] = (
+    OrderedDict()
+)
 _CACHE_TTL_SECONDS = 300  # 5 minutes
+_CACHE_MAX_SIZE = 512
 
 
 class SearchConfig:
@@ -41,6 +45,9 @@ class SearchConfig:
         )
         self.google_books = GoogleBooksSearchClient(api_key=google_books_api_key, http=self.http)
         self.openlibrary = OpenLibrarySearchClient(http=self.http)
+
+    def close(self) -> None:
+        self.http.close()
 
 
 def _book_search_fn(
@@ -102,6 +109,15 @@ def clear_cache() -> None:
     _cache.clear()
 
 
+def close_all() -> None:
+    """Close default search clients and clear process-local search cache."""
+    global _default_config
+    if _default_config is not None:
+        _default_config.close()
+        _default_config = None
+    clear_cache()
+
+
 @functools.lru_cache(maxsize=1)
 def allowed_categories() -> frozenset[str]:
     return frozenset(
@@ -146,7 +162,10 @@ def search_category(
     if use_cache:
         cached = _cache.get(cache_key)
         if cached is not None and cached[0] > now:
+            _cache.move_to_end(cache_key)
             return cached[1]
+        if cached is not None:
+            _cache.pop(cache_key, None)
 
     search_fn = _registry(config or get_default_config()).get(category)
     if search_fn is None:
@@ -157,5 +176,8 @@ def search_category(
 
     if use_cache:
         _cache[cache_key] = (now + _CACHE_TTL_SECONDS, results)
+        _cache.move_to_end(cache_key)
+        while len(_cache) > _CACHE_MAX_SIZE:
+            _cache.popitem(last=False)
 
     return results

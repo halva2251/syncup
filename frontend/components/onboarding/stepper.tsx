@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { Check } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 const steps = [
   { id: "profile", label: "Languages" },
@@ -30,14 +31,14 @@ export function OnboardingStepper() {
             >
               <div className="relative flex h-8 w-full items-center justify-center">
                 <div
-                  className={[
+                  className={cn(
                     "relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors",
                     isCompleted
                       ? "border-[var(--color-accent-light)] bg-[var(--color-accent-light)] text-[var(--color-accent)]"
                       : isCurrent
                         ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-white"
                         : "border-[var(--color-border)] bg-[var(--color-bg-card)] text-[var(--color-text-tertiary)]",
-                  ].join(" ")}
+                  )}
                 >
                   {isCompleted ? (
                     <Check className="h-4 w-4" strokeWidth={2.5} />
@@ -47,22 +48,22 @@ export function OnboardingStepper() {
                 </div>
                 {index < steps.length - 1 && (
                   <div
-                    className={[
+                    className={cn(
                       "absolute left-1/2 top-1/2 h-0.5 w-full -translate-y-1/2",
                       index < currentIndex
                         ? "bg-[var(--color-accent-light)]"
                         : "bg-[var(--color-border)]",
-                    ].join(" ")}
+                    )}
                   />
                 )}
               </div>
               <span
-                className={[
+                className={cn(
                   "mt-2 hidden text-center text-xs font-medium sm:block",
                   isCompleted || isCurrent
                     ? "text-[var(--color-text-primary)]"
                     : "text-[var(--color-text-tertiary)]",
-                ].join(" ")}
+                )}
               >
                 {step.label}
               </span>

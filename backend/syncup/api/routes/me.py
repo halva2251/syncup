@@ -67,8 +67,6 @@ class ProfilePatch(BaseModel):
             return v
         if not isinstance(v, list):
             raise ValueError("languages must be a list")
-        if len(v) > MAX_LANGUAGES:
-            raise ValueError(f"at most {MAX_LANGUAGES} languages allowed")
         seen: set[str] = set()
         for code in v:
             if not isinstance(code, str):
@@ -81,6 +79,8 @@ class ProfilePatch(BaseModel):
             if code not in SUPPORTED_LANGUAGE_CODES:
                 raise ValueError(f"unsupported language code: {code}")
             seen.add(code)
+        if len(seen) > MAX_LANGUAGES:
+            raise ValueError(f"at most {MAX_LANGUAGES} languages allowed")
         return sorted(seen)
 
 

@@ -9,6 +9,8 @@ from syncup.ingest.search.registry import (
     SearchConfig,
     allowed_categories,
     clear_cache,
+    close_all,
+    get_default_config,
     search_category,
     set_default_config,
 )
@@ -111,3 +113,19 @@ def test_search_category_uses_google_books_when_key_set() -> None:
     assert len(results) == 1
     assert results[0].name == "Dune"
     assert results[0].service == "google_books"
+
+
+def test_close_all_closes_default_config_and_clears_cache() -> None:
+    body = {
+        "items": [
+            {"id": 632470, "name": "Disco Elysium", "is_free": False},
+        ]
+    }
+    config = SearchConfig(http=make_http([json_response(body)]))
+    set_default_config(config)
+    search_category("game", "disco", limit=5)
+
+    close_all()
+
+    assert config.http.is_closed
+    assert get_default_config() is not config

@@ -140,6 +140,14 @@ export function Autocomplete({
     [fetchSuggestions, debounceMs]
   );
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
+
   const selectSuggestion = useCallback(
     (index: number) => {
       const suggestion = suggestions[index];

@@ -202,7 +202,7 @@ def test_lastfm_oauth_callback_success_redirects_home(
         cookies={"lastfm_state": "matching-state"},
     )
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "http://127.0.0.1:3001"
 
 
 def test_lastfm_oauth_callback_stores_username_and_session_key(

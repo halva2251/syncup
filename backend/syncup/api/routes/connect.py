@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import secrets
+import urllib.parse
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Self, TypedDict
@@ -11,12 +14,12 @@ from typing import Annotated, Literal, Self, TypedDict
 import httpx
 from fastapi import APIRouter, Depends, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
-from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
+from starlette.background import BackgroundTask
 
 from syncup.api.routes.sync import _do_sync_generic
 from syncup.api.schemas import ServiceConnectionOut
@@ -42,6 +45,9 @@ router = APIRouter(prefix="/api/connect", tags=["connect"])
 # Spotify auth lives under /api/auth (not /api/connect) for legacy URL compatibility.
 # A10: moved here from app.py to keep all service-connection logic in one module.
 spotify_auth_router = APIRouter(prefix="/api/auth", tags=["connect"])
+
+_SESSION_COOKIE = "syncup_session"
+_STATE_COOKIE_SEPARATOR = "."
 
 
 class CookieOpts(TypedDict):
@@ -90,7 +96,62 @@ def _oauth_cookie_opts(settings: Settings, *, max_age: int = 600) -> CookieOpts:
 
 def _post_auth_redirect(settings: Settings) -> str:
     """Return the landing URL after a successful OAuth/web-auth/OpenID callback."""
-    return settings.frontend_url or "/"
+    return settings.frontend_url
+
+
+def _oauth_state_secret(settings: Settings) -> str:
+    secret = settings.session_secret or settings.syncup_token_encryption_key
+    if not secret:
+        raise RuntimeError("OAuth state signing requires SESSION_SECRET or token key")
+    return secret
+
+
+def _sign_oauth_state(settings: Settings, session_token: str, state: str) -> str:
+    mac = hmac.new(
+        _oauth_state_secret(settings).encode(),
+        f"{session_token}:{state}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{state}{_STATE_COOKIE_SEPARATOR}{mac}"
+
+
+def _session_bound_oauth_state_cookie(
+    request: Request,
+    settings: Settings,
+    state: str,
+) -> str:
+    session_token = request.cookies.get(_SESSION_COOKIE)
+    if not session_token:
+        # Auth dependencies reject this path in production. The fallback keeps
+        # mocked-auth tests that do not set a real session cookie usable.
+        return state
+    return _sign_oauth_state(settings, session_token, state)
+
+
+def _validate_session_bound_oauth_state(
+    request: Request,
+    settings: Settings,
+    cookie_name: str,
+    state: str,
+) -> None:
+    cookie_state = request.cookies.get(cookie_name)
+    session_token = request.cookies.get(_SESSION_COOKIE)
+    if not cookie_state:
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+    expected = (
+        _sign_oauth_state(settings, session_token, state)
+        if session_token
+        else state
+    )
+    if not secrets.compare_digest(cookie_state, expected):
+        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+
+
+def _steam_return_to_with_state(settings: Settings, state: str) -> str:
+    """Return the exact Steam OpenID return_to URL issued for this state."""
+    separator = "&" if "?" in settings.steam_openid_return_to else "?"
+    return f"{settings.steam_openid_return_to}{separator}state={urllib.parse.quote(state, safe='')}"
 
 
 def _enqueue_post_connect_sync(
@@ -298,7 +359,11 @@ def lastfm_oauth_start(
     url = client.get_authorize_url(state=state)
 
     response = RedirectResponse(url=url, status_code=302)
-    response.set_cookie(_LASTFM_STATE_COOKIE, state, **_oauth_cookie_opts(settings))
+    response.set_cookie(
+        _LASTFM_STATE_COOKIE,
+        _session_bound_oauth_state_cookie(request, settings, state),
+        **_oauth_cookie_opts(settings),
+    )
     return response
 
 
@@ -311,12 +376,10 @@ def lastfm_oauth_callback(
     db: Annotated[DbSession, Depends(get_db)],
 ) -> RedirectResponse:
     """Complete the Last.fm web-auth flow."""
-    cookie_state = request.cookies.get(_LASTFM_STATE_COOKIE)
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
-        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+    settings: Settings = request.app.state.settings
+    _validate_session_bound_oauth_state(request, settings, _LASTFM_STATE_COOKIE, state)
 
     user = require_auth(request=request, db=db)
-    settings: Settings = request.app.state.settings
 
     with _lastfm_client(settings) as client:
         try:
@@ -419,7 +482,11 @@ def steam_openid_start(
     )
 
     response = RedirectResponse(url=url, status_code=302)
-    response.set_cookie(_STEAM_STATE_COOKIE, state, **_oauth_cookie_opts(settings))
+    response.set_cookie(
+        _STEAM_STATE_COOKIE,
+        _session_bound_oauth_state_cookie(request, settings, state),
+        **_oauth_cookie_opts(settings),
+    )
     return response
 
 
@@ -431,16 +498,18 @@ def steam_openid_callback(
     db: Annotated[DbSession, Depends(get_db)],
 ) -> RedirectResponse:
     """Complete the Steam OpenID flow."""
-    cookie_state = request.cookies.get(_STEAM_STATE_COOKIE)
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
-        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+    settings: Settings = request.app.state.settings
+    _validate_session_bound_oauth_state(request, settings, _STEAM_STATE_COOKIE, state)
 
     user = require_auth(request=request, db=db)
-    settings: Settings = request.app.state.settings
 
     with _steam_client(settings) as client:
         try:
-            steam_id = client.validate_openid_assertion(dict(request.query_params))
+            steam_id = client.validate_openid_assertion(
+                dict(request.query_params),
+                expected_return_to=_steam_return_to_with_state(settings, state),
+                expected_realm=settings.steam_openid_realm,
+            )
             client.get_player_summary(steam_id)
         except SyncClientError as exc:
             logger.warning("Steam OpenID error: %s", exc)
@@ -457,7 +526,7 @@ def steam_openid_callback(
                 "UPSTREAM_UNAVAILABLE", "Could not reach Steam — please retry", 502
             ) from exc
 
-    conn = _upsert_connection(db, user.id, "steam", steam_id)
+    _upsert_connection(db, user.id, "steam", steam_id)
     logger.info("User %s connected Steam via OpenID (steam_id=%s)", user.id, steam_id)
 
     response = RedirectResponse(_post_auth_redirect(settings), status_code=302)
@@ -650,7 +719,11 @@ def anilist_oauth_start(
 
     _cookie_opts = _oauth_cookie_opts(settings)
     response = RedirectResponse(url=url, status_code=302)
-    response.set_cookie(_ANILIST_STATE_COOKIE, state, **_cookie_opts)
+    response.set_cookie(
+        _ANILIST_STATE_COOKIE,
+        _session_bound_oauth_state_cookie(request, settings, state),
+        **_cookie_opts,
+    )
     return response
 
 
@@ -667,14 +740,11 @@ def anilist_oauth_callback(
     State validation runs before auth so a state mismatch returns 400, not 401,
     matching the Spotify callback pattern.
     """
+    settings: Settings = request.app.state.settings
     # State check FIRST — keeps error semantics clean (400 vs 401).
-    cookie_state = request.cookies.get(_ANILIST_STATE_COOKIE)
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
-        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+    _validate_session_bound_oauth_state(request, settings, _ANILIST_STATE_COOKIE, state)
 
     user = require_auth(request=request, db=db)
-
-    settings: Settings = request.app.state.settings
     with _anilist_client(settings) as client:
         try:
             tokens = client.exchange_code(code)
@@ -790,7 +860,11 @@ def trakt_oauth_start(
 
     _cookie_opts = _oauth_cookie_opts(settings)
     response = RedirectResponse(url=url, status_code=302)
-    response.set_cookie(_TRAKT_STATE_COOKIE, state, **_cookie_opts)
+    response.set_cookie(
+        _TRAKT_STATE_COOKIE,
+        _session_bound_oauth_state_cookie(request, settings, state),
+        **_cookie_opts,
+    )
     return response
 
 
@@ -806,19 +880,36 @@ def trakt_oauth_callback(
 
     State validation runs before auth so a state mismatch returns 400, not 401.
     """
-    cookie_state = request.cookies.get(_TRAKT_STATE_COOKIE)
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
-        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+    settings: Settings = request.app.state.settings
+    _validate_session_bound_oauth_state(request, settings, _TRAKT_STATE_COOKIE, state)
 
     user = require_auth(request=request, db=db)
 
-    settings: Settings = request.app.state.settings
     with _trakt_client(settings) as client:
         try:
             tokens = client.exchange_code(code)
             me = client.fetch_me(tokens.access_token)
         except SyncClientError as exc:
-            raise SyncUpError("TRAKT_TOKEN_ERROR", str(exc), 400) from exc
+            logger.warning("Trakt authorization error: %s", exc)
+            raise SyncUpError(
+                "TRAKT_TOKEN_ERROR", "Trakt authorization failed — please reconnect", 400
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Trakt token/profile request failed (status=%s): %s",
+                exc.response.status_code,
+                exc.response.text,
+            )
+            raise SyncUpError(
+                "TRAKT_TOKEN_ERROR",
+                "Trakt authorization failed — please reconnect",
+                exc.response.status_code,
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.warning("Could not reach Trakt: %s", exc)
+            raise SyncUpError(
+                "UPSTREAM_UNAVAILABLE", "Could not reach Trakt — please retry", 502
+            ) from exc
 
     trakt_username = me.get("username") or ""
     if not trakt_username:
@@ -910,7 +1001,11 @@ def reddit_oauth_start(
 
     _cookie_opts = _oauth_cookie_opts(settings)
     response = RedirectResponse(url=url, status_code=302)
-    response.set_cookie(_REDDIT_STATE_COOKIE, state, **_cookie_opts)
+    response.set_cookie(
+        _REDDIT_STATE_COOKIE,
+        _session_bound_oauth_state_cookie(request, settings, state),
+        **_cookie_opts,
+    )
     return response
 
 
@@ -928,9 +1023,8 @@ def reddit_oauth_callback(
     State validation runs before auth so a state mismatch returns 400, not 401.
     Reddit sends error=access_denied when the user denies the authorization prompt.
     """
-    cookie_state = request.cookies.get(_REDDIT_STATE_COOKIE)
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
-        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch", 400)
+    settings: Settings = request.app.state.settings
+    _validate_session_bound_oauth_state(request, settings, _REDDIT_STATE_COOKIE, state)
 
     if error:
         raise SyncUpError("REDDIT_OAUTH_DENIED", "Reddit authorization was denied", 400)
@@ -939,13 +1033,31 @@ def reddit_oauth_callback(
 
     user = require_auth(request=request, db=db)
 
-    settings: Settings = request.app.state.settings
     with _reddit_client(settings) as client:
         try:
             tokens = client.exchange_code(code)
             me = client.fetch_me(tokens.access_token)
         except SyncClientError as exc:
-            raise SyncUpError("REDDIT_TOKEN_ERROR", str(exc), 400) from exc
+            logger.warning("Reddit authorization error: %s", exc)
+            raise SyncUpError(
+                "REDDIT_TOKEN_ERROR", "Reddit authorization failed — please reconnect", 400
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Reddit token/profile request failed (status=%s): %s",
+                exc.response.status_code,
+                exc.response.text,
+            )
+            raise SyncUpError(
+                "REDDIT_TOKEN_ERROR",
+                "Reddit authorization failed — please reconnect",
+                exc.response.status_code,
+            ) from exc
+        except httpx.RequestError as exc:
+            logger.warning("Could not reach Reddit: %s", exc)
+            raise SyncUpError(
+                "UPSTREAM_UNAVAILABLE", "Could not reach Reddit — please retry", 502
+            ) from exc
 
     reddit_username = me.get("name") or ""
     if not reddit_username:
@@ -1155,7 +1267,11 @@ def spotify_auth_start(
     redirect_url = client.get_authorize_url(state=state, code_challenge=challenge)
     response = RedirectResponse(url=redirect_url)
     _cookie_opts = _oauth_cookie_opts(settings)
-    response.set_cookie("spotify_state", state, **_cookie_opts)
+    response.set_cookie(
+        "spotify_state",
+        _session_bound_oauth_state_cookie(request, settings, state),
+        **_cookie_opts,
+    )
     response.set_cookie("spotify_verifier", verifier, **_cookie_opts)
     return response
 
@@ -1171,11 +1287,9 @@ def spotify_callback(
     """Complete the Spotify OAuth flow."""
     client: SpotifyClient = request.app.state.spotify
     settings: Settings = request.app.state.settings
-    cookie_state = request.cookies.get("spotify_state")
     verifier = request.cookies.get("spotify_verifier")
 
-    if not cookie_state or not secrets.compare_digest(cookie_state, state):
-        raise SyncUpError("OAUTH_STATE_MISMATCH", "OAuth state mismatch")
+    _validate_session_bound_oauth_state(request, settings, "spotify_state", state)
     if not verifier:
         raise SyncUpError("MISSING_PKCE_VERIFIER", "Missing PKCE verifier")
 

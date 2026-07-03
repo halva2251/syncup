@@ -1,8 +1,7 @@
 import { apiFetch, ApiError } from "@/lib/api/client";
+import { BACKEND_URL } from "@/lib/constants/backend-url";
 import { cookies } from "next/headers";
 import type { ServiceConnection } from "@/types/api";
-
-const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:3000";
 
 export interface ConnectSteamInput {
   steam_id?: string;

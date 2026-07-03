@@ -219,13 +219,14 @@ export function AuthForm({
         <Button
           type="submit"
           size="lg"
-          className="mt-2 w-full"
+          className="relative mt-2 w-full"
           disabled={pending}
+          aria-busy={pending}
+          aria-label={submitLabel}
         >
-          {pending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            submitLabel
+          <span className={pending ? "invisible" : undefined}>{submitLabel}</span>
+          {pending && (
+            <Loader2 className="absolute h-4 w-4 animate-spin" />
           )}
         </Button>
       </form>

@@ -85,6 +85,7 @@ export function GlossyButton({
   children,
   className,
   loading,
+  disabled,
   type = "button",
   ...props
 }: GlossyButtonProps) {
@@ -92,6 +93,8 @@ export function GlossyButton({
     <button
       type={type}
       className={cn(shellClasses, className)}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
     >
       <GlossyShell loading={loading}>{children}</GlossyShell>

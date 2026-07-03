@@ -13,6 +13,7 @@ from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
 
 _API_BASE = "https://api.steampowered.com"
 _OPENID_URL = "https://steamcommunity.com/openid/login"
+_OPENID_ID_PREFIX = "https://steamcommunity.com/openid/id/"
 
 
 @dataclass
@@ -69,16 +70,37 @@ class SteamClient:
         }
         return f"{_OPENID_URL}?{urllib.parse.urlencode(params)}"
 
-    def validate_openid_assertion(self, params: dict[str, str]) -> str:
+    def validate_openid_assertion(
+        self,
+        params: dict[str, str],
+        *,
+        expected_return_to: str,
+        expected_realm: str,
+    ) -> str:
         """Validate a Steam OpenID assertion and return the Steam ID.
 
         Raises SyncClientError if validation fails.
         """
-        identity = params.get("openid.identity") or params.get("openid.claimed_id")
-        if not identity:
-            raise SyncClientError("Missing Steam OpenID identity")
+        if params.get("openid.op_endpoint") != _OPENID_URL:
+            raise SyncClientError("Invalid Steam OpenID provider")
 
-        steam_id = identity.rsplit("/", 1)[-1]
+        if params.get("openid.return_to") != expected_return_to:
+            raise SyncClientError("Invalid Steam OpenID return URL")
+
+        realm = params.get("openid.realm")
+        if realm is not None and realm != expected_realm:
+            raise SyncClientError("Invalid Steam OpenID realm")
+
+        identity = params.get("openid.identity")
+        claimed_id = params.get("openid.claimed_id")
+        if not identity or not claimed_id:
+            raise SyncClientError("Missing Steam OpenID identity")
+        if identity != claimed_id:
+            raise SyncClientError("Steam OpenID identity mismatch")
+        if not identity.startswith(_OPENID_ID_PREFIX):
+            raise SyncClientError("Invalid Steam OpenID identity")
+
+        steam_id = identity.removeprefix(_OPENID_ID_PREFIX)
         if not steam_id.isdigit():
             raise SyncClientError("Invalid Steam OpenID identity")
 

@@ -19,11 +19,16 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const cookieStore = await cookies();
   const url = `${BACKEND_URL}/api${path}`;
+  const body = options.body;
+  const shouldSetJsonContentType =
+    body !== undefined &&
+    !(body instanceof FormData) &&
+    !new Headers(options.headers).has("Content-Type");
 
   const response = await fetch(url, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      ...(shouldSetJsonContentType ? { "Content-Type": "application/json" } : {}),
       Cookie: cookieStore.toString(),
       ...(options.headers ?? {}),
     },

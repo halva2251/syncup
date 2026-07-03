@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ApiError } from "@/lib/api/client";
 import { getCurrentUser } from "@/lib/api/me";
 import { getOnboardingStatus } from "@/lib/api/onboarding";
 import { getTasteProfile } from "@/lib/api/taste";
@@ -18,8 +19,11 @@ export default async function OnboardingTastePage() {
     user = me.user;
     status = onboardingStatus;
     taste = tasteProfile;
-  } catch {
-    redirect("/login");
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      redirect("/login");
+    }
+    throw err;
   }
 
   if (status.next_step === null) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useId } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import { AppIcon } from "@/components/ui/app-icon";
 import { TasteServiceSection } from "@/components/taste/taste-service-section";
 import { SERVICE_BY_ID } from "@/lib/constants/services";
@@ -12,6 +12,8 @@ interface TasteServiceCarouselProps {
   services: TasteResponse["services"];
 }
 
+const AUTO_ADVANCE_MS = 10000;
+
 export function TasteServiceCarousel({
   serviceIds,
   services,
@@ -19,6 +21,8 @@ export function TasteServiceCarousel({
   const [index, setIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const labelId = useId();
 
   const safeIndex = Math.max(0, Math.min(index, serviceIds.length - 1));
@@ -39,11 +43,27 @@ export function TasteServiceCarousel({
   );
 
   useEffect(() => {
-    if (isHovered || isFocused || serviceIds.length <= 1) return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setPrefersReducedMotion(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
-    const timer = setInterval(next, 10000);
+  useEffect(() => {
+    if (
+      isHovered ||
+      isFocused ||
+      isPaused ||
+      prefersReducedMotion ||
+      serviceIds.length <= 1
+    ) {
+      return;
+    }
+
+    const timer = setInterval(next, AUTO_ADVANCE_MS);
     return () => clearInterval(timer);
-  }, [isHovered, isFocused, next, serviceIds.length]);
+  }, [isHovered, isFocused, isPaused, prefersReducedMotion, next, serviceIds.length]);
 
   if (serviceIds.length === 0) return null;
 
@@ -67,22 +87,30 @@ export function TasteServiceCarousel({
         onBlur={() => setIsFocused(false)}
       >
         <div
-          className="flex gap-4 transition-transform duration-500 ease-in-out"
+          className={
+            prefersReducedMotion
+              ? "flex gap-4"
+              : "flex gap-4 transition-transform duration-500 ease-in-out"
+          }
           style={{ transform: `translateX(calc(-${safeIndex} * (100% + 16px)))` }}
         >
-          {serviceIds.map((serviceId) => (
-            <div
-              key={serviceId}
-              className="w-full flex-shrink-0"
-              aria-hidden={serviceIds[safeIndex] !== serviceId}
-            >
-              <TasteServiceSection
-                serviceId={serviceId}
-                data={services[serviceId]}
-                bordered={false}
-              />
-            </div>
-          ))}
+          {serviceIds.map((serviceId) => {
+            const hidden = serviceIds[safeIndex] !== serviceId;
+            return (
+              <div
+                key={serviceId}
+                className="w-full flex-shrink-0"
+                aria-hidden={hidden}
+                inert={hidden ? true : undefined}
+              >
+                <TasteServiceSection
+                  serviceId={serviceId}
+                  data={services[serviceId]}
+                  bordered={false}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -118,6 +146,20 @@ export function TasteServiceCarousel({
             </div>
 
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setIsPaused((value) => !value)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-page)]"
+                aria-label={isPaused ? "Play carousel" : "Pause carousel"}
+                aria-pressed={isPaused}
+              >
+                {isPaused ? (
+                  <Play className="h-4 w-4" />
+                ) : (
+                  <Pause className="h-4 w-4" />
+                )}
+              </button>
+
               <button
                 type="button"
                 onClick={previous}

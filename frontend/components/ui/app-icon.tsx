@@ -10,12 +10,12 @@ export type SimpleIcon = {
 type Gradient = "blue" | "purple" | "green" | "orange" | "red" | "brand";
 
 const gradients: Record<Gradient, string> = {
-  blue: "from-[#60A5FA] to-[#1D4ED8]",
-  purple: "from-[#A78BFA] to-[#6D28D9]",
-  green: "from-[#34D399] to-[#047857]",
-  orange: "from-[#FBBF24] to-[#B45309]",
-  red: "from-[#FB7185] to-[#B91C1C]",
-  brand: "from-[#60A5FA] to-[#1D4ED8]",
+  blue: "from-[var(--color-icon-gradient-blue-from)] to-[var(--color-icon-gradient-blue-to)]",
+  purple: "from-[var(--color-icon-gradient-purple-from)] to-[var(--color-icon-gradient-purple-to)]",
+  green: "from-[var(--color-icon-gradient-green-from)] to-[var(--color-icon-gradient-green-to)]",
+  orange: "from-[var(--color-icon-gradient-orange-from)] to-[var(--color-icon-gradient-orange-to)]",
+  red: "from-[var(--color-icon-gradient-red-from)] to-[var(--color-icon-gradient-red-to)]",
+  brand: "from-[var(--color-icon-gradient-blue-from)] to-[var(--color-icon-gradient-blue-to)]",
 };
 
 const sizes = {

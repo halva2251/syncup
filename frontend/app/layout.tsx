@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans } from "next/font/google";
 import "flag-icons/css/flag-icons.min.css";
 import "./globals.css";
+import { ThemeScript } from "@/components/app/theme-script";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -20,8 +21,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={dmSans.variable}>
-      <body className={`${dmSans.className} antialiased`}>{children}</body>
+    <html lang="en" className={dmSans.variable} suppressHydrationWarning>
+      <body className={`${dmSans.className} antialiased`}>
+        <ThemeScript />
+        {children}
+      </body>
     </html>
   );
 }

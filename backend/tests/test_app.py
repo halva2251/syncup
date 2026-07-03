@@ -211,7 +211,7 @@ def test_callback_success_redirects_to_frontend(authed_client: TestClient) -> No
         resp = authed_client.get(f"/api/auth/spotify/callback?code=authcode&state={state}")
 
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "http://127.0.0.1:3001"
 
 
 def test_callback_success_clears_pkce_cookies(authed_client: TestClient) -> None:
