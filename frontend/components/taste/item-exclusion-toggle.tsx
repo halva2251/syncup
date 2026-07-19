@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { X, RotateCcw, AlertCircle } from "lucide-react";
 import { excludeItemAction } from "@/lib/actions/taste-actions";
+import { toast } from "@/components/ui/toast";
 
 interface ItemExclusionToggleProps {
   itemId: string;
@@ -33,13 +34,18 @@ export function ItemExclusionToggle({
     startTransition(async () => {
       const result = await excludeItemAction(itemId, next);
       if ("error" in result) {
-        setError(result.error ?? "Failed to update item");
+        const errorMsg = result.error ?? "Failed to update item";
+        setError(errorMsg);
+        toast.error(errorMsg);
         // Rollback the optimistic update.
         if (next) {
           onIncluded?.(itemId);
         } else {
           onExcluded?.(itemId);
         }
+      } else {
+        const successMsg = next ? "Item removed from taste profile" : "Item added to taste profile";
+        toast.success(successMsg);
       }
     });
   }
