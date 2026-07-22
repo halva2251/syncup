@@ -31,6 +31,9 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | POST | `/api/auth/logout` | Invalidates session; always 204 |
 | GET | `/api/me` | Current user + service connections; requires auth. Returns `{user: {...}, connections: [...]}` |
 | PATCH | `/api/me` | Partial profile update (`display_name`, `bio`, `discord_handle`, `social_links`, `avatar_url`, `languages`, `is_matchable`); requires auth. Returns updated user. |
+| POST | `/api/me/avatar` | Upload a PNG, JPEG, WebP, or GIF avatar (max 5 MB); requires auth. Returns updated user. |
+| GET | `/uploads/{file_path}` | Serve an existing uploaded avatar; public, outside the `/api` prefix. Missing or out-of-root paths return 404. |
+| DELETE | `/api/me/connections/{service}` | Disconnect a current-user service, purge its imported items, and invalidate derived profile data; requires auth. Returns 204. |
 | POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
 | POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
 | POST | `/api/connect/letterboxd/import` | CSV file upload (Letterboxd diary export); wipe-and-replace; requires auth *(Phase 1.10)* |
@@ -39,6 +42,8 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | GET | `/api/connect/{service}/oauth/callback` | Complete OAuth for the above services *(Phase 1.10)* |
 | POST | `/api/sync/{service}` | Trigger background data pull for any registered service; requires auth. Returns `{"status": "syncing", "service": "<name>"}` immediately. Unknown service → 404 SERVICE_NOT_FOUND. |
 | GET | `/api/me/taste` | Aggregated taste profile (top items per service, obsessions, overrides); requires auth. Empty services are omitted from the response. |
+| GET | `/api/users/{user_id}/taste-card` | Public taste card for a matchable user; no auth. Returns 404 for missing or non-matchable users and omits private preference overrides. |
+| GET | `/api/me/items` | Included user items for taste-control pickers; requires auth. `limit` defaults to 1000 and is capped at 2000. |
 | GET | `/api/me/obsessions` | List manual obsessions; requires auth. |
 | POST | `/api/me/obsessions` | Add a manual obsession (`category`, `name`, `weight`); requires auth. Returns 201. |
 | DELETE | `/api/me/obsessions/{id}` | Delete a manual obsession; requires auth. Returns 204. |

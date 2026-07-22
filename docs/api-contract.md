@@ -129,6 +129,12 @@ Upload a profile photo. Multipart form with a single `file` field. The image is 
 
 Errors: `401 UNAUTHORIZED`, `413 FILE_TOO_LARGE` (over 5 MB), `422 INVALID_FILE_TYPE` (unsupported type or bytes don't match a real image), `429 RATE_LIMITED` (10/min).
 
+### `GET /uploads/{file_path}` — Live ✅
+
+Serves an existing uploaded avatar. This path is **not** under the `/api` prefix and does not require authentication so public profile avatars can load. `file_path` is resolved under the configured upload directory; traversal attempts and missing files return `404`.
+
+Avatar uploads are currently stored at `/uploads/avatars/<uuid>.<ext>`. The response is the image file rather than JSON.
+
 ### `DELETE /me` — Sketch
 Hard-delete; cascades to all user data.
 
@@ -172,7 +178,7 @@ Redirects (302) to Reddit's authorization page. Sets `reddit_state` cookie (http
 ### `GET /connect/reddit/oauth/callback?code=...&state=...` — Live ✅
 Validates state cookie, exchanges code for access + refresh token, encrypts tokens, upserts `service_connections` row (`sync_status = 'pending'`, `token_expires_at` set 1 hour out), redirects to `/`. Returns 400 on state mismatch, 400 on user denial (`error=access_denied`), 400 on missing code.
 
-### The `/me/connections/*` sub-routes below are planned.
+### The `GET`, `POST`, and callback `/me/connections/*` sub-routes below are planned.
 
 ### `GET /me/connections`
 Same shape as `connections` in `/me`.
@@ -184,8 +190,15 @@ Same shape as `connections` in `/me`.
 ### `GET /me/connections/{service}/callback?code=...`
 OAuth callback for the data connection (distinct from login OAuth callback).
 
-### `DELETE /me/connections/{service}`
-Disconnects + purges pulled data for that service.
+### `DELETE /me/connections/{service}` — Live ✅
+
+Disconnects one of the current user's services. It removes that user's imported
+items for the service, invalidates derived embeddings and vibe synthesis fields,
+and deletes the connection. Shared catalog items remain available to other users.
+
+Returns `204 No Content`. Returns `401 UNAUTHORIZED` without a session,
+`404 NOT_FOUND` when the current user does not have that service connected, and
+`429 RATE_LIMITED` after 30 requests per minute.
 
 ### `POST /sync/{service}` — Live ✅
 Triggers a fresh pull. Returns immediately; actual work runs in background.
@@ -216,6 +229,31 @@ Aggregated view. Services with no items are omitted from the response entirely (
   ]
 }
 ```
+
+### `GET /users/{user_id}/taste-card` — Live ✅
+
+Returns the public taste card for a user who has opted into matching. This route
+does **not** require authentication, so a profile card can be shared; it returns
+`404 NOT_FOUND` when the user does not exist or has `is_matchable=false`.
+
+```json
+{
+  "user": {
+    "archetype": "The Patient Aesthete",
+    "vibe_summary": "Drawn to reflective worlds and atmospheric music.",
+    "key_themes": ["melancholic", "narrative", "ambient"]
+  },
+  "taste": {
+    "services": { "steam": { "top_games": [] } },
+    "manual_obsessions": [],
+    "overrides": []
+  }
+}
+```
+
+The taste-card data uses the same service and manual-obsession shape as
+`GET /me/taste`, but preference overrides are private and are always omitted
+(returned as an empty array). The endpoint is rate-limited to 30/min per IP.
 
 ### `GET /me/taste/items?service=steam&item_type=game&cursor=...`
 Paginated raw items for a service/type.
@@ -401,6 +439,27 @@ Toggle the `excluded` flag on a `user_items` row. Excluded items are skipped in 
 ```
 
 Setting `excluded: false` re-includes the item. Both directions are idempotent.
+
+### `GET /me/items?limit=1000` — Live ✅
+
+Lists the authenticated user's included items for taste-control pickers, ordered
+by descending engagement score and then item name. `limit` defaults to `1000` and
+accepts values from `1` through `2000`. Excluded items are omitted.
+
+```json
+[
+  {
+    "id": "<items.id>",
+    "name": "Disco Elysium",
+    "service": "steam",
+    "item_type": "game"
+  }
+]
+```
+
+`id` is the canonical `items.id` for use when creating preference overrides; it
+is different from the `user_items.id` required by `PATCH /me/items/{item_id}`.
+Requires authentication and is rate-limited to 60/min.
 
 ---
 
