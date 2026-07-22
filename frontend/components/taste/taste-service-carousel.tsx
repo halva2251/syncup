@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useId } from "react";
+import { useEffect, useState, useCallback, useId, useRef } from "react";
 import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
 import { AppIcon } from "@/components/ui/app-icon";
 import { TasteServiceSection } from "@/components/taste/taste-service-section";
@@ -30,8 +30,13 @@ export function TasteServiceCarousel({
   const [isPaused, setIsPaused] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const labelId = useId();
+  const progressLayerRef = useRef<HTMLSpanElement>(null);
+  const progressIndexRef = useRef(0);
+  const progressElapsedRef = useRef(0);
 
   const safeIndex = Math.max(0, Math.min(index, serviceIds.length - 1));
+  const autoAdvancePaused =
+    isHovered || isFocused || isPaused || prefersReducedMotion;
 
   const next = useCallback(() => {
     setIndex((prev) => (prev + 1) % serviceIds.length);
@@ -57,11 +62,38 @@ export function TasteServiceCarousel({
   }, []);
 
   useEffect(() => {
+    const layer = progressLayerRef.current;
+    if (!layer) return;
+
+    if (progressIndexRef.current !== safeIndex) {
+      progressIndexRef.current = safeIndex;
+      progressElapsedRef.current = 0;
+    }
+
+    const setClip = (elapsed: number) => {
+      const progress = Math.min(100, (elapsed / AUTO_ADVANCE_MS) * 100);
+      layer.style.clipPath = `inset(${progress}% 0 0 0)`;
+    };
+    setClip(progressElapsedRef.current);
+
+    if (autoAdvancePaused || serviceIds.length <= 1) return;
+
+    const startedAt = performance.now() - progressElapsedRef.current;
+    let frameId = 0;
+    const animate = (now: number) => {
+      progressElapsedRef.current = Math.min(AUTO_ADVANCE_MS, now - startedAt);
+      setClip(progressElapsedRef.current);
+      if (progressElapsedRef.current < AUTO_ADVANCE_MS) {
+        frameId = requestAnimationFrame(animate);
+      }
+    };
+    frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
+  }, [autoAdvancePaused, safeIndex, serviceIds.length]);
+
+  useEffect(() => {
     if (
-      isHovered ||
-      isFocused ||
-      isPaused ||
-      prefersReducedMotion ||
+      autoAdvancePaused ||
       serviceIds.length <= 1
     ) {
       return;
@@ -69,7 +101,7 @@ export function TasteServiceCarousel({
 
     const timer = setInterval(next, AUTO_ADVANCE_MS);
     return () => clearInterval(timer);
-  }, [isHovered, isFocused, isPaused, prefersReducedMotion, next, serviceIds.length]);
+  }, [autoAdvancePaused, next, serviceIds.length]);
 
   if (serviceIds.length === 0) return null;
 
@@ -136,13 +168,27 @@ export function TasteServiceCarousel({
                     className="relative rounded-md p-1 transition-opacity hover:opacity-80"
                     aria-label={`Go to ${service?.name ?? serviceId}`}
                   >
-                    {service ? (
-                      <AppIcon
-                        brand={service.brand}
-                        size="xs"
-                        brandColor={isCurrent ? `#${service.brand.hex}` : "var(--color-text-tertiary)"}
-                        className={isCurrent ? "" : "opacity-40"}
-                      />
+                  {service ? (
+                      <span className="relative block h-8 w-8">
+                        <AppIcon
+                          brand={service.brand}
+                          size="xs"
+                          brandColor="var(--color-text-tertiary)"
+                          className="opacity-40"
+                        />
+                        {isCurrent ? (
+                          <span
+                            ref={progressLayerRef}
+                            className="absolute inset-0"
+                          >
+                            <AppIcon
+                              brand={service.brand}
+                              size="xs"
+                              brandColor={`#${service.brand.hex}`}
+                            />
+                          </span>
+                        ) : null}
+                      </span>
                     ) : (
                       <span className="text-xs text-[var(--color-text-tertiary)]">
                         {serviceId}
