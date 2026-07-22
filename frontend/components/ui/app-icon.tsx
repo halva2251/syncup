@@ -64,6 +64,8 @@ type AppIconProps =
       size?: keyof typeof sizes;
       gradient?: AppIconGradient;
       brandColor?: string;
+      /** Override the glyph size while keeping the selected container size. */
+      iconSize?: number;
       glossy?: boolean;
       className?: string;
     }
@@ -73,6 +75,8 @@ type AppIconProps =
       size?: keyof typeof sizes;
       gradient?: AppIconGradient;
       brandColor?: string;
+      /** Override the glyph size while keeping the selected container size. */
+      iconSize?: number;
       glossy?: boolean;
       className?: string;
     };
@@ -83,12 +87,14 @@ export function AppIcon({
   size = "md",
   gradient = "blue",
   brandColor,
+  iconSize,
   glossy = true,
   className,
 }: AppIconProps) {
   const id = useId().replace(/:/g, "");
   const IconComponent = icon;
   const gradientUrl = `url(#${id}-iconGradient)`;
+  const renderedIconSize = iconSize ?? iconSizes[size];
 
   return (
     <span
@@ -141,7 +147,7 @@ export function AppIcon({
       {/* Icon */}
       {IconComponent ? (
         <IconComponent
-          size={iconSizes[size]}
+          size={renderedIconSize}
           className="relative z-10 drop-shadow-2xl"
           strokeWidth={2}
           style={{ stroke: gradientUrl }}
@@ -149,8 +155,8 @@ export function AppIcon({
       ) : brand ? (
         <svg
           viewBox="0 0 24 24"
-          width={iconSizes[size]}
-          height={iconSizes[size]}
+          width={renderedIconSize}
+          height={renderedIconSize}
           className="relative z-10 drop-shadow-2xl"
           aria-label={brand.title}
           role="img"

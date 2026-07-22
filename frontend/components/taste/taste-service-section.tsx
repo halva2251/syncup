@@ -9,6 +9,7 @@ interface TasteServiceSectionProps {
   data: TasteServiceData;
   bordered?: boolean;
   canDisconnect?: boolean;
+  canEditItems?: boolean;
 }
 
 const BUCKET_LABELS: Record<string, string> = {
@@ -46,6 +47,7 @@ export function TasteServiceSection({
   data,
   bordered = true,
   canDisconnect = false,
+  canEditItems = false,
 }: TasteServiceSectionProps) {
   const service = SERVICE_BY_ID.get(serviceId);
   const buckets = Object.entries(data).filter(
@@ -91,7 +93,7 @@ export function TasteServiceSection({
               items={items.slice(0, 5)}
               rankMode={rankMode}
               getLabel={(item) => getItemLabel(serviceId, bucket, item)}
-              excludable
+              excludable={canEditItems}
             />
           </div>
         ))}

@@ -89,7 +89,6 @@ export async function disconnectConnectionAction(service: string) {
   try {
     await deleteConnection(service);
     revalidatePath("/connections");
-    revalidatePath("/taste");
     revalidatePath("/onboarding/services");
     revalidatePath("/settings/services");
     return { success: true as const };

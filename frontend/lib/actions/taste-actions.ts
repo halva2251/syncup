@@ -31,11 +31,7 @@ export async function excludeItemAction(itemId: string, excluded: boolean) {
 }
 
 export async function buildEmbeddingAction(): Promise<void> {
-  // The build step runs as part of recompute; kept as a thin alias so the
-  // /taste page's "Refresh" flow reads clearly without leaking implementation.
-  await recomputeMatches();
-}
-
-export async function recomputeMatchesAction(): Promise<void> {
+  // The build step runs as part of recompute; this keeps its UI callers focused
+  // on the user-facing taste-vector concept rather than the backend endpoint.
   await recomputeMatches();
 }

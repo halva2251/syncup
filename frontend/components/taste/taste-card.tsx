@@ -10,9 +10,22 @@ interface TasteCardProps {
   taste: TasteResponse;
   user?: Pick<User, "archetype" | "vibe_summary" | "key_themes">;
   connectedServiceIds?: string[];
+  showObsessions?: boolean;
+  showOverrides?: boolean;
+  editable?: boolean;
+  /** Whether the card belongs to the signed-in user. */
+  viewerIsOwner?: boolean;
 }
 
-export function TasteCard({ taste, user, connectedServiceIds }: TasteCardProps) {
+export function TasteCard({
+  taste,
+  user,
+  connectedServiceIds,
+  showObsessions = true,
+  showOverrides = true,
+  editable = false,
+  viewerIsOwner = true,
+}: TasteCardProps) {
   const serviceIds = Object.keys(taste.services);
   const hasAnyData =
     serviceIds.length > 0 ||
@@ -51,10 +64,12 @@ export function TasteCard({ taste, user, connectedServiceIds }: TasteCardProps) 
           serviceIds={serviceIds}
           services={taste.services}
           connectedServiceIds={connectedServiceIds}
+          editable={editable}
+          viewerIsOwner={viewerIsOwner}
         />
       )}
 
-      {taste.manual_obsessions.length > 0 && (
+      {showObsessions && taste.manual_obsessions.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">
             Obsessions
@@ -76,7 +91,7 @@ export function TasteCard({ taste, user, connectedServiceIds }: TasteCardProps) 
         </div>
       )}
 
-      {taste.overrides.length > 0 && (
+      {showOverrides && taste.overrides.length > 0 && (
         <div className="space-y-2">
           <h3 className="text-sm font-medium text-[var(--color-text-secondary)]">
             Preference overrides

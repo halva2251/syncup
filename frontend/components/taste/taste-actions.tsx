@@ -1,20 +1,20 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Copy, Check, RefreshCw } from "lucide-react";
+import { Check, Copy, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { buildEmbeddingAction, recomputeMatchesAction } from "@/lib/actions/taste-actions";
 import { toast } from "@/components/ui/toast";
+import { buildEmbeddingAction } from "@/lib/actions/taste-actions";
 
 interface TasteActionsProps {
   hasData: boolean;
   publicTasteUrl?: string;
 }
 
+/** Profile actions for sharing and rebuilding the signed-in user's taste data. */
 export function TasteActions({ hasData, publicTasteUrl }: TasteActionsProps) {
   const [copied, setCopied] = useState(false);
   const [isRecomputing, startRecompute] = useTransition();
-  const [result, setResult] = useState<{ success?: boolean; error?: string } | null>(null);
 
   const handleCopy = async () => {
     const url = publicTasteUrl || window.location.href;
@@ -24,20 +24,15 @@ export function TasteActions({ hasData, publicTasteUrl }: TasteActionsProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleRecompute = async () => {
+  const handleRecompute = () => {
     if (!hasData) return;
 
-    setResult(null);
     startRecompute(async () => {
       try {
         await buildEmbeddingAction();
-        await recomputeMatchesAction();
-        setResult({ success: true });
         toast.success("Taste profile refreshed");
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : "Failed to recompute";
-        setResult({ error: errorMsg });
-        toast.error(errorMsg);
+        toast.error(err instanceof Error ? err.message : "Failed to recompute");
       }
     });
   };

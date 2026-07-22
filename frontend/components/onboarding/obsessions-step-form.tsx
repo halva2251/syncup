@@ -69,10 +69,16 @@ function CategoryIcon({
 
 interface ObsessionsStepFormProps {
   initialObsessions: ManualObsession[];
+  /** Use the editor outside onboarding without the wizard shell. */
+  embedded?: boolean;
+  /** Receives successful inline changes when the editor is embedded elsewhere. */
+  onObsessionsChange?: (obsessions: ManualObsession[]) => void;
 }
 
 export function ObsessionsStepForm({
   initialObsessions,
+  embedded = false,
+  onObsessionsChange,
 }: ObsessionsStepFormProps) {
   const [obsessions, setObsessions] = useState(initialObsessions);
   const [optimisticObsessions, setOptimisticObsessions] =
@@ -90,7 +96,11 @@ export function ObsessionsStepForm({
         return { error: result.error };
       }
       if ("obsession" in result && result.obsession) {
-        setObsessions((prev) => [result.obsession!, ...prev]);
+        setObsessions((prev) => {
+          const next = [result.obsession!, ...prev];
+          onObsessionsChange?.(next);
+          return next;
+        });
         setSelectedCategory([]);
         setAutocompleteKey((prev) => prev + 1);
         formRef.current?.reset();
@@ -113,19 +123,17 @@ export function ObsessionsStepForm({
       setObsessions(previousObsessions);
       return;
     }
-    setObsessions((prev) => prev.filter((o) => o.id !== id));
+    setObsessions((prev) => {
+      const next = prev.filter((o) => o.id !== id);
+      onObsessionsChange?.(next);
+      return next;
+    });
   }
 
   const displayList = optimisticObsessions;
 
-  return (
-    <OnboardingStep
-      icon={Heart}
-      title="What are you obsessed with?"
-      description="Add at least 3 things that define your taste — games, albums, books, shows, communities, anything."
-      backHref="/onboarding/services"
-      continueHref="/onboarding/taste"
-    >
+  const editor = (
+    <>
       <form ref={formRef} action={formAction} className="space-y-5">
         {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
 
@@ -212,7 +220,22 @@ export function ObsessionsStepForm({
           ))}
         </ul>
       )}
+    </>
+  );
 
+  if (embedded) {
+    return editor;
+  }
+
+  return (
+    <OnboardingStep
+      icon={Heart}
+      title="What are you obsessed with?"
+      description="Add at least 3 things that define your taste — games, albums, books, shows, communities, anything."
+      backHref="/onboarding/services"
+      continueHref="/onboarding/taste"
+    >
+      {editor}
     </OnboardingStep>
   );
 }

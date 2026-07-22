@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Plus, Plug, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { ApiError } from "@/lib/api/client";
 import { getCurrentUser } from "@/lib/api/me";
 import { getMatch } from "@/lib/api/matches";
 import { getPublicTasteCard, getTasteProfile } from "@/lib/api/taste";
 import { TasteCard } from "@/components/taste/taste-card";
+import { TasteActions } from "@/components/taste/taste-actions";
+import { ManualObsessionsEditor } from "@/components/taste/manual-obsessions-editor";
+import { OwnProfileView } from "@/components/matches/own-profile-view";
+import { ButtonLink } from "@/components/ui/button";
 import type { Match, User } from "@/types/api";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +78,14 @@ export default async function FeedDetailPage({ params }: FeedDetailPageProps) {
 
   // Lazily import the detail component so the import graph stays clean.
   const { MatchDetail } = await import("@/components/matches/match-detail");
+  const hasAnyTasteData = Boolean(
+    tasteCard &&
+      (Object.keys(tasteCard.services).length > 0 ||
+        tasteCard.manual_obsessions.length > 0 ||
+        tasteCard.overrides.length > 0),
+  );
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://syncup.app";
+  const profileUrl = `${appUrl}/feed/${id}`;
 
   return (
     <div
@@ -88,16 +100,117 @@ export default async function FeedDetailPage({ params }: FeedDetailPageProps) {
           Feed
         </Link>
 
-        {tasteCard && tasteCardUser ? (
+        {isOwnProfile && tasteCard && tasteCardUser ? (
+          <OwnProfileView
+            preview={
+              <div className="grid items-start gap-6 lg:grid-cols-2">
+                <MatchDetail match={match} showCompatibility={false} />
+                <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
+                  <h2 className="mb-5 text-lg font-semibold text-[var(--color-text-primary)]">
+                    Taste card
+                  </h2>
+                  <TasteCard
+                    taste={tasteCard}
+                    user={{
+                      archetype: tasteCardUser.archetype,
+                      vibe_summary: tasteCardUser.vibe_summary,
+                      key_themes: tasteCardUser.key_themes,
+                    }}
+                  />
+                </section>
+              </div>
+            }
+            edit={
+              <div className="space-y-6">
+                <section className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+                  <div className="space-y-1">
+                    <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
+                      Your profile
+                    </h1>
+                    <p className="text-sm text-[var(--color-text-secondary)]">
+                      Manage what people see and how your taste shapes matches.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <TasteActions
+                      hasData={hasAnyTasteData}
+                      publicTasteUrl={profileUrl}
+                    />
+                    <ButtonLink
+                      href="/connections"
+                      variant="secondary"
+                      size="md"
+                      className="gap-2"
+                    >
+                      <Plug className="h-4 w-4" />
+                      <span className="hidden sm:inline">Manage services</span>
+                    </ButtonLink>
+                  </div>
+                </section>
+
+                <div className="grid items-start gap-6 lg:grid-cols-2">
+                  <MatchDetail match={match} showCompatibility={false} />
+                  <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
+                    <h2 className="mb-5 text-lg font-semibold text-[var(--color-text-primary)]">
+                      Taste card
+                    </h2>
+                    <TasteCard
+                      taste={tasteCard}
+                      connectedServiceIds={connectedServiceIds}
+                      editable
+                      showObsessions={false}
+                      showOverrides={false}
+                      user={{
+                        archetype: tasteCardUser.archetype,
+                        vibe_summary: tasteCardUser.vibe_summary,
+                        key_themes: tasteCardUser.key_themes,
+                      }}
+                    />
+                    <div className="mt-5 border-t border-[var(--color-border-subtle)] pt-5">
+                      <ButtonLink
+                        href="/connections"
+                        variant="secondary"
+                        size="md"
+                        className="w-full gap-2"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Add services
+                      </ButtonLink>
+                    </div>
+                    <div className="mt-6 space-y-6 border-t border-[var(--color-border-subtle)] pt-6">
+                      <section>
+                        <ManualObsessionsEditor
+                          initialObsessions={tasteCard.manual_obsessions}
+                        />
+                      </section>
+
+                      <section className="border-t border-[var(--color-border-subtle)] pt-6">
+                        <ButtonLink
+                          href="/settings/taste"
+                          variant="secondary"
+                          size="md"
+                          className="w-full gap-2"
+                        >
+                          <SlidersHorizontal className="h-4 w-4" />
+                          Edit taste controls
+                        </ButtonLink>
+                      </section>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            }
+          />
+        ) : tasteCard && tasteCardUser ? (
           <div className="grid items-start gap-6 lg:grid-cols-2">
-            <MatchDetail match={match} showCompatibility={!isOwnProfile} />
+            <MatchDetail match={match} />
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
               <h2 className="mb-5 text-lg font-semibold text-[var(--color-text-primary)]">
                 Taste card
               </h2>
               <TasteCard
                 taste={tasteCard}
-                connectedServiceIds={connectedServiceIds}
+                viewerIsOwner={false}
                 user={{
                   archetype: tasteCardUser.archetype,
                   vibe_summary: tasteCardUser.vibe_summary,

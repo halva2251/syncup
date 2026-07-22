@@ -11,6 +11,8 @@ interface TasteServiceCarouselProps {
   serviceIds: string[];
   services: TasteResponse["services"];
   connectedServiceIds?: string[];
+  editable?: boolean;
+  viewerIsOwner?: boolean;
 }
 
 const AUTO_ADVANCE_MS = 10000;
@@ -19,6 +21,8 @@ export function TasteServiceCarousel({
   serviceIds,
   services,
   connectedServiceIds,
+  editable = false,
+  viewerIsOwner = true,
 }: TasteServiceCarouselProps) {
   const [index, setIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
@@ -75,7 +79,7 @@ export function TasteServiceCarousel({
         id={labelId}
         className="text-sm font-medium text-[var(--color-text-secondary)]"
       >
-        From your connected services
+        From {viewerIsOwner ? "your" : "their"} connected services
       </h3>
 
       <div
@@ -110,6 +114,7 @@ export function TasteServiceCarousel({
                   data={services[serviceId]}
                   bordered={false}
                   canDisconnect={connectedServiceIds?.includes(serviceId) ?? false}
+                  canEditItems={editable}
                 />
               </div>
             );

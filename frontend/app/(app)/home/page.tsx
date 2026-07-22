@@ -9,6 +9,7 @@ import {
   Compass,
   ChevronRight,
   Lightbulb,
+  UserRound,
   type LucideIcon,
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
@@ -93,7 +94,7 @@ function formatTimestamp(value: string | null): string {
 }
 
 interface QuickLink {
-  href: string;
+  href: (userId: string) => string;
   icon: LucideIcon;
   gradient: AppIconGradient;
   title: string;
@@ -102,28 +103,28 @@ interface QuickLink {
 
 const QUICK_LINKS: QuickLink[] = [
   {
-    href: "/taste",
-    icon: Sparkles,
+    href: (userId) => `/feed/${userId}`,
+    icon: UserRound,
     gradient: "brand",
-    title: "Your Taste",
-    description: "View and share your taste card.",
+    title: "Your profile",
+    description: "View and edit your taste card.",
   },
   {
-    href: "/connections",
+    href: () => "/connections",
     icon: Plug,
     gradient: "orange",
     title: "Connections",
     description: "Connect or sync your platforms.",
   },
   {
-    href: "/feed",
+    href: () => "/feed",
     icon: Users,
     gradient: "purple",
     title: "Feed",
     description: "Browse people with compatible taste.",
   },
   {
-    href: "/recommendations",
+    href: () => "/recommendations",
     icon: Compass,
     gradient: "green",
     title: "Recommendations",
@@ -246,10 +247,10 @@ export default async function HomePage() {
         <nav aria-label="Quick links" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {QUICK_LINKS.map((link) => (
             <ButtonLink
-              key={link.href}
-              href={link.href}
+              key={link.title}
+              href={link.href(user.id)}
               variant="secondary"
-              className="group !flex h-auto items-start justify-start gap-4 border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 text-left hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-bg-page)]"
+              className="group !flex h-auto items-start justify-start gap-4 border-[var(--color-border)] !bg-[var(--color-bg-card)] p-5 text-left hover:border-[var(--color-accent)]/40 hover:bg-[var(--color-bg-page)]"
             >
               <AppIcon icon={link.icon} size="sm" gradient={link.gradient} />
               <div className="min-w-0 flex-1">
