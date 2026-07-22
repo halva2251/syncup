@@ -20,7 +20,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Taste card | ✅ Component built; `/me/taste` page is still a shell |
 | Matches feed | ⏸ Not built |
 | Recommendations | ⏸ Not built |
-| Settings / dimensions | ⏸ Not built |
+| Settings (hub + profile/privacy/dimensions/services) | ✅ Built |
 
 ---
 
@@ -136,9 +136,27 @@ import { AppIcon } from "@/components/ui/app-icon";
 
 ---
 
+## Implemented Component: `ServiceConnectGrid`
+
+`frontend/components/connections/service-connect-grid.tsx` renders the full service-connection grid (OAuth, API-key, and CSV flows) plus live sync polling. It was extracted from the onboarding step so both `/onboarding/services` and `/connections` can share the same UI.
+
+### Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `initialConnections` | `ServiceConnection[]` | Connections seeded from `GET /api/me` (server-fetched and passed in). |
+| `onActivity?` | `(serviceId: string) => void` | Optional callback fired when a connect/sync/import cycle starts. |
+| `className?` | `string` | Extra classes on the grid container. |
+
+> **Note on disconnect:** `DELETE /api/me/connections/{service}` is still Sketch on the backend, so the grid does not yet offer a disconnect action. `/connections` surfaces this limitation with a footnote.
+
+---
+
 ## Page Plan
 
 The frontend implements the routes defined in GitHub issue #21 ("DESIGN: frontend").
+
+> **Route prefix note:** the routes below are documented as `/me/...` for parity with the backend (`/api/me/...`), but the **actual frontend URLs drop the `/me` prefix** — e.g. `/taste`, `/settings`, `/connections`. The onboarding flow lives at `/onboarding/...`.
 
 ### Auth pages
 
@@ -181,8 +199,12 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 | `/home` | Dashboard landing after onboarding. | `GET /api/me` |
 | `/me/taste` | **Primary product.** Taste card with archetype, top items, share buttons, OG image. | `GET /api/me/taste`, `POST /api/me/recompute` |
 | `/me/connections` | Service grid, sync status, OAuth + CSV upload flows. | `GET /api/me`, `POST /api/sync/{service}`, connect endpoints |
-| `/me/settings` | Profile editing and the three taste-control levers (exclude, boost, obsessions). | `PATCH /api/me`, `PATCH /api/me/items/{id}`, obsessions/overrides |
-| `/me/dimensions` | Per-service weight sliders. | `GET /api/me/dimensions`, `PATCH /api/me/dimensions` |
+| `/me/settings` | Hub linking to the settings sub-pages. | `GET /api/me` |
+| `/me/settings/profile` | Profile editor: display name, bio, Discord handle, avatar photo upload, languages. | `PATCH /api/me`, `POST /api/me/avatar` |
+| `/me/settings/privacy` | Discoverable-matching toggle. | `PATCH /api/me` |
+| `/me/settings/taste` | Preference overrides editor (boost/dampen specific items). | `GET/POST/PATCH/DELETE /api/me/overrides` |
+| `/me/settings/dimensions` | Per-service taste weight sliders. | `GET /api/me`, `GET /api/me/dimensions`, `PATCH /api/me/dimensions` |
+| `/me/settings/services` | Sync-status readout for connected services; links to `/connections` for connect/sync flows. | `GET /api/me` |
 | `/me/recommendations` | "Because you love X → try Y" cross-domain recs. | `GET /api/me/recommendations` |
 | `/matches` | Scrollable match feed (not swipe). | `GET /api/matches`, `POST /api/me/recompute` |
 | `/matches/[id]` | Match detail, reveals Discord handle. | `GET /api/matches/{id}` |
@@ -438,4 +460,4 @@ These are documented in the project docs and should be revisited before building
 
 ---
 
-*Last updated: 2026-06-13*
+*Last updated: 2026-07-19*

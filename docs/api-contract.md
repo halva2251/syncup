@@ -116,7 +116,14 @@ Partial update — only fields present in the body are written. Returns the upda
 
 - `display_name`: min 1, max 200 chars; sending `null` is a no-op (field is NOT NULL)
 - `bio`, `discord_handle`, `avatar_url`: nullable; sending `null` clears the field
+- `avatar_url` accepts an http(s) URL or a local `/uploads/...` path returned by `POST /me/avatar`
 - `is_matchable`: strict bool — `"yes"` and `"true"` are rejected (422)
+
+### `POST /me/avatar` — Live ✅
+
+Upload a profile photo. Multipart form with a single `file` field. The image is validated by magic bytes (PNG, JPEG, WebP, or GIF), capped at 5 MB, stored on disk, and served back at `/uploads/avatars/<name>.<ext>`. The user's `avatar_url` is set to that path; the previous locally-stored avatar is deleted. Returns the updated user object (same shape as `PATCH /me`).
+
+Errors: `401 UNAUTHORIZED`, `413 FILE_TOO_LARGE` (over 5 MB), `422 INVALID_FILE_TYPE` (unsupported type or bytes don't match a real image), `429 RATE_LIMITED` (10/min).
 
 ### `DELETE /me` — Sketch
 Hard-delete; cascades to all user data.
