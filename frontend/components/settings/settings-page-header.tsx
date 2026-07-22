@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { AppIcon } from "@/components/ui/app-icon";
 
 interface SettingsPageHeaderProps {
   icon: LucideIcon;
@@ -13,7 +14,7 @@ interface SettingsPageHeaderProps {
 }
 
 export function SettingsPageHeader({
-  icon: Icon,
+  icon,
   title,
   description,
   backHref = "/settings",
@@ -29,8 +30,8 @@ export function SettingsPageHeader({
         {backLabel}
       </Link>
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Icon className="h-5 w-5 text-[var(--color-accent)]" strokeWidth={2} />
+        <div className="flex items-center gap-3">
+          <AppIcon icon={icon} size="xs" gradient="brand" />
           <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">
             {title}
           </h1>

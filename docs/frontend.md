@@ -162,11 +162,11 @@ Small reusable building blocks used across pages. Prefer these over re-rolling t
 
 ### `PageHeader`
 
-`frontend/components/ui/page-header.tsx` — the standard page header (accent Lucide icon + title + description, with an optional right-aligned `actions` slot). Used by `/home`, `/settings`, `/feed`, and `/connections`. Server Component.
+`frontend/components/ui/page-header.tsx` — the standard page header (`AppIcon` + title + description, with an optional right-aligned `actions` slot). Used by `/home`, `/settings`, `/feed`, and `/connections`. Server Component.
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `icon` | `LucideIcon` | Icon rendered in `--color-accent` next to the title. |
+| `icon` | `LucideIcon` | Icon rendered in an `AppIcon` tile next to the title. |
 | `title` | `string` | Page title (`24px` semibold). |
 | `description?` | `string` | Subtitle in `--text-secondary`. |
 | `actions?` | `ReactNode` | Optional right-aligned slot (buttons/links). |

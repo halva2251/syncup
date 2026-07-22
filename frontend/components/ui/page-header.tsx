@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import { AppIcon } from "@/components/ui/app-icon";
 
 interface PageHeaderProps {
-  /** Lucide icon shown in the accent color next to the title. */
+  /** Lucide icon rendered in an AppIcon tile next to the title. */
   icon: LucideIcon;
   /** Main page title. */
   title: string;
@@ -13,13 +14,13 @@ interface PageHeaderProps {
 }
 
 /**
- * Shared page header: accent icon + title + description, with an optional
+ * Shared page header: AppIcon + title + description, with an optional
  * actions slot aligned to the right on `sm+` viewports.
  *
  * Rendered as a Server Component so it can accept React node props.
  */
 export function PageHeader({
-  icon: Icon,
+  icon,
   title,
   description,
   actions,
@@ -27,8 +28,8 @@ export function PageHeader({
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <Icon className="h-5 w-5 text-[var(--color-accent)]" />
+        <div className="flex items-center gap-3">
+          <AppIcon icon={icon} size="xs" gradient="brand" />
           <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">
             {title}
           </h1>

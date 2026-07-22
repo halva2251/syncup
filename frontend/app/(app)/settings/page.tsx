@@ -103,8 +103,8 @@ export default async function SettingsHubPage() {
     <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
       <div className="space-y-6">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <SettingsIcon className="h-5 w-5 text-[var(--color-accent)]" />
+          <div className="flex items-center gap-3">
+            <AppIcon icon={SettingsIcon} size="xs" gradient="brand" />
             <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">
               Settings
             </h1>
