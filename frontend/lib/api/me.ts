@@ -21,6 +21,15 @@ export async function updateProfile(body: ProfileUpdate): Promise<User> {
   });
 }
 
+export async function uploadAvatar(file: File): Promise<User> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiFetch<User>("/me/avatar", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 export async function updateItemExclusion(
   itemId: string,
   excluded: boolean,
