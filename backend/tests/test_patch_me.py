@@ -114,6 +114,21 @@ def test_patch_me_updates_is_matchable(
     assert resp.json()["is_matchable"] is True
 
 
+def test_patch_me_removes_cached_matches_when_disabling_discoverability(
+    patch_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    c, user = patch_client
+    user.is_matchable = True
+
+    resp = c.patch("/api/me", json={"is_matchable": False})
+
+    assert resp.status_code == 200
+    assert resp.json()["is_matchable"] is False
+    statement = mock_db.execute.call_args.args[0]
+    assert "DELETE FROM match_cache" in str(statement)
+
+
 def test_patch_me_updates_bio(patch_client: tuple[TestClient, User]) -> None:
     c, _ = patch_client
     resp = c.patch("/api/me", json={"bio": "I love Disco Elysium"})

@@ -748,7 +748,7 @@ def get_matches(
         for u in db.scalars(
             select(User)
             .options(selectinload(User.service_connections))
-            .where(User.id.in_(other_user_ids))
+            .where(User.id.in_(other_user_ids), User.is_matchable == True)  # noqa: E712
         ).all()
     }
 
@@ -792,7 +792,7 @@ def get_match_detail(
         raise SyncUpError("FORBIDDEN", "Not your match", 403)
 
     other = db.get(User, other_user_id)
-    if not other:
+    if not other or not other.is_matchable:
         raise SyncUpError("NOT_FOUND", "User not found", 404)
 
     return MatchOut(

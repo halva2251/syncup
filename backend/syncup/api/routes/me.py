@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, UploadFile
 from pydantic import BaseModel, Field, StrictBool, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
@@ -19,7 +19,7 @@ from syncup.constants.languages import (
     MAX_LANGUAGES,
     SUPPORTED_LANGUAGE_CODES,
 )
-from syncup.db.models import Item, ServiceConnection, UserEmbedding, UserItem
+from syncup.db.models import Item, MatchCache, ServiceConnection, UserEmbedding, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
@@ -203,6 +203,14 @@ def patch_me(
         user.avatar_url = body.avatar_url
     if "is_matchable" in fields and body.is_matchable is not None:
         user.is_matchable = body.is_matchable
+        if not body.is_matchable:
+            # Cached rows are otherwise served to every existing match for up to
+            # 24 hours, even after this user opts out of discoverability.
+            db.execute(
+                delete(MatchCache).where(
+                    or_(MatchCache.user_a_id == user.id, MatchCache.user_b_id == user.id)
+                )
+            )
     if "languages" in fields:
         user.languages = body.languages
 

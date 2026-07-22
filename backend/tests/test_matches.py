@@ -404,6 +404,20 @@ def test_get_match_detail_404_when_not_cached(
     assert resp.status_code == 404
 
 
+def test_get_match_detail_hides_user_who_disabled_discoverability(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    client, user = match_client
+    other = _make_user(is_matchable=False)
+    row = _make_cache_row(user.id, other.id)
+    mock_db.get.side_effect = lambda model, pk: row if model is MatchCache else other
+
+    resp = client.get(f"/api/matches/{other.id}")
+
+    assert resp.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # POST /api/me/recompute
 # ---------------------------------------------------------------------------
