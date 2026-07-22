@@ -18,6 +18,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Auth / login / signup | ✅ Built |
 | Onboarding | ✅ 4-step wizard built (languages, services, obsessions, taste preview) |
 | Taste card | ✅ Component built; `/me/taste` page is still a shell |
+| Home dashboard (`/home`) | ✅ Built |
 | Matches feed | ⏸ Not built |
 | Recommendations | ⏸ Not built |
 | Settings (hub + profile/privacy/dimensions/taste/services) | ✅ Built |
@@ -154,6 +155,37 @@ import { AppIcon } from "@/components/ui/app-icon";
 
 ---
 
+## Shared UI Primitives
+
+Small reusable building blocks used across pages. Prefer these over re-rolling the same markup.
+
+### `PageHeader`
+
+`frontend/components/ui/page-header.tsx` — the standard page header (accent Lucide icon + title + description, with an optional right-aligned `actions` slot). Used by `/home`, `/settings`, `/taste`, `/connections`. Server Component.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `icon` | `LucideIcon` | Icon rendered in `--color-accent` next to the title. |
+| `title` | `string` | Page title (`24px` semibold). |
+| `description?` | `string` | Subtitle in `--text-secondary`. |
+| `actions?` | `ReactNode` | Optional right-aligned slot (buttons/links). |
+
+### `StatCard`
+
+`frontend/components/ui/stat-card.tsx` — compact stat tile (`AppIcon` + label + value + hint) for dashboard overview rows per the DESIGN.md "Dashboard / Home" pattern. Server Component.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `icon` | `LucideIcon` | Lucide icon passed to `AppIcon`. |
+| `gradient?` | `AppIconGradient` | `AppIcon` gradient key (default `"blue"`). |
+| `label` | `string` | Uppercase label above the value. |
+| `value` | `ReactNode` | Prominent stat value. |
+| `hint?` | `ReactNode` | Muted hint below the value. |
+
+> `AppIconGradient` is exported from `components/ui/app-icon.tsx` so pages no longer need to redefine the gradient union locally.
+
+---
+
 ## Page Plan
 
 The frontend implements the routes defined in GitHub issue #21 ("DESIGN: frontend").
@@ -198,7 +230,7 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 | Route | Purpose | Key endpoints |
 |-------|---------|---------------|
 | `/onboarding` | 4-step wizard: languages → connect services → manual obsessions → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
-| `/home` | Dashboard landing after onboarding. | `GET /api/me` |
+| `/home` | Dashboard landing after onboarding. Stat overview (services, taste items, obsessions, matching status), vibe summary, quick links, connected-services status, and recommendations teaser. | `GET /api/me`, `GET /api/me/taste` |
 | `/me/taste` | **Primary product.** Taste card with archetype, top items, share buttons, OG image. | `GET /api/me/taste`, `POST /api/me/recompute` |
 | `/me/connections` | Service grid, sync status, OAuth + CSV upload flows. | `GET /api/me`, `POST /api/sync/{service}`, connect endpoints |
 | `/me/settings` | Hub linking to the settings sub-pages. | `GET /api/me` |
@@ -462,4 +494,4 @@ These are documented in the project docs and should be revisited before building
 
 ---
 
-*Last updated: 2026-07-19*
+*Last updated: 2026-07-22*
