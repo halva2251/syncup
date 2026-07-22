@@ -7,7 +7,6 @@ import {
   Home,
   Settings,
   Sparkles,
-  Users,
   type LucideIcon,
 } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
@@ -42,15 +41,9 @@ const FOOTER_LINKS: FooterLink[] = [
     matches: (pathname) => pathname === "/home",
   },
   {
-    href: "/taste",
-    label: "Taste",
-    icon: Sparkles,
-    matches: (pathname) => pathname === "/taste" || pathname.startsWith("/taste/"),
-  },
-  {
     href: "/feed",
     label: "Feed",
-    icon: Users,
+    icon: Sparkles,
     matches: (pathname) => pathname === "/feed" || pathname.startsWith("/feed/"),
   },
   {
