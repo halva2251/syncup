@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { SlidersHorizontal } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
+import { listTasteItems } from "@/lib/api/items";
+import { getCurrentUser } from "@/lib/api/me";
 import { listOverrides } from "@/lib/api/overrides";
 import { SettingsPageHeader } from "@/components/settings/settings-page-header";
 import { PreferenceOverridesEditor } from "@/components/taste/preference-overrides-editor";
@@ -14,8 +16,14 @@ export const metadata: Metadata = {
 
 export default async function TasteSettingsPage() {
   let overrides;
+  let tasteItems;
+  let me;
   try {
-    overrides = await listOverrides();
+    [overrides, tasteItems, me] = await Promise.all([
+      listOverrides(),
+      listTasteItems(),
+      getCurrentUser(),
+    ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       redirect("/login");
@@ -33,16 +41,19 @@ export default async function TasteSettingsPage() {
         />
 
         <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
-          <PreferenceOverridesEditor initialOverrides={overrides} />
+          <PreferenceOverridesEditor
+            initialOverrides={overrides}
+            availableItems={tasteItems}
+          />
         </section>
 
         <p className="text-xs text-[var(--color-text-tertiary)]">
           Excluding individual items lives on your{" "}
           <a
-            href="/taste"
+            href={`/feed/${me.user.id}`}
             className="text-[var(--color-accent)] underline-offset-2 hover:underline"
           >
-            taste card
+            profile
           </a>
           . Per-service weighting lives in{" "}
           <a

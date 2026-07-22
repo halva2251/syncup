@@ -60,6 +60,13 @@ export interface TasteItem {
   play_count?: number;
 }
 
+export interface TasteItemChoice {
+  id: string;
+  name: string;
+  service: string;
+  item_type: string;
+}
+
 export interface ManualObsession {
   id: string;
   category: string;

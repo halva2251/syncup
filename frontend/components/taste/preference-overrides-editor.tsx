@@ -11,10 +11,11 @@ import {
   updateOverrideAction,
   deleteOverrideAction,
 } from "@/lib/actions/override-actions";
-import type { PreferenceOverride } from "@/types/api";
+import type { PreferenceOverride, TasteItemChoice } from "@/types/api";
 
 interface PreferenceOverridesEditorProps {
   initialOverrides: PreferenceOverride[];
+  availableItems: TasteItemChoice[];
 }
 
 const BOOST_MIN = 0.1;
@@ -23,6 +24,7 @@ const BOOST_STEP = 0.1;
 
 export function PreferenceOverridesEditor({
   initialOverrides,
+  availableItems,
 }: PreferenceOverridesEditorProps) {
   const [overrides, setOverrides] = useState(initialOverrides);
   const [showCreate, setShowCreate] = useState(false);
@@ -77,6 +79,9 @@ export function PreferenceOverridesEditor({
 
       {showCreate && (
         <CreateOverrideForm
+          availableItems={availableItems.filter(
+            (item) => !overrides.some((override) => override.item.id === item.id),
+          )}
           onCreated={handleCreated}
           onCancel={() => setShowCreate(false)}
         />
@@ -212,16 +217,24 @@ function OverrideRow({
 }
 
 interface CreateOverrideFormProps {
+  availableItems: TasteItemChoice[];
   onCreated: (override: PreferenceOverride) => void;
   onCancel: () => void;
 }
 
-function CreateOverrideForm({ onCreated, onCancel }: CreateOverrideFormProps) {
+function CreateOverrideForm({
+  availableItems,
+  onCreated,
+  onCancel,
+}: CreateOverrideFormProps) {
   const [itemId, setItemId] = useState("");
+  const [itemType, setItemType] = useState("");
   const [boost, setBoost] = useState(1);
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const itemTypes = [...new Set(availableItems.map((item) => item.item_type))].sort();
+  const matchingItems = availableItems.filter((item) => item.item_type === itemType);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -248,17 +261,60 @@ function CreateOverrideForm({ onCreated, onCancel }: CreateOverrideFormProps) {
     >
       {error && <ErrorMessage>{error}</ErrorMessage>}
 
-      <Input
-        label="Item ID"
-        value={itemId}
-        onChange={(e) => setItemId(e.target.value)}
-        placeholder="UUID of the catalog item"
-        required
-      />
-      <p className="-mt-2 text-xs text-[var(--color-text-tertiary)]">
-        The canonical item UUID from the SyncUp catalog. A name-based picker will
-        arrive once the backend exposes item lookup for overrides.
-      </p>
+      <div>
+        <label
+          htmlFor="override-item-type"
+          className="mb-2 block text-[15px] font-medium text-[var(--color-text-primary)]"
+        >
+          Type
+        </label>
+        <select
+          id="override-item-type"
+          value={itemType}
+          onChange={(e) => {
+            setItemType(e.target.value);
+            setItemId("");
+          }}
+          required
+          className="h-[42px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 text-[15px] text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-bg-page)] focus:border-[var(--color-accent)] focus:outline-none focus:ring-[3px] focus:ring-[var(--color-accent-soft)]"
+        >
+          <option value="">Choose a type…</option>
+          {itemTypes.map((type) => (
+            <option key={type} value={type}>
+              {type.charAt(0).toUpperCase() + type.slice(1)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label
+          htmlFor="override-item"
+          className="mb-2 block text-[15px] font-medium text-[var(--color-text-primary)]"
+        >
+          Item
+        </label>
+        <select
+          id="override-item"
+          value={itemId}
+          onChange={(e) => setItemId(e.target.value)}
+          required
+          disabled={!itemType}
+          className="h-[42px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] px-3 text-[15px] text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-bg-page)] focus:border-[var(--color-accent)] focus:outline-none focus:ring-[3px] focus:ring-[var(--color-accent-soft)]"
+        >
+          <option value="">
+            {itemType ? "Choose an item…" : "Choose a type first…"}
+          </option>
+          {matchingItems.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name} · {item.service}
+            </option>
+          ))}
+        </select>
+        <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
+          Pick from the items in your connected taste profile.
+        </p>
+      </div>
 
       <div className="space-y-2">
         <label className="block text-[15px] font-medium text-[var(--color-text-primary)]">
