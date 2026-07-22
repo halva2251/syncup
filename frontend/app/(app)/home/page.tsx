@@ -162,7 +162,7 @@ export default async function HomePage() {
         <PageHeader
           icon={HomeIcon}
           title={`Welcome back, ${user.display_name.split(" ")[0]}`}
-          description="Your SyncUp dashboard — taste, matches, and connections at a glance."
+          description="Your taste, matches, and connections at a glance."
         />
 
         {/* Stat overview row */}
@@ -352,7 +352,7 @@ function RecommendationsTeaser({ hasTasteData }: { hasTasteData: boolean }) {
             Looking for something new?
           </h2>
           <p className="text-[13px] text-[var(--color-text-secondary)]">
-            Get cross-domain recommendations based on your taste.
+            Get recommendations based on your taste across games, music, films, and more.
           </p>
         </div>
       </div>
