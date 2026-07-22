@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Compass, Home, Sparkles, Users, type LucideIcon } from "lucide-react";
+import {
+  Compass,
+  Home,
+  Settings,
+  Sparkles,
+  Users,
+  type LucideIcon,
+} from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils/cn";
 
@@ -51,6 +58,12 @@ const FOOTER_LINKS: FooterLink[] = [
     icon: Compass,
     matches: (pathname) => pathname === "/recommendations",
   },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: Settings,
+    matches: (pathname) => pathname === "/settings" || pathname.startsWith("/settings/"),
+  },
 ];
 
 /**
@@ -65,7 +78,7 @@ export function AppFooter({ avatarUrl, displayName }: AppFooterProps) {
     return null;
   }
 
-  const profileIsActive = pathname.startsWith("/settings");
+  const profileIsActive = pathname === "/settings/profile";
 
   return (
     <footer

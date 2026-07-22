@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Mail,
   CalendarDays,
+  SunMoon,
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { getCurrentUser } from "@/lib/api/me";
@@ -66,6 +67,13 @@ const SETTINGS_CARDS: SettingsCardDef[] = [
     gradient: "orange",
     title: "Connected Services",
     description: "Sync status for your linked platforms.",
+  },
+  {
+    href: "/settings/appearance",
+    icon: SunMoon,
+    gradient: "blue",
+    title: "Appearance",
+    description: "Choose light or dark mode across SyncUp.",
   },
 ];
 
