@@ -95,6 +95,12 @@ class MatchListOut(BaseModel):
     next_cursor: str | None
 
 
+class MatchSummaryOut(BaseModel):
+    """Small dashboard-friendly summary of the current user's fresh match cache."""
+
+    count: int
+
+
 def _parse_highlights(raw: object) -> list[SharedHighlightOut]:
     """Defensively parse cached highlight JSON.
 
@@ -201,6 +207,22 @@ def _load_cached_matches(
     )
     has_more = len(rows) > limit
     return rows[:limit], has_more
+
+
+def _count_cached_matches(user_id: uuid.UUID, db: DbSession) -> int:
+    """Count the current user's fresh cached matches without loading match details."""
+    cutoff = datetime.now(UTC) - timedelta(hours=_CACHE_MAX_AGE_HOURS)
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(MatchCache)
+            .where(
+                or_(MatchCache.user_a_id == user_id, MatchCache.user_b_id == user_id),
+                MatchCache.computed_at >= cutoff,
+            )
+        )
+        or 0
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -572,6 +594,25 @@ def _cleanup_stale_match_cache(db_factory: sessionmaker[DbSession]) -> None:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+
+@router.get("/matches/summary", response_model=MatchSummaryOut)
+@limiter.limit("60/minute")
+def get_match_summary(
+    request: Request,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+) -> MatchSummaryOut:
+    """Return the number of fresh cached matches for the dashboard.
+
+    This deliberately does not trigger a recomputation: rendering the home page
+    should stay a cheap read, and a user can request a refresh from the matches
+    experience when their cache is empty or stale.
+    """
+    if not user.is_matchable:
+        return MatchSummaryOut(count=0)
+
+    return MatchSummaryOut(count=_count_cached_matches(user.id, db))
 
 
 @router.get("/matches", response_model=MatchListOut)

@@ -292,6 +292,7 @@ See [`api-contract.md`](./api-contract.md) for the full spec. Relevant frontend 
 - `GET /api/onboarding/status`
 - `GET /api/me/taste`
 - `GET /api/me/recommendations`
+- `GET /api/matches/summary`
 - `GET /api/matches`
 - `GET /api/matches/{user_id}`
 - `POST /api/me/recompute`

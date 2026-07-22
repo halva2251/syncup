@@ -408,6 +408,9 @@ Setting `excluded: false` re-includes the item. Both directions are idempotent.
 
 > Block H (2026-06-06): semantic ANN path active. `matching_mode` field added to all match responses.
 
+### `GET /matches/summary` — Live ✅
+Lightweight dashboard count of the current user's fresh cached matches. Returns `{ "count": 0 }` when matching is disabled or no fresh cache entries exist. It performs a database aggregate only; it does not fetch match details or trigger a recompute.
+
 ### `GET /matches?limit=20&cursor=...` — Live ✅
 Top matches for the current user. Returns empty immediately on cache miss; match cache is refreshed in the background.
 

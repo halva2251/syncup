@@ -114,6 +114,11 @@ export interface MatchListResponse {
   next_cursor: string | null;
 }
 
+export interface MatchSummary {
+  /** Number of fresh cached matches for the current user. */
+  count: number;
+}
+
 export interface Recommendation {
   item_name: string;
   service: string;

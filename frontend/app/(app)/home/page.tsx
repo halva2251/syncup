@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { getCurrentUser } from "@/lib/api/me";
+import { getMatchSummary } from "@/lib/api/matches";
 import { getTasteProfile } from "@/lib/api/taste";
 import { SERVICE_BY_ID } from "@/lib/constants/services";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,6 +21,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { ButtonLink } from "@/components/ui/button";
 import { AppIcon, type AppIconGradient } from "@/components/ui/app-icon";
 import type {
+  MatchSummary,
   MeResponse,
   TasteResponse,
   ServiceConnection,
@@ -132,8 +134,13 @@ const QUICK_LINKS: QuickLink[] = [
 export default async function HomePage() {
   let me: MeResponse;
   let taste: TasteResponse;
+  let matchSummary: MatchSummary;
   try {
-    [me, taste] = await Promise.all([getCurrentUser(), getTasteProfile()]);
+    [me, taste, matchSummary] = await Promise.all([
+      getCurrentUser(),
+      getTasteProfile(),
+      getMatchSummary(),
+    ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       redirect("/login");
@@ -184,8 +191,8 @@ export default async function HomePage() {
           <StatCard
             icon={Users}
             gradient="purple"
-            label="Matching"
-            value={user.is_matchable ? "On" : "Off"}
+            label="Matches found"
+            value={matchSummary.count}
           />
         </section>
 
