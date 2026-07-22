@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     reddit_redirect_uri: str = "http://127.0.0.1:3000/api/connect/reddit/oauth/callback"
     reddit_user_agent: str = ""
 
+    # ── Uploads ──────────────────────────────────────────────────────────────
+    # Directory for user-uploaded files (avatars). Relative to the backend
+    # working directory. Served statically at /uploads.
+    upload_dir: str = "data/uploads"
+    avatar_max_bytes: int = 5 * 1024 * 1024  # 5 MB
+
     # ── Phase 2 ML ───────────────────────────────────────────────────────────
     # Sentence-transformers model used for semantic item embeddings.
     # all-MiniLM-L6-v2 outputs 384-dim vectors; must match EMBEDDING_DIM.

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, UploadFile
 from pydantic import BaseModel, Field, StrictBool, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -18,9 +20,30 @@ from syncup.constants.languages import (
 )
 from syncup.db.models import ServiceConnection
 from syncup.db.session import get_db
+from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
 
 router = APIRouter(prefix="/api", tags=["users"])
+
+_AVATAR_CONTENT_TYPES = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+
+def _sniff_image_type(data: bytes) -> str | None:
+    """Return the image content type matching the magic bytes, or None."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
 
 
 class MeOut(BaseModel):
@@ -56,6 +79,8 @@ class ProfilePatch(BaseModel):
             v = v.strip()
             if not v:
                 return None
+            if v.startswith("/uploads/"):
+                return v
             if not (v.startswith("http://") or v.startswith("https://")):
                 raise ValueError("must be an http(s) URL")
         return v
@@ -126,6 +151,62 @@ def patch_me(
     if "languages" in fields:
         user.languages = body.languages
 
+    db.commit()
+    db.refresh(user)
+    return UserOut.model_validate(user)
+
+
+@router.post("/me/avatar", response_model=UserOut)
+@limiter.limit("10/minute")
+def upload_avatar(
+    request: Request,
+    file: UploadFile,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+) -> UserOut:
+    """Upload a profile photo. Stores it locally and sets avatar_url to its path."""
+    settings = request.app.state.settings
+
+    # Content type is a UX hint; the magic-byte check below is the real gate.
+    if file.content_type and file.content_type not in _AVATAR_CONTENT_TYPES:
+        raise SyncUpError(
+            "INVALID_FILE_TYPE",
+            f"Expected a PNG, JPEG, WebP, or GIF image, got {file.content_type!r}",
+            422,
+        )
+
+    data = file.file.read(settings.avatar_max_bytes + 1)
+    if len(data) > settings.avatar_max_bytes:
+        raise SyncUpError(
+            "FILE_TOO_LARGE",
+            f"Image must be {settings.avatar_max_bytes // (1024 * 1024)} MB or smaller",
+            413,
+        )
+
+    detected = _sniff_image_type(data)
+    if detected is None:
+        raise SyncUpError(
+            "INVALID_FILE_TYPE",
+            "File does not look like a PNG, JPEG, WebP, or GIF image",
+            422,
+        )
+
+    upload_root = Path(settings.upload_dir)
+    avatar_dir = upload_root / "avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{_AVATAR_CONTENT_TYPES[detected]}"
+    (avatar_dir / filename).write_bytes(data)
+
+    # Best-effort cleanup of a previous locally-stored avatar.
+    if user.avatar_url and user.avatar_url.startswith("/uploads/"):
+        old = upload_root / user.avatar_url.removeprefix("/uploads/")
+        try:
+            if old.is_file() and old.resolve().is_relative_to(upload_root.resolve()):
+                old.unlink()
+        except OSError:
+            pass
+
+    user.avatar_url = f"/uploads/avatars/{filename}"
     db.commit()
     db.refresh(user)
     return UserOut.model_validate(user)
