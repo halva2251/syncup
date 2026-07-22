@@ -6,21 +6,27 @@ interface SettingsPageHeaderProps {
   icon: LucideIcon;
   title: string;
   description: string;
+  /** Back-link destination. Defaults to `/settings`. */
+  backHref?: string;
+  /** Back-link label. Defaults to "Settings". */
+  backLabel?: string;
 }
 
 export function SettingsPageHeader({
   icon: Icon,
   title,
   description,
+  backHref = "/settings",
+  backLabel = "Settings",
 }: SettingsPageHeaderProps) {
   return (
     <div className="space-y-3">
       <Link
-        href="/settings"
+        href={backHref}
         className="inline-flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]"
       >
         <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} />
-        Settings
+        {backLabel}
       </Link>
       <div className="space-y-1">
         <div className="flex items-center gap-2">
