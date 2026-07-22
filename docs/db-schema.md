@@ -37,6 +37,7 @@ CREATE TABLE users (
     avatar_url      TEXT,
     bio             TEXT,
     discord_handle  TEXT,                       -- shown to matches after reveal
+    social_links    JSONB NOT NULL DEFAULT '{}', -- manually added public social-profile URLs
     languages       TEXT[],                     -- nullable; skippable during onboarding
     is_matchable    BOOLEAN NOT NULL DEFAULT false,
     onboarded       BOOLEAN NOT NULL DEFAULT false,

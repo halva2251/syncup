@@ -1,6 +1,6 @@
 # SyncUp Frontend Documentation
 
-A living guide for the SyncUp Next.js frontend. Covers the current scaffold state, design system, page plan, API integration patterns, and conventions for anyone continuing the build.
+A living guide for the SyncUp Next.js frontend. Covers the current implementation, design system, page plan, API integration patterns, and conventions for anyone continuing the build.
 
 ---
 
@@ -49,17 +49,19 @@ The frontend is actively built out on top of the Phase 2 backend (semantic match
 frontend/
 ├── app/                  # Next.js App Router pages
 │   ├── (app)/            # Authenticated app shell routes
-│   │   └── home/
-│   │       └── page.tsx  # Currently an empty shell
+│   │   ├── home/         # Dashboard
+│   │   ├── feed/         # Discovery and public profile routes
+│   │   └── me/           # Settings, connections, and recommendations
 │   ├── globals.css       # Tailwind entry + design tokens
 │   ├── layout.tsx        # Root layout: DM Sans + metadata
 │   └── page.tsx          # Redirects / → /home
-├── components/           # React components (all shells except AppIcon)
-│   └── ui/
-│       └── app-icon.tsx  # Implemented app-style icon renderer
-├── hooks/                # Custom React hooks (scaffold)
-├── lib/                  # Utilities, fetch helpers, types (scaffold)
-├── types/                # Shared TypeScript types (scaffold)
+├── components/           # Feature and shared React components
+│   ├── matches/          # Feed, public profile, links & social
+│   ├── taste/            # Reusable public taste card and carousel
+│   └── ui/               # Shared controls, AppIcon, avatars, cards
+├── hooks/                # Custom React hooks
+├── lib/                  # Utilities, server actions, API clients, types
+├── types/                # Shared TypeScript types
 ├── public/               # Static assets
 ├── next.config.ts
 ├── package.json
@@ -204,7 +206,7 @@ Used by `/feed` and `/feed/[id]`:
 |-----------|------|-------------|
 | `MatchCard` | `match-card.tsx` | One feed entry: avatar, name, score pill, highlights, mode tag. Links to `/feed/[id]`. |
 | `MatchList` | `match-list.tsx` | **Client.** Cursor-paginated feed ("Load more") with cache-miss auto-polling and loading/empty states. |
-| `MatchDetail` | `match-detail.tsx` | Full match profile: identity header, compatibility bar, per-service breakdown, shared highlights, Discord handle. |
+| `MatchDetail` | `match-detail.tsx` | Full match profile: identity header with public languages, compatibility bar, per-service breakdown, shared highlights, Links & social, and taste card. |
 | `MatchScore` | `match-score.tsx` | Reusable compatibility display. `variant="compact"` (pill) for cards, `"detail"` (bar) for detail. |
 | `MatchHighlights` | `match-highlights.tsx` | Shared-taste highlight chips with service brand icons. `compact` (truncated) vs. `detail` (full). |
 
@@ -420,7 +422,7 @@ Current behavior:
 - Show the user's archetype label and vibe summary (if LLM key is configured).
 - Display top items per connected service in a carousel (`TasteServiceCarousel`):
   - Auto-advances every 10 seconds; pauses on hover.
-  - Service icons act as dot-style controls (current in color, others muted).
+  - Service icons act as dot-style controls. The active icon progressively desaturates from top to bottom across the 10-second interval; the muted base is revealed as the next-card timer.
   - Prev/next arrow controls at the bottom right.
   - Slides move left/right inside a fixed border card.
   - Each bucket shows up to 5 items.
@@ -438,13 +440,13 @@ The signed-in user's profile includes a copy-link action and an edit mode. Edit 
 The discovery feed lives at `/feed` (formerly `/matches`). It is a scrollable card list, **not** a swipe interface (MVP decision).
 
 - Each `MatchCard`: avatar, display name, compatibility score pill, shared-highlight chips, matching-mode tag.
-- Clicking a card opens `/feed/[id]` and reveals the Discord handle immediately (MVP decision).
+- Clicking a card opens `/feed/[id]` and reveals public profile details immediately (Discord handle, languages, and Links & social; MVP decision).
 - `MatchList` (client) handles cursor pagination via "Load more", plus auto-polling when the match cache is being rebuilt after a cache miss.
 - A "Refresh matches" action calls `POST /api/me/recompute` (rate-limited to 1/hour server-side).
 - `matching_mode` field shows `"heuristic"` (taste overlap) or `"semantic"` (embedding-based).
-- `/feed/[id]` detail shows the compatibility score bar, per-service breakdown bars, shared highlights, Discord handle, and the public taste card.
+- `/feed/[id]` detail shows the compatibility score bar, per-service breakdown bars, shared highlights, public languages, Links & social, and the public taste card.
 - A viewer's own `/feed/[id]` profile has preview and edit modes. The preview represents the public profile; the edit surface enables service, obsession, and item-control management.
-- The profile's **Links & social** section uses Simple Icons and service-color gradients. In profile edit mode, users can add GitHub, X, Instagram, TikTok, YouTube, Twitch, Bluesky, Mastodon, or SoundCloud by choosing a platform and entering a username. Last.fm, Steam, Spotify, AniList, Trakt, and Reddit links appear automatically when those services are connected.
+- The profile's **Links & social** section uses Simple Icons, brand-color gradients, and a brand-color hover stroke. In profile edit mode, the inline “Add links & social” form expands in the section and lets users choose GitHub, X, Instagram, TikTok, YouTube, Twitch, Bluesky, Mastodon, or SoundCloud and enter a username. Last.fm, Steam, Spotify, AniList, Trakt, and Reddit links appear automatically when those services are connected. Every link displays its platform name and username.
 
 ---
 

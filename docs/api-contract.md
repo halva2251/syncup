@@ -109,6 +109,9 @@ Partial update — only fields present in the body are written. Returns the upda
   "display_name": "alex",
   "bio": "gamer and music nerd",
   "discord_handle": "alex#1234",
+  "social_links": {
+    "github": "https://github.com/alex"
+  },
   "avatar_url": "https://example.com/avatar.png",
   "is_matchable": true
 }
@@ -116,6 +119,7 @@ Partial update — only fields present in the body are written. Returns the upda
 
 - `display_name`: min 1, max 200 chars; sending `null` is a no-op (field is NOT NULL)
 - `bio`, `discord_handle`, `avatar_url`: nullable; sending `null` clears the field
+- `social_links`: a map of supported platform IDs to `https` profile URLs. Sending `null` clears all manually added links. Supported platforms are `github`, `x`, `instagram`, `tiktok`, `youtube`, `twitch`, `bluesky`, `mastodon`, and `soundcloud`; unsupported platforms or URLs outside the platform's domain are rejected (422).
 - `avatar_url` accepts an http(s) URL or a local `/uploads/...` path returned by `POST /me/avatar`
 - `is_matchable`: strict bool — `"yes"` and `"true"` are rejected (422)
 
@@ -424,7 +428,12 @@ Top matches for the current user. Returns empty immediately on cache miss; match
         "display_name": "sam",
         "avatar_url": "...",
         "bio": "...",
-        "discord_handle": "sam#9999"
+        "discord_handle": "sam#9999",
+        "languages": ["English", "German"],
+        "profile_links": {
+          "github": "https://github.com/sam",
+          "lastfm": "https://www.last.fm/user/sam"
+        }
       },
       "score": 0.87,
       "breakdown": { "combined": 0.87 },
@@ -441,6 +450,8 @@ Top matches for the current user. Returns empty immediately on cache miss; match
 ```
 
 `breakdown` is `{"combined": score}` in semantic mode, per-service Jaccard in heuristic mode.
+
+`profile_links` merges the user's manually added social links with public profile URLs inferred from connected Last.fm, Steam, Spotify, AniList, Trakt, and Reddit accounts. Service credentials and private connection data are never exposed.
 
 ### `GET /matches/{user_id}` — Live ✅
 Single match detail — same shape as one `items` entry above, including `matching_mode`.

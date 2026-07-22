@@ -137,7 +137,7 @@ Client carousel for service sections:
 - Auto-advances every 10 seconds.
 - Pauses on hover.
 - Slides move left/right inside a fixed border card.
-- Bottom-right controls: service brand icons (current in color, others muted/grayscale), prev/next arrows.
+- Bottom-right controls: service brand icons (current in color, others muted/grayscale), prev/next arrows. The active icon desaturates from top to bottom over the active 10-second interval, making the remaining time visible before the next card.
 - Each slide uses `TasteServiceSection bordered={false}`.
 
 ### `TasteServiceSection`

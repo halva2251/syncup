@@ -30,7 +30,7 @@ Live routes (try them at `http://127.0.0.1:3000/docs`):
 | POST | `/api/auth/login` | Verify credentials; sets `syncup_session` cookie |
 | POST | `/api/auth/logout` | Invalidates session; always 204 |
 | GET | `/api/me` | Current user + service connections; requires auth. Returns `{user: {...}, connections: [...]}` |
-| PATCH | `/api/me` | Partial profile update (`display_name`, `bio`, `discord_handle`, `avatar_url`, `is_matchable`); requires auth. Returns updated user. |
+| PATCH | `/api/me` | Partial profile update (`display_name`, `bio`, `discord_handle`, `social_links`, `avatar_url`, `languages`, `is_matchable`); requires auth. Returns updated user. |
 | POST | `/api/connect/steam` | Connect Steam account by `steam_id` or `vanity_url`; requires auth |
 | POST | `/api/connect/lastfm` | Connect Last.fm account by `username`; requires auth |
 | POST | `/api/connect/letterboxd/import` | CSV file upload (Letterboxd diary export); wipe-and-replace; requires auth *(Phase 1.10)* |
