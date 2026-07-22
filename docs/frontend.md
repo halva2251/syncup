@@ -20,7 +20,9 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Taste card | ✅ Component built; `/me/taste` page is still a shell |
 | Matches feed | ⏸ Not built |
 | Recommendations | ⏸ Not built |
-| Settings (hub + profile/privacy/dimensions/services) | ✅ Built |
+| Settings (hub + profile/privacy/dimensions/taste/services) | ✅ Built |
+| Connections (`/connections`) | ✅ Built (reuses `ServiceConnectGrid`); disconnect pending backend |
+| Avatar upload | ✅ Built (frontend + `POST /api/me/avatar`) |
 
 ---
 
