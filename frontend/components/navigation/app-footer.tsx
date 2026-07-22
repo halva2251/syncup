@@ -14,6 +14,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils/cn";
 
 interface AppFooterProps {
+  userId: string;
   avatarUrl: string | null;
   displayName: string;
 }
@@ -71,14 +72,15 @@ const FOOTER_LINKS: FooterLink[] = [
  *
  * Onboarding has its own stepper, so the dock stays out of that focused flow.
  */
-export function AppFooter({ avatarUrl, displayName }: AppFooterProps) {
+export function AppFooter({ userId, avatarUrl, displayName }: AppFooterProps) {
   const pathname = usePathname();
 
   if (pathname.startsWith("/onboarding")) {
     return null;
   }
 
-  const profileIsActive = pathname === "/settings/profile";
+  const profileHref = `/feed/${userId}`;
+  const profileIsActive = pathname === profileHref;
 
   return (
     <footer
@@ -113,9 +115,9 @@ export function AppFooter({ avatarUrl, displayName }: AppFooterProps) {
         <span className="mx-0.5 h-7 w-px bg-[var(--color-border)]" aria-hidden="true" />
 
         <Link
-          href="/settings/profile"
-          aria-label="Profile settings"
-          title="Profile settings"
+          href={profileHref}
+          aria-label="Your profile"
+          title="Your profile"
           className={cn(
             "group relative inline-flex h-10 w-10 items-center justify-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-page)] sm:h-11 sm:w-11",
             profileIsActive
@@ -132,7 +134,7 @@ export function AppFooter({ avatarUrl, displayName }: AppFooterProps) {
               profileIsActive && "border-[var(--color-accent)]",
             )}
           />
-          <span className="sr-only">Profile settings</span>
+          <span className="sr-only">Your profile</span>
           <FooterTooltip>Profile</FooterTooltip>
         </Link>
       </nav>

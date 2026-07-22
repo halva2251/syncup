@@ -92,6 +92,11 @@ export interface TasteResponse {
   overrides: PreferenceOverride[];
 }
 
+export interface PublicTasteCardResponse {
+  user: Pick<User, "archetype" | "vibe_summary" | "key_themes">;
+  taste: TasteResponse;
+}
+
 export interface MatchUser {
   id: string;
   display_name: string;

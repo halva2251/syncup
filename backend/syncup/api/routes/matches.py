@@ -37,6 +37,7 @@ router = APIRouter(prefix="/api", tags=["matches"])
 
 _CACHE_MAX_AGE_HOURS = 24
 _SEMANTIC_CANDIDATE_LIMIT = 50
+_VISIBLE_TASTE_ITEMS_PER_BUCKET = 5
 
 # In-flight guard: dedupe redundant background match-cache refreshes for the same
 # user. Without it, repeated empty-page GET /api/matches requests (which schedule a
@@ -230,6 +231,32 @@ def _count_cached_matches(user_id: uuid.UUID, db: DbSession) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _visible_taste_item_ids(rows: list) -> dict[uuid.UUID, frozenset[uuid.UUID]]:
+    """Return the five highest-engagement items per service/type for each user.
+
+    This mirrors the first five items displayed in each taste-card section, so
+    feed highlights represent visible top taste rather than any item ever
+    imported from a service.
+    """
+    grouped: dict[tuple[uuid.UUID, str, str], list[tuple[float, uuid.UUID]]] = defaultdict(list)
+    for row in rows:
+        item_type = getattr(row, "item_type", "unknown")
+        if not isinstance(item_type, str):
+            item_type = "unknown"
+        score = getattr(row, "engagement_score", 0.0)
+        if not isinstance(score, (int, float)):
+            score = 0.0
+        grouped[(row.user_id, row.service, item_type)].append((float(score), row.item_id))
+
+    result: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
+    for (user_id, _, _), items in grouped.items():
+        items.sort(key=lambda item: item[0], reverse=True)
+        result[user_id].update(
+            item_id for _, item_id in items[:_VISIBLE_TASTE_ITEMS_PER_BUCKET]
+        )
+    return {user_id: frozenset(item_ids) for user_id, item_ids in result.items()}
+
+
 def _read_match_data(
     db_factory: sessionmaker[DbSession],
     user_id: uuid.UUID,
@@ -254,7 +281,14 @@ def _read_match_data(
 
         rows = list(
             db.execute(
-                select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
+                select(
+                    UserItem.user_id,
+                    UserItem.item_id,
+                    Item.service,
+                    Item.item_type,
+                    Item.name,
+                    UserItem.engagement_score,
+                )
                 .join(Item, UserItem.item_id == Item.id)
                 .where(UserItem.user_id.in_(matchable_ids))
             ).all()
@@ -295,6 +329,7 @@ def _compute_match_scores(
         user_data[row.user_id][row.service][row.item_id] = row.name
 
     popularity: dict[uuid.UUID, int] = {row.item_id: row.pop for row in pop_rows}
+    visible_taste_items = _visible_taste_item_ids(rows)
 
     my_data = user_data.get(user_id, {})
     if not my_data:
@@ -322,7 +357,17 @@ def _compute_match_scores(
         for svc_items in other_data.values():
             item_names.update(svc_items)
 
-        highlights = top_shared_highlights(my_by_service, other_by_service, item_names, popularity)
+        visible_shared_items = (
+            visible_taste_items.get(user_id, frozenset())
+            & visible_taste_items.get(other_id, frozenset())
+        )
+        highlights = top_shared_highlights(
+            my_by_service,
+            other_by_service,
+            item_names,
+            popularity,
+            eligible_item_ids=visible_shared_items,
+        )
 
         a_id = min(user_id, other_id)
         b_id = max(user_id, other_id)
@@ -435,7 +480,14 @@ def _read_semantic_data(
 
         item_rows = list(
             db.execute(
-                select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
+                select(
+                    UserItem.user_id,
+                    UserItem.item_id,
+                    Item.service,
+                    Item.item_type,
+                    Item.name,
+                    UserItem.engagement_score,
+                )
                 .join(Item, UserItem.item_id == Item.id)
                 .where(UserItem.user_id.in_(all_user_ids))
             ).all()
@@ -470,6 +522,7 @@ def _compute_semantic_scores(
         return []
 
     popularity: dict[uuid.UUID, int] = {r.item_id: r.pop for r in pop_rows}
+    visible_taste_items = _visible_taste_item_ids(item_rows)
 
     user_data: dict[uuid.UUID, dict[str, dict[uuid.UUID, str]]] = defaultdict(
         lambda: defaultdict(dict)
@@ -498,7 +551,17 @@ def _compute_semantic_scores(
         for svc_items in other_data.values():
             item_names.update(svc_items)
 
-        highlights = top_shared_highlights(my_by_service, other_by_service, item_names, popularity)
+        visible_shared_items = (
+            visible_taste_items.get(user_id, frozenset())
+            & visible_taste_items.get(other_id, frozenset())
+        )
+        highlights = top_shared_highlights(
+            my_by_service,
+            other_by_service,
+            item_names,
+            popularity,
+            eligible_item_ids=visible_shared_items,
+        )
 
         a_id = min(user_id, other_id)
         b_id = max(user_id, other_id)

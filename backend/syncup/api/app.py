@@ -36,6 +36,7 @@ from syncup.api.routes.overrides import router as overrides_router  # noqa: E402
 from syncup.api.routes.recommendations import router as recommendations_router  # noqa: E402
 from syncup.api.routes.search import router as search_router  # noqa: E402
 from syncup.api.routes.sync import router as sync_router  # noqa: E402
+from syncup.api.routes.taste import public_router as public_taste_router  # noqa: E402
 from syncup.api.routes.taste import router as taste_router  # noqa: E402
 from syncup.auth.router import router as auth_router  # noqa: E402
 from syncup.config import Settings  # noqa: E402
@@ -285,6 +286,7 @@ app.include_router(connect_router)
 app.include_router(spotify_auth_router)
 app.include_router(sync_router)
 app.include_router(taste_router)
+app.include_router(public_taste_router)
 app.include_router(obsessions_router)
 app.include_router(overrides_router)
 app.include_router(dimensions_router)

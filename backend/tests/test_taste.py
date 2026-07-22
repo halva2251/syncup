@@ -149,6 +149,39 @@ def test_taste_requires_auth(client: TestClient) -> None:
     assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
 
+def test_public_taste_card_returns_matchable_user_taste(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    user = _make_user(
+        is_matchable=True,
+        archetype="The Night Listener",
+        vibe_summary="A patient listener with a love of atmosphere.",
+        key_themes=["ambient", "indie"],
+    )
+    mock_db.get.return_value = user
+    _set_execute_results(mock_db, [_taste_row("steam", "game", "Disco Elysium")])
+
+    resp = taste_client.get(f"/api/users/{user.id}/taste-card")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user"]["archetype"] == "The Night Listener"
+    assert body["taste"]["services"]["steam"]["top_games"][0]["name"] == "Disco Elysium"
+    assert body["taste"]["overrides"] == []
+
+
+def test_public_taste_card_hides_non_matchable_users(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    user = _make_user(is_matchable=False)
+    mock_db.get.return_value = user
+
+    resp = taste_client.get(f"/api/users/{user.id}/taste-card")
+
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
 # ---------------------------------------------------------------------------
 # Empty state
 # ---------------------------------------------------------------------------

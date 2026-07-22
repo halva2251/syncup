@@ -20,7 +20,11 @@ export default async function Layout({ children }: { children: React.ReactNode }
       <main className="min-h-screen pb-[calc(6rem+env(safe-area-inset-bottom))] sm:pb-[calc(7rem+env(safe-area-inset-bottom))]">
         {children}
       </main>
-      <AppFooter avatarUrl={user.avatar_url} displayName={user.display_name} />
+      <AppFooter
+        userId={user.id}
+        avatarUrl={user.avatar_url}
+        displayName={user.display_name}
+      />
       <ToastProvider />
     </>
   );

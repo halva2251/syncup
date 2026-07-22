@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { updateProfile, updateItemExclusion } from "@/lib/api/me";
+import { recomputeMatches } from "@/lib/api/embeddings";
 import { ApiError } from "@/lib/api/client";
 
 export async function enableMatchingAction() {
@@ -30,9 +31,11 @@ export async function excludeItemAction(itemId: string, excluded: boolean) {
 }
 
 export async function buildEmbeddingAction(): Promise<void> {
-  // TODO: implement POST /api/embeddings/build on /me/taste page
+  // The build step runs as part of recompute; kept as a thin alias so the
+  // /taste page's "Refresh" flow reads clearly without leaking implementation.
+  await recomputeMatches();
 }
 
 export async function recomputeMatchesAction(): Promise<void> {
-  // TODO: implement POST /api/me/recompute on /matches page
+  await recomputeMatches();
 }

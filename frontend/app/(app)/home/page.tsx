@@ -116,10 +116,10 @@ const QUICK_LINKS: QuickLink[] = [
     description: "Connect or sync your platforms.",
   },
   {
-    href: "/matches",
+    href: "/feed",
     icon: Users,
     gradient: "purple",
-    title: "Matches",
+    title: "Feed",
     description: "Browse people with compatible taste.",
   },
   {

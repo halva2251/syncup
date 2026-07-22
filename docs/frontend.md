@@ -19,7 +19,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Onboarding | ✅ 4-step wizard built (languages, services, obsessions, taste preview) |
 | Taste card | ✅ Component built; `/me/taste` page is still a shell |
 | Home dashboard (`/home`) | ✅ Built |
-| Matches feed | ⏸ Not built |
+| Matches feed | ✅ Built (`/feed` + `/feed/[id]`) |
 | Recommendations | ⏸ Not built |
 | Settings (hub + profile/privacy/dimensions/taste/services) | ✅ Built |
 | Connections (`/connections`) | ✅ Built (reuses `ServiceConnectGrid`); disconnect action live |
@@ -184,6 +184,29 @@ Small reusable building blocks used across pages. Prefer these over re-rolling t
 
 > `AppIconGradient` is exported from `components/ui/app-icon.tsx` so pages no longer need to redefine the gradient union locally.
 
+### `Avatar`
+
+`frontend/components/ui/avatar.tsx` — circular avatar with a `UserRound` fallback when no `src` is given. Renders a plain `<img>` (no remote-image domain config needed), matching the existing profile-form pattern. Server Component.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `src?` | `string \| null` | Avatar image URL. Falls back to the icon when absent. |
+| `alt` | `string` | Alt text (used for both `<img>` and fallback). |
+| `size?` | `"sm" \| "md" \| "lg" \| "xl"` | Container size (default `"md"`). |
+| `className?` | `string` | Extra classes. |
+
+### Feed components (`components/matches/*`)
+
+Used by `/feed` and `/feed/[id]`:
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `MatchCard` | `match-card.tsx` | One feed entry: avatar, name, score pill, highlights, mode tag. Links to `/feed/[id]`. |
+| `MatchList` | `match-list.tsx` | **Client.** Cursor-paginated feed ("Load more") with cache-miss auto-polling and loading/empty states. |
+| `MatchDetail` | `match-detail.tsx` | Full match profile: identity header, compatibility bar, per-service breakdown, shared highlights, Discord handle. |
+| `MatchScore` | `match-score.tsx` | Reusable compatibility display. `variant="compact"` (pill) for cards, `"detail"` (bar) for detail. |
+| `MatchHighlights` | `match-highlights.tsx` | Shared-taste highlight chips with service brand icons. `compact` (truncated) vs. `detail` (full). |
+
 ---
 
 ## Page Plan
@@ -240,10 +263,10 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 | `/me/settings/dimensions` | Per-service taste weight sliders. | `GET /api/me`, `GET /api/me/dimensions`, `PATCH /api/me/dimensions` |
 | `/me/settings/services` | Sync-status readout for connected services; links to `/connections` for connect/sync flows. | `GET /api/me` |
 | `/me/recommendations` | "Because you love X → try Y" cross-domain recs. | `GET /api/me/recommendations` |
-| `/matches` | Scrollable match feed (not swipe). | `GET /api/matches`, `POST /api/me/recompute` |
-| `/matches/[id]` | Match detail, reveals Discord handle. | `GET /api/matches/{id}` |
+| `/feed` | Discovery feed: scrollable list of matched users ranked by compatibility (not swipe). Includes a "Refresh matches" action. | `GET /api/matches`, `POST /api/me/recompute` |
+| `/feed/[id]` | A matched user's profile: compatibility score, per-service breakdown, shared highlights, Discord handle. | `GET /api/matches/{id}` |
 
-> **Build order recommendation:** login/signup → onboarding → `/me/taste` → `/me/connections` → `/matches` → recommendations/settings/dimensions.
+> **Build order recommendation:** login/signup → onboarding → `/me/taste` → `/me/connections` → `/feed` → recommendations/settings/dimensions.
 
 ---
 
@@ -414,13 +437,18 @@ Future additions for the public `/me/taste` page:
 
 ---
 
-## Match Feed Design Notes
+## Feed Design Notes
 
-- Scrollable card list, **not** a swipe interface (MVP decision).
-- Each card: avatar, display name, compatibility score, service breakdown, shared highlights.
-- Clicking a card opens `/matches/[id]` and reveals the Discord handle immediately (MVP decision).
-- Include a "Refresh matches" action that calls `POST /api/me/recompute` (rate-limited to 1/hour).
-- `matching_mode` field shows `"heuristic"` or `"semantic"`.
+The discovery feed lives at `/feed` (formerly `/matches`). It is a scrollable card list, **not** a swipe interface (MVP decision).
+
+- Each `MatchCard`: avatar, display name, compatibility score pill, shared-highlight chips, matching-mode tag.
+- Clicking a card opens `/feed/[id]` and reveals the Discord handle immediately (MVP decision).
+- `MatchList` (client) handles cursor pagination via "Load more", plus auto-polling when the match cache is being rebuilt after a cache miss.
+- A "Refresh matches" action calls `POST /api/me/recompute` (rate-limited to 1/hour server-side).
+- `matching_mode` field shows `"heuristic"` (taste overlap) or `"semantic"` (embedding-based).
+- `/feed/[id]` detail shows the compatibility score bar, per-service breakdown bars, shared highlights, and a Discord handle block.
+
+> **Profiles today show match data only** (score, breakdown, shared highlights, bio, Discord). A full taste-card view for other users requires a backend endpoint (`GET /api/matches/{id}/taste-card` or similar) that doesn't exist yet; the detail page is structured so a `TasteCard` slot can drop in once it does.
 
 ---
 
@@ -495,4 +523,4 @@ These are documented in the project docs and should be revisited before building
 
 ---
 
-*Last updated: 2026-07-22*
+*Last updated: 2026-07-22 (feed)*
