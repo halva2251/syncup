@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { getCurrentUser } from "@/lib/api/me";
-import { AppIcon } from "@/components/ui/app-icon";
+import { AppIcon, type AppIconGradient } from "@/components/ui/app-icon";
 import type { LucideIcon } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +23,10 @@ export const metadata: Metadata = {
   title: "Settings · SyncUp",
 };
 
-type IconGradient = "blue" | "purple" | "green" | "orange" | "red" | "brand";
-
 interface SettingsCardDef {
   href: string;
   icon: LucideIcon;
-  gradient: IconGradient;
+  gradient: AppIconGradient;
   title: string;
   description: string;
 }

@@ -7,9 +7,15 @@ export type SimpleIcon = {
   path: string;
 };
 
-type Gradient = "blue" | "purple" | "green" | "orange" | "red" | "brand";
+export type AppIconGradient =
+  | "blue"
+  | "purple"
+  | "green"
+  | "orange"
+  | "red"
+  | "brand";
 
-const gradients: Record<Gradient, string> = {
+const gradients: Record<AppIconGradient, string> = {
   blue: "from-[var(--color-icon-gradient-blue-from)] to-[var(--color-icon-gradient-blue-to)]",
   purple: "from-[var(--color-icon-gradient-purple-from)] to-[var(--color-icon-gradient-purple-to)]",
   green: "from-[var(--color-icon-gradient-green-from)] to-[var(--color-icon-gradient-green-to)]",
@@ -56,7 +62,7 @@ type AppIconProps =
       icon: LucideIcon;
       brand?: never;
       size?: keyof typeof sizes;
-      gradient?: Gradient;
+      gradient?: AppIconGradient;
       brandColor?: string;
       glossy?: boolean;
       className?: string;
@@ -65,7 +71,7 @@ type AppIconProps =
       icon?: never;
       brand: SimpleIcon;
       size?: keyof typeof sizes;
-      gradient?: Gradient;
+      gradient?: AppIconGradient;
       brandColor?: string;
       glossy?: boolean;
       className?: string;
