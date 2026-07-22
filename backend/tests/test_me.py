@@ -208,9 +208,10 @@ def test_delete_connection_returns_204_and_purges_user_data(
     assert resp.status_code == 204
     assert resp.content == b""
     statements = [call.args[0] for call in mock_db.execute.call_args_list]
-    assert len(statements) == 2
+    assert len(statements) == 3
     assert "DELETE FROM user_items" in str(statements[0])
     assert "DELETE FROM user_embeddings" in str(statements[1])
+    assert "DELETE FROM match_cache" in str(statements[2])
     mock_db.delete.assert_called_once_with(connection)
     mock_db.commit.assert_called_once()
 

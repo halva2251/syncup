@@ -168,6 +168,13 @@ def delete_connection(
         # Embeddings and the synthesized profile are derived from all services;
         # invalidate them so a later recompute cannot use disconnected data.
         db.execute(delete(UserEmbedding).where(UserEmbedding.user_id == user.id))
+        # Cached compatibility scores and highlights may include the disconnected
+        # service, so they must not remain visible until their normal expiry.
+        db.execute(
+            delete(MatchCache).where(
+                or_(MatchCache.user_a_id == user.id, MatchCache.user_b_id == user.id)
+            )
+        )
         user.vibe_summary = None
         user.archetype = None
         user.key_themes = None
