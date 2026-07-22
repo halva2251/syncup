@@ -257,14 +257,14 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 | `/home` | Dashboard landing after onboarding. Stat overview (services, taste items, obsessions, matching status), vibe summary, quick links, connected-services status, and recommendations teaser. | `GET /api/me`, `GET /api/me/taste` |
 | `/me/connections` | Service grid, sync status, OAuth + CSV upload flows. | `GET /api/me`, `POST /api/sync/{service}`, connect endpoints |
 | `/me/settings` | Hub linking to the settings sub-pages. | `GET /api/me` |
-| `/me/settings/profile` | Profile editor: display name, bio, Discord handle, avatar photo upload, languages. | `PATCH /api/me`, `POST /api/me/avatar` |
+| `/me/settings/profile` | Profile editor: display name, bio, Discord, avatar photo upload, and languages. Connected services with public profiles are linked automatically. | `PATCH /api/me`, `POST /api/me/avatar` |
 | `/me/settings/privacy` | Discoverable-matching toggle. | `PATCH /api/me` |
 | `/me/settings/taste` | Preference overrides editor (boost/dampen specific items). | `GET/POST/PATCH/DELETE /api/me/overrides` |
 | `/me/settings/dimensions` | Per-service taste weight sliders. | `GET /api/me`, `GET /api/me/dimensions`, `PATCH /api/me/dimensions` |
 | `/me/settings/services` | Sync-status readout for connected services; links to `/connections` for connect/sync flows. | `GET /api/me` |
 | `/me/recommendations` | Cross-domain recommendations with item-type filters. | `GET /api/me/recommendations` |
 | `/feed` | Discovery feed: scrollable list of matched users ranked by compatibility (not swipe). Includes a "Refresh matches" action. | `GET /api/matches`, `POST /api/me/recompute` |
-| `/feed/[id]` | A user's profile. Other profiles show compatibility, shared taste, public taste card, and Discord. Your own profile adds preview/edit modes for services, obsessions, and taste controls. | `GET /api/matches/{id}`, `GET /api/users/{id}/taste-card`, `GET /api/me/taste` |
+| `/feed/[id]` | A user's profile. Other profiles show compatibility, shared taste, public taste card, and social/service links. Your own profile adds preview/edit modes for services, obsessions, and taste controls. | `GET /api/matches/{id}`, `GET /api/users/{id}/taste-card`, `GET /api/me/taste` |
 
 > **Build order recommendation:** login/signup → onboarding → `/me/connections` → `/feed` → recommendations/settings/dimensions.
 
@@ -444,6 +444,7 @@ The discovery feed lives at `/feed` (formerly `/matches`). It is a scrollable ca
 - `matching_mode` field shows `"heuristic"` (taste overlap) or `"semantic"` (embedding-based).
 - `/feed/[id]` detail shows the compatibility score bar, per-service breakdown bars, shared highlights, Discord handle, and the public taste card.
 - A viewer's own `/feed/[id]` profile has preview and edit modes. The preview represents the public profile; the edit surface enables service, obsession, and item-control management.
+- The profile's **Links & social** section uses Simple Icons and service-color gradients. In profile edit mode, users can add GitHub, X, Instagram, TikTok, YouTube, Twitch, Bluesky, Mastodon, or SoundCloud by choosing a platform and entering a username. Last.fm, Steam, Spotify, AniList, Trakt, and Reddit links appear automatically when those services are connected.
 
 ---
 

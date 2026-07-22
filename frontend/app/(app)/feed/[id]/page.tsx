@@ -11,6 +11,7 @@ import { TasteActions } from "@/components/taste/taste-actions";
 import { ManualObsessionsEditor } from "@/components/taste/manual-obsessions-editor";
 import { OwnProfileView } from "@/components/matches/own-profile-view";
 import { ButtonLink } from "@/components/ui/button";
+import { buildOwnProfileLinks } from "@/lib/constants/profile-links";
 import type { Match, User } from "@/types/api";
 
 export const dynamic = "force-dynamic";
@@ -49,7 +50,10 @@ export default async function FeedDetailPage({ params }: FeedDetailPageProps) {
       tasteCardUser = me.user;
       connectedServiceIds = me.connections.map((connection) => connection.service);
       match = {
-        user: me.user,
+        user: {
+          ...me.user,
+          profile_links: buildOwnProfileLinks(me.user.social_links, me.connections),
+        },
         score: 1,
         breakdown: {},
         shared_highlights: [],
@@ -149,7 +153,11 @@ export default async function FeedDetailPage({ params }: FeedDetailPageProps) {
                 </section>
 
                 <div className="grid items-start gap-6 lg:grid-cols-2">
-                  <MatchDetail match={match} showCompatibility={false} />
+                  <MatchDetail
+                    match={match}
+                    showCompatibility={false}
+                    editableLinks
+                  />
                   <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
                     <h2 className="mb-5 text-lg font-semibold text-[var(--color-text-primary)]">
                       Taste card

@@ -87,3 +87,25 @@ body {
   background-color: var(--color-bg-page);
   color: var(--color-text-primary);
 }
+
+.profile-social-link {
+  border-color: color-mix(in srgb, var(--profile-link-brand) 45%, white);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--profile-link-brand) 38%, white),
+    color-mix(in srgb, var(--profile-link-brand) 84%, white)
+  );
+}
+
+.profile-social-link:hover {
+  border-color: var(--profile-link-brand);
+}
+
+.dark .profile-social-link {
+  border-color: color-mix(in srgb, var(--profile-link-brand) 45%, black);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--profile-link-brand) 32%, black),
+    color-mix(in srgb, var(--profile-link-brand) 78%, black)
+  );
+}

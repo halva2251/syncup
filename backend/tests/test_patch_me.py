@@ -130,6 +130,18 @@ def test_patch_me_updates_discord_handle(
     assert resp.json()["discord_handle"] == "halva#1234"
 
 
+def test_patch_me_updates_social_links(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch(
+        "/api/me",
+        json={"social_links": {"github": "https://github.com/syncup"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["social_links"] == {"github": "https://github.com/syncup"}
+
+
 def test_patch_me_updates_avatar_url(
     patch_client: tuple[TestClient, User],
 ) -> None:
@@ -336,6 +348,17 @@ def test_patch_me_discord_handle_too_long_returns_422(
 ) -> None:
     c, _ = patch_client
     resp = c.patch("/api/me", json={"discord_handle": "x" * 101})
+    assert resp.status_code == 422
+
+
+def test_patch_me_rejects_social_link_on_wrong_host(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch(
+        "/api/me",
+        json={"social_links": {"github": "https://example.com/syncup"}},
+    )
     assert resp.status_code == 422
 
 

@@ -84,6 +84,7 @@ class UserOut(BaseModel):
     avatar_url: str | None
     bio: str | None
     discord_handle: str | None
+    social_links: dict[str, str] | None
     languages: list[str] | None
     is_matchable: bool
     onboarded: bool

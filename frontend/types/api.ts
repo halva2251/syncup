@@ -13,6 +13,7 @@ export interface User {
   avatar_url: string | null;
   bio: string | null;
   discord_handle: string | null;
+  social_links: Record<string, string> | null;
   languages: string[] | null;
   is_matchable: boolean;
   onboarded: boolean;
@@ -110,6 +111,8 @@ export interface MatchUser {
   avatar_url: string | null;
   bio: string | null;
   discord_handle: string | null;
+  languages: string[] | null;
+  profile_links: Record<string, string>;
 }
 
 export interface Match {

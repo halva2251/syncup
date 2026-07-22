@@ -9,6 +9,7 @@ export interface ProfileUpdate {
   display_name?: string;
   bio?: string | null;
   discord_handle?: string | null;
+  social_links?: Record<string, string> | null;
   avatar_url?: string | null;
   languages?: string[] | null;
   is_matchable?: boolean;

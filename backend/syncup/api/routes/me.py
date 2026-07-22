@@ -23,6 +23,7 @@ from syncup.db.models import Item, ServiceConnection, UserEmbedding, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
+from syncup.profile_links import normalize_social_links
 
 router = APIRouter(prefix="/api", tags=["users"])
 
@@ -56,6 +57,7 @@ class ProfilePatch(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=200)
     bio: str | None = Field(default=None, max_length=500)
     discord_handle: str | None = Field(default=None, max_length=100)
+    social_links: dict[str, str] | None = None
     avatar_url: str | None = Field(default=None, max_length=500)
     is_matchable: StrictBool | None = None
     languages: list[str] | None = None
@@ -85,6 +87,13 @@ class ProfilePatch(BaseModel):
             if not (v.startswith("http://") or v.startswith("https://")):
                 raise ValueError("must be an http(s) URL")
         return v
+
+    @field_validator("social_links", mode="before")
+    @classmethod
+    def validate_social_links(cls, v: object) -> object:
+        if v is None:
+            return v
+        return normalize_social_links(v)
 
     @field_validator("languages", mode="before")
     @classmethod
@@ -188,6 +197,8 @@ def patch_me(
         user.bio = body.bio
     if "discord_handle" in fields:
         user.discord_handle = body.discord_handle
+    if "social_links" in fields:
+        user.social_links = body.social_links or {}
     if "avatar_url" in fields:
         user.avatar_url = body.avatar_url
     if "is_matchable" in fields and body.is_matchable is not None:

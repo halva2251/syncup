@@ -15,11 +15,19 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import selectinload, sessionmaker
 
 from syncup.api.routes.embeddings import build_user_embedding  # noqa: E402
 from syncup.auth.router import RequireAuth
-from syncup.db.models import EMBEDDING_DIM, Item, MatchCache, User, UserEmbedding, UserItem
+from syncup.db.models import (
+    EMBEDDING_DIM,
+    Item,
+    MatchCache,
+    ServiceConnection,
+    User,
+    UserEmbedding,
+    UserItem,
+)
 from syncup.db.pgvector import format_vec
 from syncup.db.session import get_db
 from syncup.embeddings.vibe_synthesizer import synthesize_vibe
@@ -30,6 +38,7 @@ from syncup.matching.heuristic import (
     heuristic_score,
     top_shared_highlights,
 )
+from syncup.profile_links import public_profile_links
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +84,8 @@ class MatchUserOut(BaseModel):
     avatar_url: str | None
     bio: str | None
     discord_handle: str | None
+    languages: list[str] | None
+    profile_links: dict[str, str]
 
 
 class SharedHighlightOut(BaseModel):
@@ -100,6 +111,22 @@ class MatchSummaryOut(BaseModel):
     """Small dashboard-friendly summary of the current user's fresh match cache."""
 
     count: int
+
+
+def _match_user_out(
+    user: User,
+    connections: list[ServiceConnection],
+) -> MatchUserOut:
+    """Project only safe, public-facing profile links into match responses."""
+    return MatchUserOut(
+        id=user.id,
+        display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        bio=user.bio,
+        discord_handle=user.discord_handle,
+        languages=user.languages,
+        profile_links=public_profile_links(user.social_links, connections),
+    )
 
 
 def _parse_highlights(raw: object) -> list[SharedHighlightOut]:
@@ -717,7 +744,12 @@ def get_matches(
 
     other_user_ids = [row.user_b_id if row.user_a_id == user.id else row.user_a_id for row in page]
     other_users = {
-        u.id: u for u in db.scalars(select(User).where(User.id.in_(other_user_ids))).all()
+        u.id: u
+        for u in db.scalars(
+            select(User)
+            .options(selectinload(User.service_connections))
+            .where(User.id.in_(other_user_ids))
+        ).all()
     }
 
     items = []
@@ -728,7 +760,7 @@ def get_matches(
             continue
         items.append(
             MatchOut(
-                user=MatchUserOut.model_validate(other),
+                user=_match_user_out(other, list(other.service_connections)),
                 score=row.score,
                 breakdown=row.breakdown,
                 shared_highlights=_parse_highlights(row.highlights),
@@ -764,7 +796,10 @@ def get_match_detail(
         raise SyncUpError("NOT_FOUND", "User not found", 404)
 
     return MatchOut(
-        user=MatchUserOut.model_validate(other),
+        user=_match_user_out(
+            other,
+            list(other.service_connections),
+        ),
         score=row.score,
         breakdown=row.breakdown,
         shared_highlights=_parse_highlights(row.highlights),

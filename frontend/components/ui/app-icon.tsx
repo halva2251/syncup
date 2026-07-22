@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils/cn";
 export type SimpleIcon = {
   title: string;
   path: string;
+  hex?: string;
 };
 
 export type AppIconGradient =

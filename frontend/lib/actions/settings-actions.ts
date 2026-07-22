@@ -10,6 +10,11 @@ import {
   updateDimensions,
   type DimensionWeights,
 } from "@/lib/api/dimensions";
+import {
+  MANUAL_PROFILE_LINK_PLATFORMS,
+  profileUrlFromUsername,
+} from "@/lib/constants/profile-links";
+import { getCurrentUser } from "@/lib/api/me";
 import { ApiError } from "@/lib/api/client";
 
 function safeError(err: unknown): string {
@@ -59,6 +64,31 @@ export async function updateProfileAction(formData: FormData) {
     revalidatePath("/settings/profile");
     revalidatePath("/settings");
     return { success: true };
+  } catch (err) {
+    return { error: safeError(err) };
+  }
+}
+
+/** Add one public social profile without navigating away from the user's profile. */
+export async function addSocialLinkAction(platform: string, username: string) {
+  const url = profileUrlFromUsername(platform, username);
+  if (!url) return { error: "Choose a service and enter a username." };
+
+  try {
+    const me = await getCurrentUser();
+    const supportedPlatforms = new Set(
+      MANUAL_PROFILE_LINK_PLATFORMS.map((option) => option.id),
+    );
+    const socialLinks = Object.fromEntries(
+      Object.entries(me.user.social_links ?? {}).filter(([key]) =>
+        supportedPlatforms.has(key),
+      ),
+    );
+    await updateProfile({
+      social_links: { ...socialLinks, [platform]: url },
+    });
+    revalidatePath(`/feed/${me.user.id}`);
+    return { success: true as const, platform, url };
   } catch (err) {
     return { error: safeError(err) };
   }

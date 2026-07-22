@@ -117,6 +117,7 @@ def test_me_returns_user_data(me_client: TestClient) -> None:
     assert "avatar_url" in user
     assert "bio" in user
     assert "discord_handle" in user
+    assert "social_links" in user
 
 
 # ---------------------------------------------------------------------------

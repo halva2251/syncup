@@ -64,6 +64,9 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     discord_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    social_links: Mapped[dict[str, str]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     languages: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
     is_matchable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"

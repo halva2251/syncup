@@ -1,14 +1,17 @@
-import { MessageCircle } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { MatchScore } from "@/components/matches/match-score";
 import { MatchHighlights } from "@/components/matches/match-highlights";
 import { SERVICE_BY_ID } from "@/lib/constants/services";
+import { getLanguageFlag, getLanguageName } from "@/lib/constants/languages";
+import { ProfileLinks } from "@/components/matches/profile-links";
 import type { Match } from "@/types/api";
 
 interface MatchDetailProps {
   match: Match;
   /** Hide match-only information when rendering the signed-in user's profile. */
   showCompatibility?: boolean;
+  /** Show the signed-in user's inline social-link control. */
+  editableLinks?: boolean;
 }
 
 /** One breakdown bar: service name + proportional fill. */
@@ -42,9 +45,13 @@ function BreakdownBar({
 
 /**
  * Full profile detail for a single matched user. Shows the match metadata
- * (score, breakdown, shared highlights) and the Discord handle for connecting.
+ * (score, breakdown, shared highlights) and public social links for connecting.
  */
-export function MatchDetail({ match, showCompatibility = true }: MatchDetailProps) {
+export function MatchDetail({
+  match,
+  showCompatibility = true,
+  editableLinks = false,
+}: MatchDetailProps) {
   const { user, score, breakdown, shared_highlights } = match;
   const breakdownEntries = Object.entries(breakdown).filter(
     ([serviceId]) => serviceId !== "combined",
@@ -63,6 +70,22 @@ export function MatchDetail({ match, showCompatibility = true }: MatchDetailProp
             <p className="pt-1 text-sm leading-relaxed text-[var(--color-text-secondary)]">
               {user.bio}
             </p>
+          ) : null}
+          {user.languages && user.languages.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 pt-2">
+              {user.languages.map((code) => {
+                const flag = getLanguageFlag(code);
+                return (
+                  <span
+                    key={code}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-accent)]"
+                  >
+                    {flag ? <span className={`fi fi-${flag} h-3 w-4 rounded-sm`} /> : null}
+                    {getLanguageName(code) ?? code}
+                  </span>
+                );
+              })}
+            </div>
           ) : null}
         </div>
       </section>
@@ -98,23 +121,11 @@ export function MatchDetail({ match, showCompatibility = true }: MatchDetailProp
         </section>
       ) : null}
 
-      {/* Discord handle */}
-      {user.discord_handle ? (
-        <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5">
-          <h3 className="mb-2 text-sm font-semibold text-[var(--color-text-primary)]">
-            Connect on Discord
-          </h3>
-          <div className="flex items-center gap-2 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-page)] px-3 py-2">
-            <MessageCircle className="h-4 w-4 shrink-0 text-[var(--color-text-tertiary)]" />
-            <code className="text-sm text-[var(--color-text-primary)]">
-              {user.discord_handle}
-            </code>
-          </div>
-          <p className="mt-2 text-xs text-[var(--color-text-tertiary)]">
-            Reach out to start a conversation.
-          </p>
-        </section>
-      ) : null}
+      <ProfileLinks
+        discordHandle={user.discord_handle}
+        links={user.profile_links}
+        editable={editableLinks}
+      />
     </div>
   );
 }
