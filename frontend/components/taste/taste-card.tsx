@@ -9,9 +9,10 @@ import type { TasteResponse, User } from "@/types/api";
 interface TasteCardProps {
   taste: TasteResponse;
   user?: Pick<User, "archetype" | "vibe_summary" | "key_themes">;
+  connectedServiceIds?: string[];
 }
 
-export function TasteCard({ taste, user }: TasteCardProps) {
+export function TasteCard({ taste, user, connectedServiceIds }: TasteCardProps) {
   const serviceIds = Object.keys(taste.services);
   const hasAnyData =
     serviceIds.length > 0 ||
@@ -46,7 +47,11 @@ export function TasteCard({ taste, user }: TasteCardProps) {
       )}
 
       {serviceIds.length > 0 && (
-        <TasteServiceCarousel serviceIds={serviceIds} services={taste.services} />
+        <TasteServiceCarousel
+          serviceIds={serviceIds}
+          services={taste.services}
+          connectedServiceIds={connectedServiceIds}
+        />
       )}
 
       {taste.manual_obsessions.length > 0 && (

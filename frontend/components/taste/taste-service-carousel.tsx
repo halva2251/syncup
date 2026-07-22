@@ -10,6 +10,7 @@ import type { TasteResponse } from "@/types/api";
 interface TasteServiceCarouselProps {
   serviceIds: string[];
   services: TasteResponse["services"];
+  connectedServiceIds?: string[];
 }
 
 const AUTO_ADVANCE_MS = 10000;
@@ -17,6 +18,7 @@ const AUTO_ADVANCE_MS = 10000;
 export function TasteServiceCarousel({
   serviceIds,
   services,
+  connectedServiceIds,
 }: TasteServiceCarouselProps) {
   const [index, setIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
@@ -107,6 +109,7 @@ export function TasteServiceCarousel({
                   serviceId={serviceId}
                   data={services[serviceId]}
                   bordered={false}
+                  canDisconnect={connectedServiceIds?.includes(serviceId) ?? false}
                 />
               </div>
             );

@@ -1,4 +1,4 @@
-"""Tests for GET /api/me."""
+"""Tests for /api/me and service-connection management."""
 from __future__ import annotations
 
 import uuid
@@ -134,7 +134,9 @@ def test_me_returns_empty_connections_when_none(
 
 
 def test_me_returns_service_connections(me_client: TestClient, mock_db: MagicMock) -> None:
-    conn = _make_connection(service="spotify", external_user_id="REDDIT_DEV_USERNAME", sync_status="ok")
+    conn = _make_connection(
+        service="spotify", external_user_id="REDDIT_DEV_USERNAME", sync_status="ok"
+    )
     mock_db.scalars.return_value.all.return_value = [conn]
 
     resp = me_client.get("/api/me")
@@ -181,3 +183,45 @@ def test_me_does_not_expose_encrypted_tokens(me_client: TestClient, mock_db: Mag
     assert "access_token_encrypted" not in connection
     assert "refresh_token_encrypted" not in connection
     assert "id" not in connection
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/me/connections/{service}
+# ---------------------------------------------------------------------------
+
+
+def test_delete_connection_requires_auth(client: TestClient) -> None:
+    resp = client.delete("/api/me/connections/spotify")
+    assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_delete_connection_returns_204_and_purges_user_data(
+    me_client: TestClient, mock_db: MagicMock
+) -> None:
+    connection = _make_connection(service="spotify")
+    mock_db.scalar.return_value = connection
+
+    resp = me_client.delete("/api/me/connections/spotify")
+
+    assert resp.status_code == 204
+    assert resp.content == b""
+    statements = [call.args[0] for call in mock_db.execute.call_args_list]
+    assert len(statements) == 2
+    assert "DELETE FROM user_items" in str(statements[0])
+    assert "DELETE FROM user_embeddings" in str(statements[1])
+    mock_db.delete.assert_called_once_with(connection)
+    mock_db.commit.assert_called_once()
+
+
+def test_delete_connection_not_found_returns_404(
+    me_client: TestClient, mock_db: MagicMock
+) -> None:
+    mock_db.scalar.return_value = None
+
+    resp = me_client.delete("/api/me/connections/spotify")
+
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+    mock_db.delete.assert_not_called()
+    mock_db.commit.assert_not_called()

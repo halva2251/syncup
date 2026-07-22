@@ -6,6 +6,7 @@ import {
   connectLastfm,
   importCsv,
   triggerSync,
+  deleteConnection,
 } from "@/lib/api/connections";
 import { getCurrentUser } from "@/lib/api/me";
 import { ApiError } from "@/lib/api/client";
@@ -79,6 +80,19 @@ export async function triggerSyncAction(service: string) {
     const result = await triggerSync(service);
     revalidatePath("/onboarding/services");
     return result;
+  } catch (err) {
+    return { error: safeError(err) };
+  }
+}
+
+export async function disconnectConnectionAction(service: string) {
+  try {
+    await deleteConnection(service);
+    revalidatePath("/connections");
+    revalidatePath("/taste");
+    revalidatePath("/onboarding/services");
+    revalidatePath("/settings/services");
+    return { success: true as const };
   } catch (err) {
     return { error: safeError(err) };
   }

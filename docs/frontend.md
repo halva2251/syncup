@@ -21,7 +21,7 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Matches feed | ⏸ Not built |
 | Recommendations | ⏸ Not built |
 | Settings (hub + profile/privacy/dimensions/taste/services) | ✅ Built |
-| Connections (`/connections`) | ✅ Built (reuses `ServiceConnectGrid`); disconnect pending backend |
+| Connections (`/connections`) | ✅ Built (reuses `ServiceConnectGrid`); disconnect action live |
 | Avatar upload | ✅ Built (frontend + `POST /api/me/avatar`) |
 
 ---
@@ -150,7 +150,7 @@ import { AppIcon } from "@/components/ui/app-icon";
 | `onActivity?` | `(serviceId: string) => void` | Optional callback fired when a connect/sync/import cycle starts. |
 | `className?` | `string` | Extra classes on the grid container. |
 
-> **Note on disconnect:** `DELETE /api/me/connections/{service}` is still Sketch on the backend, so the grid does not yet offer a disconnect action. `/connections` surfaces this limitation with a footnote.
+> **Note on disconnect:** `DELETE /api/me/connections/{service}` is live and exposed as a confirmed disconnect action on `/connections` and the own `/taste` profile.
 
 ---
 

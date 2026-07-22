@@ -33,16 +33,7 @@ export default async function ConnectionsPage() {
           description="Link the platforms where your taste lives. We pull your data in the background after you connect."
         />
 
-        <ServiceConnectGrid initialConnections={connections} />
-
-        <p className="text-xs text-[var(--color-text-tertiary)]">
-          Disconnecting a service isn&apos;t available yet — it will land when the
-          backend ships{" "}
-          <code className="rounded bg-[var(--color-bg-page)] px-1 py-0.5">
-            DELETE /api/me/connections/&#123;service&#125;
-          </code>
-          .
-        </p>
+        <ServiceConnectGrid initialConnections={connections} allowDisconnect />
       </div>
     </div>
   );

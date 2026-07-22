@@ -10,6 +10,7 @@ import { AppIcon } from "@/components/ui/app-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorMessage } from "@/components/ui/error-message";
+import { DisconnectServiceButton } from "@/components/connections/disconnect-service-button";
 import { SERVICES } from "@/lib/constants/services";
 import { SYNC_POLL_INTERVAL_MS } from "@/lib/utils/polling";
 import { cn } from "@/lib/utils/cn";
@@ -32,6 +33,8 @@ import type { ServiceMeta } from "@/lib/constants/services";
 
 interface ServiceConnectGridProps {
   initialConnections: ServiceConnection[];
+  /** Show disconnect controls for already connected services. */
+  allowDisconnect?: boolean;
   /** Optional notification that a connect/sync/import cycle started for a service. */
   onActivity?: (serviceId: string) => void;
   className?: string;
@@ -68,6 +71,7 @@ function statusDotClass(status: string) {
 
 export function ServiceConnectGrid({
   initialConnections,
+  allowDisconnect = false,
   onActivity,
   className,
 }: ServiceConnectGridProps) {
@@ -118,6 +122,15 @@ export function ServiceConnectGrid({
     setActiveServices((prev) => new Set(prev).add(service));
   }
 
+  function removeConnection(service: string) {
+    setConnections((prev) => prev.filter((connection) => connection.service !== service));
+    setActiveServices((prev) => {
+      const next = new Set(prev);
+      next.delete(service);
+      return next;
+    });
+  }
+
   return (
     <div
       className={cn(
@@ -130,6 +143,8 @@ export function ServiceConnectGrid({
           key={service.id}
           service={service}
           connection={connections.find((c) => c.service === service.id)}
+          allowDisconnect={allowDisconnect}
+          onDisconnected={() => removeConnection(service.id)}
           onActive={() => markActive(service.id)}
         />
       ))}
@@ -140,13 +155,23 @@ export function ServiceConnectGrid({
 interface ServiceCardProps {
   service: ServiceMeta;
   connection?: ServiceConnection;
+  allowDisconnect: boolean;
+  onDisconnected: () => void;
   onActive: () => void;
 }
 
-function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
+function ServiceCard({
+  service,
+  connection,
+  allowDisconnect,
+  onDisconnected,
+  onActive,
+}: ServiceCardProps) {
   const status = connection?.sync_status ?? "not_connected";
   const isBusy = status === "pending" || status === "syncing";
   const isConnected = status === "ok";
+  const showDisconnect = Boolean(allowDisconnect && connection);
+  const splitActions = showDisconnect && isConnected;
 
   return (
     <div className="relative grid row-span-2 grid-rows-subgrid h-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-page)] p-4">
@@ -190,7 +215,12 @@ function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
         )}
       </div>
 
-      <div className="row-start-2 self-end">
+      <div
+        className={cn(
+          "row-start-2 self-end",
+          splitActions ? "grid grid-cols-2 gap-2" : "space-y-2",
+        )}
+      >
         {service.type === "oauth" && service.oauthStartUrl && (
           <OAuthConnect
             service={service}
@@ -225,6 +255,15 @@ function ServiceCard({ service, connection, onActive }: ServiceCardProps) {
             isConnected={isConnected}
             isBusy={isBusy}
             onImported={onActive}
+          />
+        )}
+
+        {showDisconnect && (
+          <DisconnectServiceButton
+            serviceId={service.id}
+            serviceName={service.name}
+            fullWidth={splitActions}
+            onDisconnected={onDisconnected}
           />
         )}
       </div>

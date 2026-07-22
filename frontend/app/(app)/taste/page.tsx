@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function TastePage() {
   let user;
   let taste;
+  let connectedServiceIds: string[] = [];
 
   try {
     const [me, tasteProfile] = await Promise.all([
@@ -20,6 +21,7 @@ export default async function TastePage() {
     ]);
     user = me.user;
     taste = tasteProfile;
+    connectedServiceIds = me.connections.map((connection) => connection.service);
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       redirect("/login");
@@ -72,6 +74,7 @@ export default async function TastePage() {
         <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5">
           <TasteCard
             taste={taste}
+            connectedServiceIds={connectedServiceIds}
             user={{
               archetype: user.archetype,
               vibe_summary: user.vibe_summary,

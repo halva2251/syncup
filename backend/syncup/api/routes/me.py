@@ -1,4 +1,4 @@
-"""GET/PATCH /api/me — current user profile and service connections."""
+"""GET/PATCH /api/me and service-connection management."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, UploadFile
 from pydantic import BaseModel, Field, StrictBool, field_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.api.schemas import ServiceConnectionOut
@@ -18,7 +19,7 @@ from syncup.constants.languages import (
     MAX_LANGUAGES,
     SUPPORTED_LANGUAGE_CODES,
 )
-from syncup.db.models import ServiceConnection
+from syncup.db.models import Item, ServiceConnection, UserEmbedding, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
@@ -125,6 +126,49 @@ def get_me(
         user=UserOut.model_validate(user),
         connections=[ServiceConnectionOut.model_validate(c) for c in connections],
     )
+
+
+@router.delete("/me/connections/{service}", status_code=204)
+@limiter.limit("30/minute")
+def delete_connection(
+    service: str,
+    request: Request,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+) -> None:
+    """Disconnect a service and remove its pulled data for the current user."""
+    connection = db.scalar(
+        select(ServiceConnection).where(
+            ServiceConnection.user_id == user.id,
+            ServiceConnection.service == service,
+        )
+    )
+    if connection is None:
+        raise SyncUpError("NOT_FOUND", "Service connection not found", 404)
+
+    try:
+        # Items are shared across users, so only remove this user's pulled
+        # associations. The canonical catalog remains available to other users.
+        db.execute(
+            delete(UserItem).where(
+                UserItem.user_id == user.id,
+                UserItem.item_id.in_(select(Item.id).where(Item.service == service)),
+            )
+        )
+
+        # Embeddings and the synthesized profile are derived from all services;
+        # invalidate them so a later recompute cannot use disconnected data.
+        db.execute(delete(UserEmbedding).where(UserEmbedding.user_id == user.id))
+        user.vibe_summary = None
+        user.archetype = None
+        user.key_themes = None
+        user.vibe_computed_at = None
+
+        db.delete(connection)
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise SyncUpError("INTERNAL_ERROR", "Failed to disconnect service", 500) from exc
 
 
 @router.patch("/me", response_model=UserOut)
