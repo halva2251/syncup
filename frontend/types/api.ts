@@ -51,6 +51,7 @@ export interface OnboardingStatus {
 export interface TasteItem {
   id: string;
   name: string;
+  excluded: boolean;
   score?: number;
   rating?: number;
   hours?: number;

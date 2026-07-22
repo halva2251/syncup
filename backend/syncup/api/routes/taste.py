@@ -33,6 +33,7 @@ class TasteItemOut(BaseModel):
     id: str
     name: str
     score: float
+    excluded: bool = False
 
 
 class SteamGameOut(TasteItemOut):
@@ -143,6 +144,7 @@ def _to_steam_game(row: Any) -> SteamGameOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         hours=round((row.raw_value or 0.0) / 60, 1),
     )
 
@@ -152,6 +154,7 @@ def _to_lastfm_artist(row: Any) -> LastfmArtistOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         play_count=row.raw_value,
     )
 
@@ -161,6 +164,7 @@ def _to_lastfm_track(row: Any) -> LastfmTrackOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         artist=row.meta.get("artist", ""),
         play_count=row.raw_value,
     )
@@ -171,6 +175,7 @@ def _to_spotify_artist(row: Any) -> SpotifyArtistOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
     )
 
 
@@ -179,6 +184,7 @@ def _to_spotify_track(row: Any) -> SpotifyTrackOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         artists=row.meta.get("artists", []),
     )
 
@@ -188,6 +194,7 @@ def _to_letterboxd_film(row: Any) -> LetterboxdFilmOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         release_year=row.meta.get("release_year", 0),
     )
 
@@ -197,6 +204,7 @@ def _to_rateyourmusic_album(row: Any) -> RateYourMusicAlbumOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         release_year=row.meta.get("release_year", 0),
         artist=row.meta.get("artist_normalized", ""),
         rating=row.raw_value or 0.0,
@@ -224,6 +232,7 @@ def _build_taste_profile(
     user_id: uuid.UUID,
     *,
     include_overrides: bool,
+    include_excluded: bool,
 ) -> TasteOut:
     """Build a user's taste profile, omitting private controls when requested."""
     rn = (
@@ -240,6 +249,7 @@ def _build_taste_profile(
             UserItem.id.label("user_item_id"),
             UserItem.engagement_score,
             UserItem.raw_value,
+            UserItem.excluded,
             Item.external_id,
             Item.service,
             Item.item_type,
@@ -248,7 +258,10 @@ def _build_taste_profile(
             rn,
         )
         .join(Item, UserItem.item_id == Item.id)
-        .where(UserItem.user_id == user_id)
+        .where(
+            UserItem.user_id == user_id,
+            *([] if include_excluded else [UserItem.excluded.is_(False)]),
+        )
         .subquery()
     )
 
@@ -344,7 +357,9 @@ def get_taste(
     user: RequireAuth,
 ) -> TasteOut:
     """Return the authenticated user's aggregated taste profile."""
-    return _build_taste_profile(db, user.id, include_overrides=True)
+    return _build_taste_profile(
+        db, user.id, include_overrides=True, include_excluded=True
+    )
 
 
 @public_router.get(
@@ -369,5 +384,7 @@ def get_public_taste_card(
             vibe_summary=user.vibe_summary,
             key_themes=user.key_themes,
         ),
-        taste=_build_taste_profile(db, user.id, include_overrides=False),
+        taste=_build_taste_profile(
+            db, user.id, include_overrides=False, include_excluded=False
+        ),
     )

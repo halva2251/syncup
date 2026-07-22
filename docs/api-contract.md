@@ -217,7 +217,7 @@ Aggregated view. Services with no items are omitted from the response entirely (
 ```json
 {
   "services": {
-    "steam":   { "top_games":   [{ "id": "...", "name": "Disco Elysium", "hours": 50 }, ...] },
+    "steam":   { "top_games":   [{ "id": "...", "name": "Disco Elysium", "hours": 50, "excluded": false }, ...] },
     "lastfm":  { "top_artists": [...], "top_tags": [] },   // top_tags not yet synced — placeholder for later
     "spotify": { "top_artists": [...], "top_tracks": [...] }
   },
@@ -229,6 +229,10 @@ Aggregated view. Services with no items are omitted from the response entirely (
   ]
 }
 ```
+
+Each item in the authenticated user's response includes `excluded`. Excluded
+items remain in the response so the editor can restore them; they are omitted
+from public taste cards.
 
 ### `GET /users/{user_id}/taste-card` — Live ✅
 
