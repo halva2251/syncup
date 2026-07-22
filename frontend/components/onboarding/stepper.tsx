@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils/cn";
 const steps = [
   { id: "profile", label: "Languages" },
   { id: "services", label: "Services" },
+  { id: "socials", label: "Socials" },
   { id: "obsessions", label: "Obsessions" },
   { id: "taste", label: "Taste" },
 ];

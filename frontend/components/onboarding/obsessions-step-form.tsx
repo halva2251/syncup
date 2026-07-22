@@ -232,7 +232,7 @@ export function ObsessionsStepForm({
       icon={Heart}
       title="What are you obsessed with?"
       description="Add at least 3 things that define your taste — games, albums, books, shows, communities, anything."
-      backHref="/onboarding/services"
+      backHref="/onboarding/socials"
       continueHref="/onboarding/taste"
     >
       {editor}

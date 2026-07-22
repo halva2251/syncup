@@ -6,11 +6,16 @@ import { useState, type ReactNode } from "react";
 interface OwnProfileViewProps {
   preview: ReactNode;
   edit: ReactNode;
+  initialMode?: "preview" | "edit";
 }
 
 /** Switches the signed-in profile between its public preview and edit surfaces. */
-export function OwnProfileView({ preview, edit }: OwnProfileViewProps) {
-  const [mode, setMode] = useState<"preview" | "edit">("preview");
+export function OwnProfileView({
+  preview,
+  edit,
+  initialMode = "preview",
+}: OwnProfileViewProps) {
+  const [mode, setMode] = useState<"preview" | "edit">(initialMode);
   const isEditing = mode === "edit";
 
   return (

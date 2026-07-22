@@ -225,7 +225,7 @@ export default async function HomePage() {
 
         {/* Onboarding nudges / empty states */}
         {!hasTasteData ? (
-          <section className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-page)] p-10 text-center">
+          <section className="rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-card)] p-10 text-center">
             <Plug className="mx-auto h-10 w-10 text-[var(--color-text-tertiary)]" />
             <h2 className="mt-4 text-base font-medium text-[var(--color-text-primary)]">
               Let&apos;s build your taste profile
@@ -236,7 +236,7 @@ export default async function HomePage() {
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <ButtonLink href="/connections">Connect a service</ButtonLink>
-              <ButtonLink href="/onboarding/obsessions" variant="secondary">
+              <ButtonLink href={`/feed/${user.id}?edit=true`} variant="secondary">
                 Add obsessions
               </ButtonLink>
             </div>

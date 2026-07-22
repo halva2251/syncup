@@ -88,6 +88,7 @@ export async function addSocialLinkAction(platform: string, username: string) {
       social_links: { ...socialLinks, [platform]: url },
     });
     revalidatePath(`/feed/${me.user.id}`);
+    revalidatePath("/onboarding/socials");
     return { success: true as const, platform, url };
   } catch (err) {
     return { error: safeError(err) };

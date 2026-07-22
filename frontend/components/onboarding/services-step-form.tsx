@@ -18,7 +18,7 @@ export function ServicesStepForm({
       title="Connect your services"
       description="Link the platforms where your taste actually lives. You can skip any service and add manual obsessions next."
       backHref="/onboarding/profile"
-      continueHref="/onboarding/obsessions"
+      continueHref="/onboarding/socials"
     >
       <ServiceConnectGrid initialConnections={initialConnections} />
     </OnboardingStep>

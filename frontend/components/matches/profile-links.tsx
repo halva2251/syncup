@@ -16,6 +16,9 @@ interface ProfileLinksProps {
   discordHandle: string | null;
   links: Record<string, string>;
   editable?: boolean;
+  showAddFormInitially?: boolean;
+  keepAddFormOpen?: boolean;
+  compactAddForm?: boolean;
 }
 
 function brandStyle(hex: string): CSSProperties {
@@ -27,9 +30,16 @@ function brandHex(hex: string | undefined) {
 }
 
 /** Public social and service links shown on a profile. */
-export function ProfileLinks({ discordHandle, links, editable = false }: ProfileLinksProps) {
+export function ProfileLinks({
+  discordHandle,
+  links,
+  editable = false,
+  showAddFormInitially = false,
+  keepAddFormOpen = false,
+  compactAddForm = false,
+}: ProfileLinksProps) {
   const [currentLinks, setCurrentLinks] = useState(links);
-  const [isAdding, setIsAdding] = useState(false);
+  const [isAdding, setIsAdding] = useState(showAddFormInitially);
   const [platform, setPlatform] = useState(MANUAL_PROFILE_LINK_PLATFORMS[0].id);
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +64,7 @@ export function ProfileLinks({ discordHandle, links, editable = false }: Profile
       }
       setCurrentLinks((previous) => ({ ...previous, [result.platform]: result.url }));
       setUsername("");
-      setIsAdding(false);
+      setIsAdding(keepAddFormOpen);
     });
   };
 
@@ -121,24 +131,30 @@ export function ProfileLinks({ discordHandle, links, editable = false }: Profile
         {editable && isAdding ? (
           <form
             onSubmit={handleAddLink}
-            className="col-span-full rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-page)] p-4"
+            className={
+              compactAddForm
+                ? "col-span-full"
+                : "col-span-full rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-page)] p-4"
+            }
           >
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h4 className="text-sm font-medium text-[var(--color-text-primary)]">
-                Add links & social
-              </h4>
-              <button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setIsAdding(false);
-                }}
-                className="rounded-md p-1 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-                aria-label="Close social link form"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            {!compactAddForm ? (
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h4 className="text-sm font-medium text-[var(--color-text-primary)]">
+                  Add links & social
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setIsAdding(false);
+                  }}
+                  className="rounded-md p-1 text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+                  aria-label="Close social link form"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : null}
             <div className="grid gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
               <select
                 value={platform}
@@ -164,13 +180,15 @@ export function ProfileLinks({ discordHandle, links, editable = false }: Profile
               <p className="mt-3 text-xs text-[var(--color-danger)]">{error}</p>
             ) : null}
             <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsAdding(false)}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
-              >
-                Cancel
-              </button>
+              {!compactAddForm ? (
+                <button
+                  type="button"
+                  onClick={() => setIsAdding(false)}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]"
+                >
+                  Cancel
+                </button>
+              ) : null}
               <button
                 type="submit"
                 disabled={isPending}

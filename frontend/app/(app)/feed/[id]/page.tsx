@@ -18,6 +18,7 @@ export const dynamic = "force-dynamic";
 
 interface FeedDetailPageProps {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ edit?: string }>;
 }
 
 export async function generateMetadata({
@@ -34,8 +35,12 @@ export async function generateMetadata({
   return { title: `${name} · Feed · SyncUp` };
 }
 
-export default async function FeedDetailPage({ params }: FeedDetailPageProps) {
+export default async function FeedDetailPage({
+  params,
+  searchParams,
+}: FeedDetailPageProps) {
   const { id } = await params;
+  const { edit } = await searchParams;
 
   let match: Match;
   let isOwnProfile = false;
@@ -106,6 +111,7 @@ export default async function FeedDetailPage({ params }: FeedDetailPageProps) {
 
         {isOwnProfile && tasteCard && tasteCardUser ? (
           <OwnProfileView
+            initialMode={edit === "true" ? "edit" : "preview"}
             preview={
               <div className="grid items-start gap-6 lg:grid-cols-2">
                 <MatchDetail match={match} showCompatibility={false} />

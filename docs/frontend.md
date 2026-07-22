@@ -16,7 +16,7 @@ The frontend is actively built out on top of the Phase 2 backend (semantic match
 | App-style icons | ✅ `AppIcon` utility in `frontend/components/ui/app-icon.tsx` |
 | Shared UI primitives | ✅ Cards, controls, page headers, avatars, AppIcon, feedback states |
 | Auth / login / signup | ✅ Built |
-| Onboarding | ✅ 4-step wizard built (languages, services, obsessions, taste preview) |
+| Onboarding | ✅ 5-step wizard built (languages, services, social links, obsessions, taste preview) |
 | Profile / taste card | ✅ Built at `/feed/[id]`; the signed-in user can preview and edit their own profile there |
 | Home dashboard (`/home`) | ✅ Built |
 | Matches feed | ✅ Built (`/feed` + `/feed/[id]`) |
@@ -255,7 +255,7 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 
 | Route | Purpose | Key endpoints |
 |-------|---------|---------------|
-| `/onboarding` | 4-step wizard: languages → connect services → manual obsessions → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
+| `/onboarding` | 5-step wizard: languages → connect services → optional social links → manual obsessions → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
 | `/home` | Dashboard landing after onboarding. Stat overview (services, taste items, obsessions, matching status), vibe summary, quick links, connected-services status, and recommendations teaser. | `GET /api/me`, `GET /api/me/taste` |
 | `/me/connections` | Service grid, sync status, OAuth + CSV upload flows. | `GET /api/me`, `POST /api/sync/{service}`, connect endpoints |
 | `/me/settings` | Hub linking to the settings sub-pages. | `GET /api/me` |
@@ -371,7 +371,7 @@ From `docs/roadmap.md` / `api-contract.md`:
 4. **Obsessions** — freeform things the user is obsessed with (games, albums, books, etc.). Each gets a category and is stored as a `manual_obsession`. ≥ 3 satisfies the `has_connection_or_obsessions` gate.
 5. **Taste card preview** — call `GET /api/me/taste`, render the `TasteCard` component, let the user review, then `PATCH /api/me { is_matchable: true }`.
 
-The frontend stepper shows four steps: **Languages → Services → Obsessions → Taste**. The old `/onboarding/matchable` route now redirects to `/onboarding/taste`; enabling matchability is the primary CTA on the taste preview page.
+The frontend stepper shows five steps: **Languages → Services → Socials → Obsessions → Taste**. The optional Socials step reuses the editable Links & social section, including automatic public links for connected services. The old `/onboarding/matchable` route now redirects to `/onboarding/taste`; enabling matchability is the primary CTA on the taste preview page.
 
 `next_step` progression from the backend:
 

@@ -10,10 +10,11 @@ The onboarding wizard collects the minimum taste signal needed before a user can
 
 1. **Languages** — spoken languages for matching filters.
 2. **Services** — OAuth or CSV connections to platforms where taste lives.
-3. **Obsessions** — freeform manual obsessions when no service data exists.
-4. **Taste preview** — review the generated taste card and enable matching.
+3. **Socials** — optional public social links and connected-service profiles.
+4. **Obsessions** — freeform manual obsessions when no service data exists.
+5. **Taste preview** — review the generated taste card and enable matching.
 
-The stepper shows four steps: **Languages → Services → Obsessions → Taste**. The legacy `/onboarding/matchable` route redirects to `/onboarding/taste`; enabling `is_matchable` is the final CTA on the taste preview page.
+The stepper shows five steps: **Languages → Services → Socials → Obsessions → Taste**. The legacy `/onboarding/matchable` route redirects to `/onboarding/taste`; enabling `is_matchable` is the final CTA on the taste preview page.
 
 ---
 
@@ -24,6 +25,7 @@ The stepper shows four steps: **Languages → Services → Obsessions → Taste*
 | `/onboarding` | `app/(app)/onboarding/page.tsx` | Redirects to `/onboarding/profile`. |
 | `/onboarding/profile` | `app/(app)/onboarding/profile/page.tsx` | Languages step. |
 | `/onboarding/services` | `app/(app)/onboarding/services/page.tsx` | Connect services step. |
+| `/onboarding/socials` | `app/(app)/onboarding/socials/page.tsx` | Optional social links step. |
 | `/onboarding/obsessions` | `app/(app)/onboarding/obsessions/page.tsx` | Manual obsessions step. |
 | `/onboarding/taste` | `app/(app)/onboarding/taste/page.tsx` | Taste card preview + enable matching. |
 | `/onboarding/matchable` | `app/(app)/onboarding/matchable/page.tsx` | Redirects to `/onboarding/taste`. |
@@ -62,7 +64,7 @@ Renders the bottom button bar. If `continueButton` is provided it uses `GlossyBu
 
 `components/onboarding/stepper.tsx`
 
-Displays four pills: Languages, Services, Obsessions, Taste. Highlights the current step and marks previous steps complete. Uses `usePathname`.
+Displays five pills: Languages, Services, Socials, Obsessions, Taste. Highlights the current step and marks previous steps complete. Uses `usePathname`.
 
 ---
 
@@ -88,9 +90,19 @@ Displays four pills: Languages, Services, Obsessions, Taste. Highlights the curr
 - Each card shows the service brand icon, name, description, and connection status.
 - Supports OAuth links, username inputs (Steam / Last.fm), and CSV uploads (Letterboxd / RateYourMusic).
 - Polls `GET /api/me` every 2 seconds while any connection is `pending` or `syncing`.
-- Back link goes to `/onboarding/profile`; Continue link goes to `/onboarding/obsessions`.
+- Back link goes to `/onboarding/profile`; Continue link goes to `/onboarding/socials`.
 
-### 3. Obsessions
+### 3. Socials
+
+**Page:** `app/(app)/onboarding/socials/page.tsx`
+**Form:** `components/onboarding/social-links-step.tsx`
+
+- Reuses the profile's editable **Links & social** section, with the platform dropdown and username field open immediately. The compact form stays open after each addition so multiple links can be added quickly.
+- Users can optionally add GitHub, X, Instagram, TikTok, YouTube, Twitch, Bluesky, Mastodon, or SoundCloud by choosing a platform and entering a username.
+- Connected Last.fm, Steam, Spotify, AniList, Trakt, and Reddit profiles appear automatically.
+- Back link goes to `/onboarding/services`; Continue link goes to `/onboarding/obsessions`.
+
+### 4. Obsessions
 
 **Page:** `app/(app)/onboarding/obsessions/page.tsx`  
 **Form:** `components/onboarding/obsessions-step-form.tsx`  
@@ -99,9 +111,9 @@ Displays four pills: Languages, Services, Obsessions, Taste. Highlights the curr
 - Lists existing `manual_obsessions` as removable chips.
 - Add new obsessions via category select (`AccordionSelect`) + autocomplete (`Autocomplete`).
 - Uses optimistic UI for deletes.
-- Back link goes to `/onboarding/services`; Continue link goes to `/onboarding/taste`.
+- Back link goes to `/onboarding/socials`; Continue link goes to `/onboarding/taste`.
 
-### 4. Taste Preview
+### 5. Taste Preview
 
 **Page:** `app/(app)/onboarding/taste/page.tsx`  
 **Form:** `components/onboarding/taste-review-step.tsx`  
@@ -220,6 +232,7 @@ On success the user lands on `/home`. On error the action returns `{ error: stri
 | `components/onboarding/onboarding-actions.tsx` | Bottom action buttons. |
 | `components/onboarding/profile-step-form.tsx` | Languages form. |
 | `components/onboarding/services-step-form.tsx` | Service connection grid. |
+| `components/onboarding/social-links-step.tsx` | Optional public social-links form. |
 | `components/onboarding/obsessions-step-form.tsx` | Obsessions form. |
 | `components/onboarding/taste-review-step.tsx` | Taste preview + match enable. |
 | `components/taste/taste-card.tsx` | Reusable taste card. |
@@ -234,4 +247,4 @@ On success the user lands on `/home`. On error the action returns `{ error: stri
 
 ---
 
-*Last updated: 2026-06-13*
+*Last updated: 2026-07-22*
