@@ -80,7 +80,7 @@ function AvatarUpload({ initialAvatarUrl }: { initialAvatarUrl: string | null })
       <span className="mb-2 block text-[15px] font-medium text-[var(--color-text-primary)]">
         Profile photo
       </span>
-      <div className="flex items-center gap-4">
+      <div className="flex flex-col items-start gap-3 min-[400px]:flex-row min-[400px]:items-center min-[400px]:gap-4">
         <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[var(--color-border)] bg-[var(--color-bg-page)]">
           {shown ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -142,7 +142,7 @@ export function ProfileForm({
   );
 
   return (
-    <form action={formAction} className="space-y-5">
+    <form action={formAction} className="space-y-4 sm:space-y-5">
       {state?.error && <ErrorMessage>{state.error}</ErrorMessage>}
 
       <Input
@@ -192,8 +192,8 @@ export function ProfileForm({
         placeholder="Add languages..."
       />
 
-      <div className="flex items-center justify-end gap-2 border-t border-[var(--color-border-subtle)] pt-5">
-        <Button type="submit" disabled={pending} className="relative">
+      <div className="flex items-center justify-stretch gap-2 border-t border-[var(--color-border-subtle)] pt-4 sm:justify-end sm:pt-5">
+        <Button type="submit" disabled={pending} className="relative w-full sm:w-auto">
           <span className={pending ? "invisible" : undefined}>Save changes</span>
           {pending && <Loader2 className="absolute h-4 w-4 animate-spin" />}
         </Button>

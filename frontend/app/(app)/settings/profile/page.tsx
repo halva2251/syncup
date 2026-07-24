@@ -33,7 +33,7 @@ export default async function ProfileSettingsPage() {
           description="The details other people see on your taste card and match profile."
         />
 
-        <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
+        <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-4 sm:p-6">
           <ProfileForm
             initialDisplayName={user.display_name}
             initialBio={user.bio}

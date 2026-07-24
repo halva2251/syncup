@@ -11,11 +11,14 @@ import {
   ChevronRight,
   Mail,
   CalendarDays,
+  LogOut,
   SunMoon,
 } from "lucide-react";
 import { ApiError } from "@/lib/api/client";
 import { getCurrentUser } from "@/lib/api/me";
 import { AppIcon, type AppIconGradient } from "@/components/ui/app-icon";
+import { Button } from "@/components/ui/button";
+import { logoutAction } from "@/lib/actions/auth-actions";
 import type { LucideIcon } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -174,6 +177,23 @@ export default async function SettingsHubPage() {
             );
           })}
         </nav>
+
+        <section className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+          <div>
+            <h2 className="text-base font-semibold text-[var(--color-text-primary)]">
+              Sign out
+            </h2>
+            <p className="mt-0.5 text-[13px] text-[var(--color-text-secondary)]">
+              End this session on this device.
+            </p>
+          </div>
+          <form action={logoutAction}>
+            <Button variant="secondary" type="submit">
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+              Log out
+            </Button>
+          </form>
+        </section>
       </div>
     </div>
   );
