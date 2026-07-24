@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -15,6 +15,7 @@ from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.ingest.registry import registered_services
 from syncup.limiter import limiter
+from syncup.matching.recompute import recompute_user_matching_data
 
 router = APIRouter(prefix="/api/me", tags=["dimensions"])
 
@@ -66,6 +67,7 @@ def get_dimensions(
 def update_dimensions(
     body: DimensionWeightsIn,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> DimensionWeightsOut:
@@ -82,4 +84,5 @@ def update_dimensions(
         db.rollback()
         raise SyncUpError("INTERNAL_ERROR", "Failed to update dimension weights", 500) from exc
 
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)
     return DimensionWeightsOut(weights=normalised)

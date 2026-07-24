@@ -13,11 +13,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from syncup.auth.router import RequireAuth
-from syncup.db.models import Item, ManualObsession, PreferenceOverride, UserItem
+from syncup.db.models import Item, ManualObsession, PreferenceOverride, User, UserItem
 from syncup.db.session import get_db
+from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
 
 router = APIRouter(prefix="/api/me", tags=["taste"])
+public_router = APIRouter(prefix="/api/users", tags=["taste"])
 
 _TASTE_TOP_N = 20
 
@@ -31,6 +33,7 @@ class TasteItemOut(BaseModel):
     id: str
     name: str
     score: float
+    excluded: bool = False
 
 
 class SteamGameOut(TasteItemOut):
@@ -120,6 +123,17 @@ class TasteOut(BaseModel):
     overrides: list[PreferenceOverrideOut]
 
 
+class PublicTasteUserOut(BaseModel):
+    archetype: str | None
+    vibe_summary: str | None
+    key_themes: list[str] | None
+
+
+class PublicTasteCardOut(BaseModel):
+    user: PublicTasteUserOut
+    taste: TasteOut
+
+
 # ---------------------------------------------------------------------------
 # Row → schema converters
 # ---------------------------------------------------------------------------
@@ -130,6 +144,7 @@ def _to_steam_game(row: Any) -> SteamGameOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         hours=round((row.raw_value or 0.0) / 60, 1),
     )
 
@@ -139,6 +154,7 @@ def _to_lastfm_artist(row: Any) -> LastfmArtistOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         play_count=row.raw_value,
     )
 
@@ -148,6 +164,7 @@ def _to_lastfm_track(row: Any) -> LastfmTrackOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         artist=row.meta.get("artist", ""),
         play_count=row.raw_value,
     )
@@ -158,6 +175,7 @@ def _to_spotify_artist(row: Any) -> SpotifyArtistOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
     )
 
 
@@ -166,6 +184,7 @@ def _to_spotify_track(row: Any) -> SpotifyTrackOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         artists=row.meta.get("artists", []),
     )
 
@@ -175,6 +194,7 @@ def _to_letterboxd_film(row: Any) -> LetterboxdFilmOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         release_year=row.meta.get("release_year", 0),
     )
 
@@ -184,6 +204,7 @@ def _to_rateyourmusic_album(row: Any) -> RateYourMusicAlbumOut:
         id=str(row.user_item_id),
         name=row.name,
         score=row.engagement_score,
+        excluded=row.excluded,
         release_year=row.meta.get("release_year", 0),
         artist=row.meta.get("artist_normalized", ""),
         rating=row.raw_value or 0.0,
@@ -202,18 +223,18 @@ _CONVERTERS: dict[tuple[str, str], Callable[[Any], TasteItemOut]] = {
 
 
 # ---------------------------------------------------------------------------
-# Route
+# Profile builder and routes
 # ---------------------------------------------------------------------------
 
 
-@router.get("/taste", response_model=TasteOut, response_model_exclude_none=True)
-@limiter.limit("30/minute")
-def get_taste(
-    request: Request,
-    db: Annotated[DbSession, Depends(get_db)],
-    user: RequireAuth,
+def _build_taste_profile(
+    db: DbSession,
+    user_id: uuid.UUID,
+    *,
+    include_overrides: bool,
+    include_excluded: bool,
 ) -> TasteOut:
-    """Return the authenticated user's aggregated taste profile."""
+    """Build a user's taste profile, omitting private controls when requested."""
     rn = (
         func.row_number()
         .over(
@@ -228,6 +249,7 @@ def get_taste(
             UserItem.id.label("user_item_id"),
             UserItem.engagement_score,
             UserItem.raw_value,
+            UserItem.excluded,
             Item.external_id,
             Item.service,
             Item.item_type,
@@ -236,7 +258,10 @@ def get_taste(
             rn,
         )
         .join(Item, UserItem.item_id == Item.id)
-        .where(UserItem.user_id == user.id)
+        .where(
+            UserItem.user_id == user_id,
+            *([] if include_excluded else [UserItem.excluded.is_(False)]),
+        )
         .subquery()
     )
 
@@ -278,21 +303,23 @@ def get_taste(
 
     obsessions = db.scalars(
         select(ManualObsession)
-        .where(ManualObsession.user_id == user.id)
+        .where(ManualObsession.user_id == user_id)
         .order_by(ManualObsession.created_at.desc())
         .limit(100)
     ).all()
 
-    override_rows = db.execute(
-        select(
-            PreferenceOverride.id,
-            PreferenceOverride.boost_multiplier,
-            Item.name.label("item_name"),
-        )
-        .join(Item, PreferenceOverride.item_id == Item.id)
-        .where(PreferenceOverride.user_id == user.id)
-        .order_by(PreferenceOverride.created_at.desc())
-    ).all()
+    override_rows = []
+    if include_overrides:
+        override_rows = db.execute(
+            select(
+                PreferenceOverride.id,
+                PreferenceOverride.boost_multiplier,
+                Item.name.label("item_name"),
+            )
+            .join(Item, PreferenceOverride.item_id == Item.id)
+            .where(PreferenceOverride.user_id == user_id)
+            .order_by(PreferenceOverride.created_at.desc())
+        ).all()
 
     return TasteOut(
         services=ServicesOut(
@@ -319,4 +346,45 @@ def get_taste(
             )
             for row in override_rows
         ],
+    )
+
+
+@router.get("/taste", response_model=TasteOut, response_model_exclude_none=True)
+@limiter.limit("30/minute")
+def get_taste(
+    request: Request,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+) -> TasteOut:
+    """Return the authenticated user's aggregated taste profile."""
+    return _build_taste_profile(
+        db, user.id, include_overrides=True, include_excluded=True
+    )
+
+
+@public_router.get(
+    "/{user_id}/taste-card",
+    response_model=PublicTasteCardOut,
+    response_model_exclude_none=True,
+)
+@limiter.limit("30/minute")
+def get_public_taste_card(
+    user_id: uuid.UUID,
+    request: Request,
+    db: Annotated[DbSession, Depends(get_db)],
+) -> PublicTasteCardOut:
+    """Return the public taste card for a user who has opted into matching."""
+    user = db.get(User, user_id)
+    if not user or not user.is_matchable:
+        raise SyncUpError("NOT_FOUND", "Taste card not found", 404)
+
+    return PublicTasteCardOut(
+        user=PublicTasteUserOut(
+            archetype=user.archetype,
+            vibe_summary=user.vibe_summary,
+            key_themes=user.key_themes,
+        ),
+        taste=_build_taste_profile(
+            db, user.id, include_overrides=False, include_excluded=False
+        ),
     )

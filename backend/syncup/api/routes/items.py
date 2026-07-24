@@ -5,17 +5,18 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 from sqlalchemy.orm import joinedload
 
 from syncup.auth.router import RequireAuth
-from syncup.db.models import UserItem
+from syncup.db.models import Item, UserItem
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
+from syncup.matching.recompute import recompute_user_matching_data
 
 router = APIRouter(prefix="/api/me", tags=["items"])
 
@@ -42,12 +43,50 @@ class ItemExcludePatch(BaseModel):
     excluded: bool
 
 
+class TasteItemChoiceOut(BaseModel):
+    """A selectable, user-owned item for taste-control forms."""
+
+    id: uuid.UUID
+    name: str
+    service: str
+    item_type: str
+
+
+@router.get("/items", response_model=list[TasteItemChoiceOut])
+@limiter.limit("60/minute")
+def list_taste_items(
+    request: Request,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+    limit: int = Query(default=1000, ge=1, le=2000),
+) -> list[TasteItemChoiceOut]:
+    """List a user's included items for name-based taste-control pickers."""
+    rows = db.scalars(
+        select(UserItem)
+        .join(Item, UserItem.item_id == Item.id)
+        .where(UserItem.user_id == user.id, UserItem.excluded == False)  # noqa: E712
+        .options(joinedload(UserItem.item))
+        .order_by(UserItem.engagement_score.desc(), Item.name.asc())
+        .limit(limit)
+    ).all()
+    return [
+        TasteItemChoiceOut(
+            id=row.item.id,
+            name=row.item.name,
+            service=row.item.service,
+            item_type=row.item.item_type,
+        )
+        for row in rows
+    ]
+
+
 @router.patch("/items/{item_id}", response_model=UserItemOut)
 @limiter.limit("60/minute")
 def patch_item_exclusion(
     item_id: uuid.UUID,
     body: ItemExcludePatch,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> UserItemOut:
@@ -67,5 +106,6 @@ def patch_item_exclusion(
 
     user_item.excluded = body.excluded
     db.commit()
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)
 
     return UserItemOut.model_validate(user_item)

@@ -53,12 +53,20 @@ def top_shared_highlights(
     b_by_service: dict[str, frozenset[uuid.UUID]],
     item_names: dict[uuid.UUID, str],
     popularity: dict[uuid.UUID, int],
-    limit: int = 5,
+    limit: int = 20,
+    eligible_item_ids: frozenset[uuid.UUID] | None = None,
 ) -> list[SharedHighlight]:
-    """Return the most niche shared items across all services, rarest first."""
+    """Return the most niche shared items across all services, rarest first.
+
+    When ``eligible_item_ids`` is supplied, only those shared items are
+    returned. This lets the feed restrict its highlighted tags to items that
+    are prominent in both users' visible taste profiles.
+    """
     candidates: list[tuple[float, str, str]] = []
     for service in set(a_by_service) & set(b_by_service):
         for item_id in a_by_service[service] & b_by_service[service]:
+            if eligible_item_ids is not None and item_id not in eligible_item_ids:
+                continue
             name = item_names.get(item_id)
             if not name:
                 continue

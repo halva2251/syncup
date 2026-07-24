@@ -1,4 +1,5 @@
 import { AppIcon } from "@/components/ui/app-icon";
+import { DisconnectServiceButton } from "@/components/connections/disconnect-service-button";
 import { TasteItemList } from "@/components/taste/taste-item-list";
 import { SERVICE_BY_ID } from "@/lib/constants/services";
 import type { TasteItem, TasteServiceData } from "@/types/api";
@@ -7,6 +8,8 @@ interface TasteServiceSectionProps {
   serviceId: string;
   data: TasteServiceData;
   bordered?: boolean;
+  canDisconnect?: boolean;
+  canEditItems?: boolean;
 }
 
 const BUCKET_LABELS: Record<string, string> = {
@@ -43,6 +46,8 @@ export function TasteServiceSection({
   serviceId,
   data,
   bordered = true,
+  canDisconnect = false,
+  canEditItems = false,
 }: TasteServiceSectionProps) {
   const service = SERVICE_BY_ID.get(serviceId);
   const buckets = Object.entries(data).filter(
@@ -56,17 +61,26 @@ export function TasteServiceSection({
 
   const content = (
     <>
-      <div className="mb-3 flex items-center gap-2.5">
-        {service ? (
-          <AppIcon
-            brand={service.brand}
-            size="sm"
-            brandColor={`#${service.brand.hex}`}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          {service ? (
+            <AppIcon
+              brand={service.brand}
+              size="sm"
+              brandColor={`#${service.brand.hex}`}
+            />
+          ) : null}
+          <h3 className="font-semibold text-[var(--color-text-primary)]">
+            {service?.name ?? serviceId}
+          </h3>
+        </div>
+        {canDisconnect && service ? (
+          <DisconnectServiceButton
+            serviceId={serviceId}
+            serviceName={service.name}
+            compact
           />
         ) : null}
-        <h3 className="font-semibold text-[var(--color-text-primary)]">
-          {service?.name ?? serviceId}
-        </h3>
       </div>
 
       <div className={isSingleBucket ? undefined : "grid grid-cols-1 gap-4 sm:grid-cols-2"}>
@@ -79,7 +93,7 @@ export function TasteServiceSection({
               items={items.slice(0, 5)}
               rankMode={rankMode}
               getLabel={(item) => getItemLabel(serviceId, bucket, item)}
-              excludable
+              excludable={canEditItems}
             />
           </div>
         ))}

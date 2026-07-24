@@ -8,13 +8,14 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRouter
 
 load_dotenv()
@@ -35,6 +36,7 @@ from syncup.api.routes.overrides import router as overrides_router  # noqa: E402
 from syncup.api.routes.recommendations import router as recommendations_router  # noqa: E402
 from syncup.api.routes.search import router as search_router  # noqa: E402
 from syncup.api.routes.sync import router as sync_router  # noqa: E402
+from syncup.api.routes.taste import public_router as public_taste_router  # noqa: E402
 from syncup.api.routes.taste import router as taste_router  # noqa: E402
 from syncup.auth.router import router as auth_router  # noqa: E402
 from syncup.config import Settings  # noqa: E402
@@ -134,6 +136,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         raise RuntimeError(f"Invalid SYNCUP_TOKEN_ENCRYPTION_KEY: {exc}") from exc
 
     app.state.settings = settings
+    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
     app.state.db = sessionmaker_for(
         settings.database_url,
         pool_size=settings.db_pool_size,
@@ -267,12 +270,23 @@ def health() -> dict[str, str]:
 
 
 app.include_router(router)
+
+
+@app.get("/uploads/{file_path:path}", include_in_schema=False)
+def serve_upload(file_path: str, request: Request) -> FileResponse:
+    """Serve user-uploaded files (avatars) from the configured upload dir."""
+    upload_root = Path(request.app.state.settings.upload_dir).resolve()
+    target = (upload_root / file_path).resolve()
+    if not target.is_relative_to(upload_root) or not target.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(target)
 app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(connect_router)
 app.include_router(spotify_auth_router)
 app.include_router(sync_router)
 app.include_router(taste_router)
+app.include_router(public_taste_router)
 app.include_router(obsessions_router)
 app.include_router(overrides_router)
 app.include_router(dimensions_router)

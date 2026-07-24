@@ -1,4 +1,4 @@
-"""Tests for GET /api/matches, GET /api/matches/{user_id}, POST /api/me/recompute."""
+"""Tests for the match summary, list/detail, and recompute endpoints."""
 
 from __future__ import annotations
 
@@ -137,6 +137,41 @@ def test_get_match_detail_requires_auth(client: TestClient) -> None:
 def test_recompute_requires_auth(client: TestClient) -> None:
     resp = client.post("/api/me/recompute")
     assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /api/matches/summary
+# ---------------------------------------------------------------------------
+
+
+def test_get_match_summary_requires_auth(client: TestClient) -> None:
+    resp = client.get("/api/matches/summary")
+    assert resp.status_code == 401
+
+
+def test_get_match_summary_returns_fresh_cached_count(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    client, _ = match_client
+    mock_db.scalar.return_value = 7
+
+    resp = client.get("/api/matches/summary")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 7}
+    mock_db.scalar.assert_called_once()
+
+
+def test_get_match_summary_returns_zero_when_matching_is_disabled(
+    not_matchable_client: TestClient,
+    mock_db: MagicMock,
+) -> None:
+    resp = not_matchable_client.get("/api/matches/summary")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"count": 0}
+    mock_db.scalar.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +404,20 @@ def test_get_match_detail_404_when_not_cached(
     assert resp.status_code == 404
 
 
+def test_get_match_detail_hides_user_who_disabled_discoverability(
+    match_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    client, user = match_client
+    other = _make_user(is_matchable=False)
+    row = _make_cache_row(user.id, other.id)
+    mock_db.get.side_effect = lambda model, pk: row if model is MatchCache else other
+
+    resp = client.get(f"/api/matches/{other.id}")
+
+    assert resp.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # POST /api/me/recompute
 # ---------------------------------------------------------------------------
@@ -509,6 +558,17 @@ def test_load_cached_matches_has_more_false_on_last_page() -> None:
 
     assert len(result_rows) == 2
     assert has_more is False
+
+
+def test_count_cached_matches_returns_scalar_count() -> None:
+    """The dashboard count is an aggregate query, not a match-list fetch."""
+    from syncup.api.routes.matches import _count_cached_matches
+
+    mock_db = MagicMock(spec=DbSession)
+    mock_db.scalar.return_value = 4
+
+    assert _count_cached_matches(uuid.uuid4(), mock_db) == 4
+    mock_db.scalar.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

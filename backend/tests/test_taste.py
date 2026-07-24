@@ -54,6 +54,7 @@ def _taste_row(
     engagement_score: float = 0.8,
     raw_value: float | None = None,
     meta: dict | None = None,
+    excluded: bool = False,
 ) -> MagicMock:
     row = MagicMock()
     row.service = service
@@ -64,6 +65,7 @@ def _taste_row(
     row.engagement_score = engagement_score
     row.raw_value = raw_value
     row.meta = meta or {}
+    row.excluded = excluded
     return row
 
 
@@ -149,6 +151,41 @@ def test_taste_requires_auth(client: TestClient) -> None:
     assert resp.json()["error"]["code"] == "UNAUTHORIZED"
 
 
+def test_public_taste_card_returns_matchable_user_taste(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    user = _make_user(
+        is_matchable=True,
+        archetype="The Night Listener",
+        vibe_summary="A patient listener with a love of atmosphere.",
+        key_themes=["ambient", "indie"],
+    )
+    mock_db.get.return_value = user
+    _set_execute_results(mock_db, [_taste_row("steam", "game", "Disco Elysium")])
+
+    resp = taste_client.get(f"/api/users/{user.id}/taste-card")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["user"]["archetype"] == "The Night Listener"
+    assert body["taste"]["services"]["steam"]["top_games"][0]["name"] == "Disco Elysium"
+    assert body["taste"]["overrides"] == []
+    taste_query = str(mock_db.execute.call_args_list[0].args[0])
+    assert "user_items.excluded IS false" in taste_query
+
+
+def test_public_taste_card_hides_non_matchable_users(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    user = _make_user(is_matchable=False)
+    mock_db.get.return_value = user
+
+    resp = taste_client.get(f"/api/users/{user.id}/taste-card")
+
+    assert resp.status_code == 404
+    assert resp.json()["error"]["code"] == "NOT_FOUND"
+
+
 # ---------------------------------------------------------------------------
 # Empty state
 # ---------------------------------------------------------------------------
@@ -183,6 +220,21 @@ def test_taste_returns_steam_top_games(taste_client: TestClient, mock_db: MagicM
     assert games[0]["name"] == "Disco Elysium"
     assert games[0]["score"] == pytest.approx(0.9)
     assert games[0]["hours"] == pytest.approx(12.0)  # 720 min / 60
+
+
+def test_taste_includes_excluded_items_for_recovery(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    _set_execute_results(
+        mock_db,
+        [_taste_row("steam", "game", "Disco Elysium", excluded=True)],
+    )
+
+    resp = taste_client.get("/api/me/taste")
+
+    assert resp.status_code == 200
+    game = resp.json()["services"]["steam"]["top_games"][0]
+    assert game["excluded"] is True
 
 
 def test_taste_steam_hours_calculated_from_raw_value(

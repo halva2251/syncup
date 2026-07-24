@@ -328,6 +328,54 @@ def test_compute_match_scores_sets_heuristic_mode() -> None:
     assert results[0].matching_mode == "heuristic"
 
 
+def test_compute_match_scores_highlights_only_mutual_visible_taste() -> None:
+    """A shared low-ranked item is not presented as a top-taste highlight."""
+    from syncup.api.routes.matches import _compute_match_scores
+
+    user_id = uuid.uuid4()
+    other_id = uuid.uuid4()
+    shared_top = uuid.uuid4()
+    shared_low_ranked = uuid.uuid4()
+
+    rows = []
+    for owner, unique_prefix in ((user_id, "Mine"), (other_id, "Theirs")):
+        item_ids = [shared_top, *(uuid.uuid4() for _ in range(4)), shared_low_ranked]
+        for rank, item_id in enumerate(item_ids, start=1):
+            row = MagicMock()
+            row.user_id = owner
+            row.item_id = item_id
+            row.service = "lastfm"
+            row.item_type = "artist"
+            row.name = (
+                "Shared top artist"
+                if item_id == shared_top
+                else "Shared lower-ranked artist"
+                if item_id == shared_low_ranked
+                else f"{unique_prefix} artist {rank}"
+            )
+            row.engagement_score = float(7 - rank)
+            rows.append(row)
+
+    pop_rows = []
+    for item_id in (shared_top, shared_low_ranked):
+        pop = MagicMock()
+        pop.item_id = item_id
+        pop.pop = 2
+        pop_rows.append(pop)
+
+    results = _compute_match_scores(
+        user_id,
+        [user_id, other_id],
+        rows,
+        pop_rows,
+        datetime.now(UTC),
+    )
+
+    assert results[0].highlights == [
+        {"service": "lastfm", "item_name": "Shared top artist"}
+    ]
+
+
 # ---------------------------------------------------------------------------
 # _refresh_match_cache — path selection
 # ---------------------------------------------------------------------------

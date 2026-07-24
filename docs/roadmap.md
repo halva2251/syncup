@@ -822,7 +822,16 @@ This is the **primary product during the cold-start phase**. It must be beautifu
 - Visual breakdown of the user's taste (games, music, film, etc.)
 - Archetype label + description
 - Shareable OG image (generate server-side with `@vercel/og` or similar)
-- "Share to X" / "Copy link" buttons
+- "Copy link" button (copies public profile URL)
+- Toast notification system for user feedback
+- Item exclusion controls (remove items with trash icon, add back via "add one more")
+- Service management and settings access
+
+**Recent improvements (2026-07-19):**
+- Added toast notification system with bottom-right positioning, auto-dismiss, and type-appropriate styling
+- Fixed taste page UI by removing duplicate "Copy link" and "Share on X" buttons
+- Improved item exclusion behavior - removed items now appear in "add one more" section for easy recovery
+- Simplified taste page subtitle to "Your taste profile used for matching"
 
 See [product-strategy.md §Taste Card & Discovery Engine](product-strategy.md) for the full design rationale.
 

@@ -71,3 +71,9 @@ export async function triggerSync(
     }
   );
 }
+
+export async function deleteConnection(service: string): Promise<void> {
+  return apiFetch<void>(`/me/connections/${encodeURIComponent(service)}`, {
+    method: "DELETE",
+  });
+}

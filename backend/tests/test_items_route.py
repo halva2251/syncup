@@ -124,6 +124,27 @@ def test_requires_auth(unauth_client: TestClient) -> None:
     assert resp.status_code == 401
 
 
+def test_list_taste_items_returns_selectable_owned_items(
+    auth_client: tuple[TestClient, User, MagicMock],
+) -> None:
+    client, user, db = auth_client
+    item = _make_item(name="Disco Elysium", service="steam", item_type="game")
+    user_item = _make_user_item(user.id, item)
+    db.scalars.return_value.all.return_value = [user_item]
+
+    resp = client.get("/api/me/items")
+
+    assert resp.status_code == 200
+    assert resp.json() == [
+        {
+            "id": str(item.id),
+            "name": "Disco Elysium",
+            "service": "steam",
+            "item_type": "game",
+        }
+    ]
+
+
 # ---------------------------------------------------------------------------
 # 404 — item not found or belongs to another user
 # ---------------------------------------------------------------------------

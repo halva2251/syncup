@@ -38,6 +38,8 @@ dist/
 # Training data & model artifacts
 data/*
 !data/.gitkeep
+# User uploads served from the backend (avatars)
+backend/data/
 models/
 *.pt
 *.pkl
