@@ -357,6 +357,19 @@ def test_fetch_items_returns_anime_and_manga(monkeypatch: pytest.MonkeyPatch) ->
     assert len(items) == 2  # Evangelion (anime) + Berserk (manga); Akira skipped (score=0)
 
 
+def test_fetch_items_passes_connected_user_id_to_graphql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
+    c = _client([])
+    c._graphql = MagicMock(return_value=_COMBINED_BODY["data"])
+
+    c.fetch_items(_make_connection())
+
+    c._graphql.assert_called_once()
+    assert c._graphql.call_args.args[1] == {"userId": 12345}
+
+
 def test_fetch_items_skips_score_zero_entries(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("syncup.ingest.anilist.decrypt_token", lambda _: "tok")
     c = _client([_json_resp(_COMBINED_BODY)])

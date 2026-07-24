@@ -208,7 +208,13 @@ def test_taste_returns_empty_profile(taste_client: TestClient) -> None:
 def test_taste_returns_steam_top_games(taste_client: TestClient, mock_db: MagicMock) -> None:
     user_item_id = uuid.uuid4()
     row = _taste_row(
-        "steam", "game", "Disco Elysium", user_item_id=user_item_id, external_id="2136", engagement_score=0.9, raw_value=720.0
+        "steam",
+        "game",
+        "Disco Elysium",
+        user_item_id=user_item_id,
+        external_id="2136",
+        engagement_score=0.9,
+        raw_value=720.0,
     )
     _set_execute_results(mock_db, [row])
 
@@ -428,8 +434,7 @@ def test_taste_ignores_unknown_service_item_type_combinations(
     taste_client: TestClient, mock_db: MagicMock
 ) -> None:
     known_row = _taste_row("steam", "game", "Half-Life 2", engagement_score=0.9)
-    # "anilist" has no converter yet — should be silently omitted
-    unknown_row = _taste_row("anilist", "anime", "Lain", engagement_score=0.8)
+    unknown_row = _taste_row("anilist", "character", "Rei", engagement_score=0.8)
     _set_execute_results(mock_db, [known_row, unknown_row])
 
     resp = taste_client.get("/api/me/taste")
@@ -437,6 +442,22 @@ def test_taste_ignores_unknown_service_item_type_combinations(
     services = resp.json()["services"]
     assert "steam" in services
     assert "anilist" not in services
+
+
+def test_taste_returns_anilist_anime_and_manga(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    anime = _taste_row("anilist", "anime", "Serial Experiments Lain", engagement_score=0.9)
+    manga = _taste_row("anilist", "manga", "Berserk", engagement_score=1.0)
+    _set_execute_results(mock_db, [anime, manga])
+
+    resp = taste_client.get("/api/me/taste")
+
+    assert resp.status_code == 200
+    service = resp.json()["services"]["anilist"]
+    assert service["top_anime"][0]["name"] == "Serial Experiments Lain"
+    assert service["top_anime"][0]["score"] == pytest.approx(0.9)
+    assert service["top_manga"][0]["name"] == "Berserk"
 
 
 def test_taste_returns_letterboxd_films(
@@ -466,7 +487,11 @@ def test_taste_returns_rateyourmusic_albums_with_rating_and_artist(
         "Eyes of the Mind",
         engagement_score=0.89,
         raw_value=9.0,
-        meta={"title_normalized": "eyes of the mind", "release_year": 1981, "artist_normalized": "casiopea"},
+        meta={
+            "title_normalized": "eyes of the mind",
+            "release_year": 1981,
+            "artist_normalized": "casiopea",
+        },
     )
     _set_execute_results(mock_db, [row])
 
