@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
@@ -15,6 +15,7 @@ from syncup.db.models import Item, ManualObsession
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
+from syncup.matching.recompute import recompute_user_matching_data
 
 router = APIRouter(prefix="/api/me", tags=["obsessions"])
 
@@ -78,6 +79,7 @@ def list_obsessions(
 def create_obsession(
     body: ObsessionIn,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> ObsessionOut:
@@ -103,6 +105,7 @@ def create_obsession(
     )
     db.add(obs)
     db.commit()
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)
     return ObsessionOut.model_validate(obs)
 
 
@@ -111,6 +114,7 @@ def create_obsession(
 def delete_obsession(
     obsession_id: uuid.UUID,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> None:
@@ -124,3 +128,4 @@ def delete_obsession(
         raise SyncUpError("NOT_FOUND", "Obsession not found", 404)
     db.delete(obs)
     db.commit()
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)

@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -17,6 +17,7 @@ from syncup.db.models import Item, PreferenceOverride
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
+from syncup.matching.recompute import recompute_user_matching_data
 
 router = APIRouter(prefix="/api/me", tags=["overrides"])
 
@@ -70,6 +71,7 @@ def list_overrides(
 def create_override(
     body: OverrideIn,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> OverrideOut:
@@ -101,6 +103,7 @@ def create_override(
     except IntegrityError as exc:
         db.rollback()
         raise SyncUpError("CONFLICT", "Override for this item already exists", 409) from exc
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)
     return OverrideOut.model_validate(override)
 
 
@@ -110,6 +113,7 @@ def update_override(
     override_id: uuid.UUID,
     body: OverridePatch,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> OverrideOut:
@@ -130,6 +134,7 @@ def update_override(
         override.note = body.note
 
     db.commit()
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)
     return OverrideOut.model_validate(override)
 
 
@@ -138,6 +143,7 @@ def update_override(
 def delete_override(
     override_id: uuid.UUID,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> None:
@@ -151,3 +157,4 @@ def delete_override(
         raise SyncUpError("NOT_FOUND", "Override not found", 404)
     db.delete(override)
     db.commit()
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)

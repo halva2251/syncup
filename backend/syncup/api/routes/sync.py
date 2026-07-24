@@ -25,6 +25,7 @@ from syncup.ingest.crypto import encrypt_token
 from syncup.ingest.protocol import SyncClientError
 from syncup.ingest.registry import get_client
 from syncup.limiter import limiter
+from syncup.matching.recompute import recompute_user_matching_data
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +187,20 @@ def _embed_new_items(session: DbSession, user_id: uuid.UUID, service: str) -> No
     logger.info("Auto-embedded %d items for user %s / %s", len(items), user_id, service)
 
 
+def embed_and_recompute_imported_service(
+    db_factory: sessionmaker[DbSession], user_id: uuid.UUID, service: str
+) -> None:
+    """Embed a CSV import before rebuilding its derived matching data."""
+    session = db_factory()
+    try:
+        _embed_new_items(session, user_id, service)
+    except Exception:
+        logger.exception("Post-import embedding failed for user %s/%s", user_id, service)
+    finally:
+        session.close()
+    recompute_user_matching_data(db_factory, user_id)
+
+
 def _do_sync_generic(
     db_factory: sessionmaker[DbSession],
     user_id: uuid.UUID,
@@ -259,8 +274,12 @@ def _do_sync_generic(
     finally:
         session.close()
 
-    if sync_ok and llm_api_key:
-        synthesize_vibe(db_factory, user_id, llm_api_key, llm_base_url, llm_model)
+    if sync_ok:
+        # New or changed service data must affect matching without requiring the
+        # user to discover and press the manual refresh control.
+        recompute_user_matching_data(db_factory, user_id)
+        if llm_api_key:
+            synthesize_vibe(db_factory, user_id, llm_api_key, llm_base_url, llm_model)
 
 
 # ---------------------------------------------------------------------------

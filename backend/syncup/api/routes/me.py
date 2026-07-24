@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Request, UploadFile
 from pydantic import BaseModel, Field, StrictBool, field_validator
 from sqlalchemy import delete, or_, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,6 +23,7 @@ from syncup.db.models import Item, MatchCache, ServiceConnection, UserEmbedding,
 from syncup.db.session import get_db
 from syncup.exceptions import SyncUpError
 from syncup.limiter import limiter
+from syncup.matching.recompute import recompute_user_matching_data
 from syncup.profile_links import normalize_social_links
 
 router = APIRouter(prefix="/api", tags=["users"])
@@ -142,6 +143,7 @@ def get_me(
 def delete_connection(
     service: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> None:
@@ -186,12 +188,15 @@ def delete_connection(
         db.rollback()
         raise SyncUpError("INTERNAL_ERROR", "Failed to disconnect service", 500) from exc
 
+    background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)
+
 
 @router.patch("/me", response_model=UserOut)
 @limiter.limit("30/minute")
 def patch_me(
     body: ProfilePatch,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> UserOut:
@@ -223,6 +228,8 @@ def patch_me(
 
     db.commit()
     db.refresh(user)
+    if "is_matchable" in fields:
+        background_tasks.add_task(recompute_user_matching_data, request.app.state.db, user.id)
     return UserOut.model_validate(user)
 
 
