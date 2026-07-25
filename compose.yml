@@ -1,0 +1,25 @@
+name: syncup
+
+services:
+  frontend:
+    image: ${SYNCUP_FRONTEND_IMAGE:-ghcr.io/halva2251/syncup-frontend:latest}
+    ports:
+      # Caddy proxies the public site to this localhost-only port.
+      - "127.0.0.1:8090:8090"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  backend:
+    image: ${SYNCUP_BACKEND_IMAGE:-ghcr.io/halva2251/syncup-backend:latest}
+    env_file:
+      - ./backend/.env
+    ports:
+      # Caddy proxies API requests to this localhost-only port.
+      - "127.0.0.1:3020:3020"
+    volumes:
+      - syncup_uploads:/app/data/uploads
+    restart: unless-stopped
+
+volumes:
+  syncup_uploads:

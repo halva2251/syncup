@@ -507,6 +507,35 @@ def test_taste_returns_rateyourmusic_albums_with_rating_and_artist(
     assert albums[0]["release_year"] == 1981
 
 
+def test_taste_returns_trakt_films_and_shows(
+    taste_client: TestClient, mock_db: MagicMock
+) -> None:
+    film = _taste_row(
+        "trakt",
+        "film",
+        "The Dark Knight",
+        engagement_score=1.0,
+        meta={"release_year": 2008},
+    )
+    show = _taste_row(
+        "trakt",
+        "show",
+        "Severance",
+        engagement_score=0.9,
+        meta={"release_year": 2022},
+    )
+    _set_execute_results(mock_db, [film, show])
+
+    resp = taste_client.get("/api/me/taste")
+
+    assert resp.status_code == 200
+    service = resp.json()["services"]["trakt"]
+    assert service["top_films"][0]["name"] == "The Dark Knight"
+    assert service["top_films"][0]["release_year"] == 2008
+    assert service["top_shows"][0]["name"] == "Severance"
+    assert service["top_shows"][0]["release_year"] == 2022
+
+
 # ---------------------------------------------------------------------------
 # Manual obsessions
 # ---------------------------------------------------------------------------

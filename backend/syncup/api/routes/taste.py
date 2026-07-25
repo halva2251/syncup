@@ -95,6 +95,15 @@ class AniListServiceOut(BaseModel):
     top_manga: list[TasteItemOut]
 
 
+class TraktMediaOut(TasteItemOut):
+    release_year: int
+
+
+class TraktServiceOut(BaseModel):
+    top_films: list[TraktMediaOut]
+    top_shows: list[TraktMediaOut]
+
+
 class ServicesOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -104,6 +113,7 @@ class ServicesOut(BaseModel):
     letterboxd: LetterboxdServiceOut | None = None
     rateyourmusic: RateYourMusicServiceOut | None = None
     anilist: AniListServiceOut | None = None
+    trakt: TraktServiceOut | None = None
 
 
 class ManualObsessionOut(BaseModel):
@@ -226,6 +236,16 @@ def _to_anilist_media(row: Any) -> TasteItemOut:
     )
 
 
+def _to_trakt_media(row: Any) -> TraktMediaOut:
+    return TraktMediaOut(
+        id=str(row.user_item_id),
+        name=row.name,
+        score=row.engagement_score,
+        excluded=row.excluded,
+        release_year=row.meta.get("release_year", 0),
+    )
+
+
 _CONVERTERS: dict[tuple[str, str], Callable[[Any], TasteItemOut]] = {
     ("steam", "game"): _to_steam_game,
     ("lastfm", "artist"): _to_lastfm_artist,
@@ -236,6 +256,8 @@ _CONVERTERS: dict[tuple[str, str], Callable[[Any], TasteItemOut]] = {
     ("rateyourmusic", "album"): _to_rateyourmusic_album,
     ("anilist", "anime"): _to_anilist_media,
     ("anilist", "manga"): _to_anilist_media,
+    ("trakt", "film"): _to_trakt_media,
+    ("trakt", "show"): _to_trakt_media,
 }
 
 
@@ -305,6 +327,8 @@ def _build_taste_profile(
     rym_albums = _build("rateyourmusic", "album")
     anilist_anime = _build("anilist", "anime")
     anilist_manga = _build("anilist", "manga")
+    trakt_films = _build("trakt", "film")
+    trakt_shows = _build("trakt", "show")
 
     steam = SteamServiceOut(top_games=steam_games) if steam_games else None
     lastfm = (
@@ -322,6 +346,11 @@ def _build_taste_profile(
     anilist = (
         AniListServiceOut(top_anime=anilist_anime, top_manga=anilist_manga)
         if anilist_anime or anilist_manga
+        else None
+    )
+    trakt = (
+        TraktServiceOut(top_films=trakt_films, top_shows=trakt_shows)
+        if trakt_films or trakt_shows
         else None
     )
 
@@ -353,6 +382,7 @@ def _build_taste_profile(
             letterboxd=letterboxd,
             rateyourmusic=rateyourmusic,
             anilist=anilist,
+            trakt=trakt,
         ),
         manual_obsessions=[
             ManualObsessionOut(

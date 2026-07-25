@@ -10,6 +10,7 @@ import { TasteCard } from "@/components/taste/taste-card";
 import { TasteActions } from "@/components/taste/taste-actions";
 import { ManualObsessionsEditor } from "@/components/taste/manual-obsessions-editor";
 import { OwnProfileView } from "@/components/matches/own-profile-view";
+import { EditableProfileDetails } from "@/components/matches/editable-profile-details";
 import { ButtonLink } from "@/components/ui/button";
 import { buildOwnProfileLinks } from "@/lib/constants/profile-links";
 import type { Match, User } from "@/types/api";
@@ -113,7 +114,7 @@ export default async function FeedDetailPage({
           <OwnProfileView
             initialMode={edit === "true" ? "edit" : "preview"}
             preview={
-              <div className="grid items-start gap-6 lg:grid-cols-2">
+              <div key="profile-preview" className="grid items-start gap-6 lg:grid-cols-2">
                 <MatchDetail match={match} showCompatibility={false} />
                 <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
                   <h2 className="mb-5 text-lg font-semibold text-[var(--color-text-primary)]">
@@ -131,7 +132,7 @@ export default async function FeedDetailPage({
               </div>
             }
             edit={
-              <div className="space-y-6">
+              <div key="profile-edit" className="space-y-6">
                 <section className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                   <div className="space-y-1">
                     <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
@@ -159,11 +160,20 @@ export default async function FeedDetailPage({
                 </section>
 
                 <div className="grid items-start gap-6 lg:grid-cols-2">
-                  <MatchDetail
-                    match={match}
-                    showCompatibility={false}
-                    editableLinks
-                  />
+                  <div className="space-y-6">
+                    <EditableProfileDetails
+                        initialDisplayName={match.user.display_name}
+                        initialBio={match.user.bio}
+                        initialAvatarUrl={match.user.avatar_url}
+                        initialLanguages={match.user.languages}
+                    />
+                    <MatchDetail
+                      match={match}
+                      showCompatibility={false}
+                      showIdentity={false}
+                      editableLinks
+                    />
+                  </div>
                   <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 sm:p-6">
                     <h2 className="mb-5 text-lg font-semibold text-[var(--color-text-primary)]">
                       Taste card
