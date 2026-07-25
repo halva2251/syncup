@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2, UserRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ interface ProfileFormProps {
 }
 
 function AvatarUpload({ initialAvatarUrl }: { initialAvatarUrl: string | null }) {
+  const router = useRouter();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(initialAvatarUrl);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -62,6 +64,7 @@ function AvatarUpload({ initialAvatarUrl }: { initialAvatarUrl: string | null })
         } else {
           setAvatarUrl(result.avatar_url ?? null);
           toast.success("Photo updated");
+          router.refresh();
         }
       } catch {
         // The action can throw (e.g. payload exceeds the framework body limit)
@@ -122,6 +125,7 @@ export function ProfileForm({
   initialAvatarUrl,
   initialLanguages,
 }: ProfileFormProps) {
+  const router = useRouter();
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(
     initialLanguages ?? [],
   );
@@ -136,6 +140,7 @@ export function ProfileForm({
         return { error: result.error };
       }
       toast.success("Profile saved");
+      router.refresh();
       return { success: true };
     },
     null,

@@ -10,6 +10,8 @@ interface MatchDetailProps {
   match: Match;
   /** Hide match-only information when rendering the signed-in user's profile. */
   showCompatibility?: boolean;
+  /** Hide the identity header when it is replaced by an editable version. */
+  showIdentity?: boolean;
   /** Show the signed-in user's inline social-link control. */
   editableLinks?: boolean;
 }
@@ -50,6 +52,7 @@ function BreakdownBar({
 export function MatchDetail({
   match,
   showCompatibility = true,
+  showIdentity = true,
   editableLinks = false,
 }: MatchDetailProps) {
   const { user, score, breakdown, shared_highlights } = match;
@@ -60,7 +63,7 @@ export function MatchDetail({
   return (
     <div className="space-y-6">
       {/* Identity header */}
-      <section className="flex items-start gap-4">
+      {showIdentity ? <section className="flex items-start gap-4">
         <Avatar src={user.avatar_url} alt={user.display_name} size="xl" />
         <div className="min-w-0 space-y-1 pt-1">
           <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
@@ -88,7 +91,7 @@ export function MatchDetail({
             </div>
           ) : null}
         </div>
-      </section>
+      </section> : null}
 
       {/* Compatibility */}
       {showCompatibility ? (

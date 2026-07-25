@@ -63,6 +63,46 @@ export async function updateProfileAction(formData: FormData) {
     await updateProfile(body);
     revalidatePath("/settings/profile");
     revalidatePath("/settings");
+    revalidatePath("/feed", "layout");
+    return { success: true };
+  } catch (err) {
+    return { error: safeError(err) };
+  }
+}
+
+/** Update the identity fields used by the inline editor on the profile page. */
+export async function updateProfileDetailsAction(
+  updates: Pick<ProfileUpdate, "display_name" | "bio" | "languages">,
+) {
+  const body: ProfileUpdate = {};
+
+  if (updates.display_name !== undefined) {
+    const displayName = updates.display_name.trim();
+    if (!displayName) return { error: "Display name is required." };
+    if (displayName.length > 200) {
+      return { error: "Display name must be 200 characters or less." };
+    }
+    body.display_name = displayName;
+  }
+
+  if (updates.bio !== undefined) {
+    body.bio = updates.bio?.trim() || null;
+  }
+
+  if (updates.languages !== undefined) {
+    if (!Array.isArray(updates.languages) || !updates.languages.every((code) => typeof code === "string")) {
+      return { error: "Languages must be a list of language codes." };
+    }
+    body.languages = updates.languages.length > 0 ? updates.languages : null;
+  }
+
+  if (Object.keys(body).length === 0) return { success: true };
+
+  try {
+    await updateProfile(body);
+    revalidatePath("/settings/profile");
+    revalidatePath("/settings");
+    revalidatePath("/feed", "layout");
     return { success: true };
   } catch (err) {
     return { error: safeError(err) };
@@ -105,6 +145,7 @@ export async function uploadAvatarAction(formData: FormData) {
     const user = await uploadAvatar(file);
     revalidatePath("/settings/profile");
     revalidatePath("/settings");
+    revalidatePath("/feed", "layout");
     return { success: true, avatar_url: user.avatar_url };
   } catch (err) {
     return { error: safeError(err) };

@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 from syncup.ingest._text import normalize_title
 from syncup.ingest.crypto import decrypt_token
 from syncup.ingest.protocol import RawItem, SyncClientError, TokenPair
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from syncup.db.models import ServiceConnection
@@ -33,12 +33,12 @@ _SCORE_MAX: dict[str, float] = {
 }
 
 _FETCH_QUERY = """
-query {
+query FetchAniList($userId: Int!) {
   Viewer {
     id
     mediaListOptions { scoreFormat }
   }
-  animeList: MediaListCollection(type: ANIME) {
+  animeList: MediaListCollection(userId: $userId, type: ANIME) {
     lists {
       entries {
         media {
@@ -53,7 +53,7 @@ query {
       }
     }
   }
-  mangaList: MediaListCollection(type: MANGA) {
+  mangaList: MediaListCollection(userId: $userId, type: MANGA) {
     lists {
       entries {
         media {
@@ -168,7 +168,11 @@ class AniListClient:
             raise SyncClientError("Missing access token — reconnect AniList via OAuth")
         access_token = decrypt_token(token_bytes)
 
-        data = self._graphql(_FETCH_QUERY, {}, access_token)
+        data = self._graphql(
+            _FETCH_QUERY,
+            {"userId": int(connection.external_user_id)},
+            access_token,
+        )
 
         viewer = data.get("Viewer") or {}
         score_format = (viewer.get("mediaListOptions") or {}).get("scoreFormat", "POINT_100")

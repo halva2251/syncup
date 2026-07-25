@@ -1,0 +1,6 @@
+.next
+node_modules
+.env*
+npm-debug.log*
+pnpm-debug.log*
+README.md
