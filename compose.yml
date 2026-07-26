@@ -1,25 +1,73 @@
 name: syncup
 
 services:
-  frontend:
-    image: ${SYNCUP_FRONTEND_IMAGE:-ghcr.io/halva2251/syncup-frontend:latest}
-    ports:
-      # Caddy proxies the public site to this localhost-only port.
-      - "127.0.0.1:8090:8090"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
   backend:
     image: ${SYNCUP_BACKEND_IMAGE:-ghcr.io/halva2251/syncup-backend:latest}
+    restart: unless-stopped
     env_file:
       - ./backend/.env
-    ports:
-      # Caddy proxies API requests to this localhost-only port.
-      - "127.0.0.1:3020:3020"
+    environment:
+      DEBUG: "false"
+      FRONTEND_URL: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}
+      CORS_ALLOWED_ORIGINS: '["${PUBLIC_ORIGIN:-https://syncup.ruu.by}"]'
+      TRUSTED_PROXY_HOSTS: 172.30.80.0/24
+      SPOTIFY_REDIRECT_URI: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/auth/spotify/callback
+      STEAM_OPENID_RETURN_TO: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/connect/steam/openid/callback
+      STEAM_OPENID_REALM: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}
+      LASTFM_REDIRECT_URI: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/connect/lastfm/oauth/callback
+      ANILIST_REDIRECT_URI: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/connect/anilist/oauth/callback
+      TRAKT_REDIRECT_URI: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/connect/trakt/oauth/callback
+      REDDIT_REDIRECT_URI: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/connect/reddit/oauth/callback
+      UPLOAD_DIR: /app/data/uploads
     volumes:
       - syncup_uploads:/app/data/uploads
+    expose:
+      - "3020"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3020/api/health', timeout=3).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - app
+
+  frontend:
+    image: ${SYNCUP_FRONTEND_IMAGE:-ghcr.io/halva2251/syncup-frontend:latest}
     restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:3020
+    ports:
+      - "127.0.0.1:${SYNCUP_PORT:-8090}:8090"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8090').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - app
+
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: 172.30.80.0/24
 
 volumes:
   syncup_uploads:
