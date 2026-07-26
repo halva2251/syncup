@@ -8,11 +8,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-dev --extra ml --no-install-project
 
 COPY . .
-RUN uv sync --locked --no-dev
+RUN uv sync --locked --no-dev --extra ml \
+    && chmod +x /app/docker-entrypoint.sh
 
 EXPOSE 3020
 
-CMD ["uv", "run", "uvicorn", "syncup.api.app:app", "--host", "0.0.0.0", "--port", "3020"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

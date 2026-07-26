@@ -64,6 +64,12 @@ Connect Steam, Last.fm, Spotify, Letterboxd, AniList, Trakt, Reddit, and RateYou
 > curl -LsSf https://astral.sh/uv/install.sh | sh
 > ```
 
+For a containerized deployment with a single public port, use the root
+[`compose.yml`](compose.yml). It publishes only the Next.js entrypoint on
+`127.0.0.1:8090`; `/api/*` and `/uploads/*` are forwarded to FastAPI inside the
+Docker network, and PostgreSQL is not published. See
+[`docs/deployment.md`](docs/deployment.md).
+
 ### 1. Clone and enter the backend
 
 ```bash
