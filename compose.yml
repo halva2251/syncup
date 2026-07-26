@@ -5,7 +5,9 @@ services:
     image: ${SYNCUP_BACKEND_IMAGE:-ghcr.io/halva2251/syncup-backend:latest}
     restart: unless-stopped
     env_file:
-      - ./backend/.env
+      # Deployment tools such as Komodo write the stack environment file here.
+      # Keep all runtime settings in this one file; backend/.env is local-dev only.
+      - ./.env
     environment:
       DEBUG: "false"
       FRONTEND_URL: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}
