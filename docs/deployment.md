@@ -14,6 +14,10 @@ at the `DATABASE_URL` configured in the root `.env`; it is never routed through
 Caddy. The browser therefore sees one HTTPS origin for pages, API requests,
 uploads, session cookies, and OAuth callbacks.
 
+The Compose network deliberately has no fixed subnet. Docker allocates a free
+private bridge range on the host, which avoids collisions with networks owned by
+other deployed stacks.
+
 ## Configuration
 
 1. Copy `.env.example` to `.env` and set `DATABASE_URL`, service credentials,

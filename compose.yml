@@ -12,7 +12,9 @@ services:
       DEBUG: "false"
       FRONTEND_URL: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}
       CORS_ALLOWED_ORIGINS: '["${PUBLIC_ORIGIN:-https://syncup.ruu.by}"]'
-      TRUSTED_PROXY_HOSTS: 172.30.80.0/24
+      # Docker assigns the app network a free subnet. Trust proxy headers only
+      # from Docker's standard private bridge range, where the frontend lives.
+      TRUSTED_PROXY_HOSTS: 172.16.0.0/12
       SPOTIFY_REDIRECT_URI: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/auth/spotify/callback
       STEAM_OPENID_RETURN_TO: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/connect/steam/openid/callback
       STEAM_OPENID_REALM: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}
@@ -66,10 +68,7 @@ services:
       - app
 
 networks:
-  app:
-    ipam:
-      config:
-        - subnet: 172.30.80.0/24
+  app: {}
 
 volumes:
   syncup_uploads:
