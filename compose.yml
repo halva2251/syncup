@@ -1,6 +1,26 @@
 name: syncup
 
 services:
+  db:
+    image: pgvector/pgvector:pg18
+    restart: unless-stopped
+    volumes:
+      # Mount the parent directory so the named volume owns the full
+      # PostgreSQL home, including PGDATA.
+      - syncup_pgdata:/var/lib/postgresql
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-syncup}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-syncup}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - app
+
   backend:
     image: ${SYNCUP_BACKEND_IMAGE:-ghcr.io/halva2251/syncup-backend:latest}
     restart: unless-stopped
@@ -15,6 +35,9 @@ services:
       # Docker assigns the app network a free subnet. Trust proxy headers only
       # from Docker's standard private bridge range, where the frontend lives.
       TRUSTED_PROXY_HOSTS: 172.16.0.0/12
+      # This must use the Compose service name, never localhost. Inside a
+      # container, localhost refers to that same container.
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-syncup}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-syncup}
       SPOTIFY_REDIRECT_URI: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/auth/spotify/callback
       STEAM_OPENID_RETURN_TO: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}/api/connect/steam/openid/callback
       STEAM_OPENID_REALM: ${PUBLIC_ORIGIN:-https://syncup.ruu.by}
@@ -41,6 +64,9 @@ services:
       start_period: 30s
     networks:
       - app
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     image: ${SYNCUP_FRONTEND_IMAGE:-ghcr.io/halva2251/syncup-frontend:latest}
@@ -71,4 +97,5 @@ networks:
   app: {}
 
 volumes:
+  syncup_pgdata:
   syncup_uploads:

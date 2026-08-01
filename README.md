@@ -300,7 +300,10 @@ syncup/
 | `LLM_API_KEY` | optional | API key for vibe synthesis (any OpenAI-compatible provider) |
 | `LLM_BASE_URL` | optional | defaults to `https://api.deepseek.com` |
 | `LLM_MODEL` | optional | defaults to `deepseek-chat` |
-| `DATABASE_URL` | yes | `postgresql+psycopg://user:pass@host:port/dbname` (psycopg3 scheme) |
+| `POSTGRES_USER` | no | PostgreSQL user for the bundled `db` service; defaults to `syncup` |
+| `POSTGRES_PASSWORD` | yes | Password for the bundled PostgreSQL service; use a long random value |
+| `POSTGRES_DB` | no | PostgreSQL database for the bundled `db` service; defaults to `syncup` |
+| `DATABASE_URL` | generated | Compose generates the internal URL using `db`; never point it at `localhost` |
 | `SESSION_SECRET` | yes | random string, keep secret |
 | `SYNCUP_TOKEN_ENCRYPTION_KEY` | yes (non-debug) | base64-encoded 16/24/32-byte AES key |
 
