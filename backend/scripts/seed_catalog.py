@@ -136,6 +136,9 @@ _ARTISTS: list[tuple[str, str]] = [
     ("Charles Mingus", "jazz, hard bop, experimental"),
     ("Miles Davis", "jazz, modal, fusion"),
     ("Alice Coltrane", "spiritual jazz, harp, devotional"),
+    ("Juice WRLD", "emo rap, melodic hip-hop, introspective"),
+    ("d4vd", "alternative pop, indie pop, bedroom pop"),
+    ("glaive", "hyperpop, digicore, alternative pop"),
 ]
 
 _ANIME: list[tuple[str, str]] = [

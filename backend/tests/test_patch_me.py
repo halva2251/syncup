@@ -114,6 +114,21 @@ def test_patch_me_updates_is_matchable(
     assert resp.json()["is_matchable"] is True
 
 
+def test_patch_me_removes_cached_matches_when_disabling_discoverability(
+    patch_client: tuple[TestClient, User],
+    mock_db: MagicMock,
+) -> None:
+    c, user = patch_client
+    user.is_matchable = True
+
+    resp = c.patch("/api/me", json={"is_matchable": False})
+
+    assert resp.status_code == 200
+    assert resp.json()["is_matchable"] is False
+    statement = mock_db.execute.call_args.args[0]
+    assert "DELETE FROM match_cache" in str(statement)
+
+
 def test_patch_me_updates_bio(patch_client: tuple[TestClient, User]) -> None:
     c, _ = patch_client
     resp = c.patch("/api/me", json={"bio": "I love Disco Elysium"})
@@ -128,6 +143,18 @@ def test_patch_me_updates_discord_handle(
     resp = c.patch("/api/me", json={"discord_handle": "halva#1234"})
     assert resp.status_code == 200
     assert resp.json()["discord_handle"] == "halva#1234"
+
+
+def test_patch_me_updates_social_links(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch(
+        "/api/me",
+        json={"social_links": {"github": "https://github.com/syncup"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["social_links"] == {"github": "https://github.com/syncup"}
 
 
 def test_patch_me_updates_avatar_url(
@@ -336,6 +363,17 @@ def test_patch_me_discord_handle_too_long_returns_422(
 ) -> None:
     c, _ = patch_client
     resp = c.patch("/api/me", json={"discord_handle": "x" * 101})
+    assert resp.status_code == 422
+
+
+def test_patch_me_rejects_social_link_on_wrong_host(
+    patch_client: tuple[TestClient, User],
+) -> None:
+    c, _ = patch_client
+    resp = c.patch(
+        "/api/me",
+        json={"social_links": {"github": "https://example.com/syncup"}},
+    )
     assert resp.status_code == 422
 
 

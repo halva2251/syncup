@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Self, TypedDict
 
 import httpx
-from fastapi import APIRouter, Depends, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import delete, select
@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 from starlette.background import BackgroundTask
 
-from syncup.api.routes.sync import _do_sync_generic
+from syncup.api.routes.sync import _do_sync_generic, embed_and_recompute_imported_service
 from syncup.api.schemas import ServiceConnectionOut
 from syncup.auth.router import RequireAuth, require_auth
 from syncup.config import Settings
@@ -554,6 +554,7 @@ class LetterboxdImportOut(BaseModel):
 def import_letterboxd(
     request: Request,
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> LetterboxdImportOut:
@@ -676,6 +677,12 @@ def import_letterboxd(
         raise SyncUpError("IMPORT_FAILED", "Import failed — please retry", 500) from exc
 
     logger.info("User %s imported %d Letterboxd films", user.id, len(raw_items))
+    background_tasks.add_task(
+        embed_and_recompute_imported_service,
+        request.app.state.db,
+        user.id,
+        "letterboxd",
+    )
     return LetterboxdImportOut(imported=len(raw_items))
 
 
@@ -1125,6 +1132,7 @@ class RateYourMusicImportOut(BaseModel):
 def import_rateyourmusic(
     request: Request,
     file: UploadFile,
+    background_tasks: BackgroundTasks,
     db: Annotated[DbSession, Depends(get_db)],
     user: RequireAuth,
 ) -> RateYourMusicImportOut:
@@ -1243,6 +1251,12 @@ def import_rateyourmusic(
         raise SyncUpError("IMPORT_FAILED", "Import failed — please retry", 500) from exc
 
     logger.info("User %s imported %d RateYourMusic albums", user.id, len(raw_items))
+    background_tasks.add_task(
+        embed_and_recompute_imported_service,
+        request.app.state.db,
+        user.id,
+        "rateyourmusic",
+    )
     return RateYourMusicImportOut(imported=len(raw_items))
 
 

@@ -109,6 +109,9 @@ Partial update — only fields present in the body are written. Returns the upda
   "display_name": "alex",
   "bio": "gamer and music nerd",
   "discord_handle": "alex#1234",
+  "social_links": {
+    "github": "https://github.com/alex"
+  },
   "avatar_url": "https://example.com/avatar.png",
   "is_matchable": true
 }
@@ -116,7 +119,21 @@ Partial update — only fields present in the body are written. Returns the upda
 
 - `display_name`: min 1, max 200 chars; sending `null` is a no-op (field is NOT NULL)
 - `bio`, `discord_handle`, `avatar_url`: nullable; sending `null` clears the field
+- `social_links`: a map of supported platform IDs to `https` profile URLs. Sending `null` clears all manually added links. Supported platforms are `github`, `x`, `instagram`, `tiktok`, `youtube`, `twitch`, `bluesky`, `mastodon`, and `soundcloud`; unsupported platforms or URLs outside the platform's domain are rejected (422).
+- `avatar_url` accepts an http(s) URL or a local `/uploads/...` path returned by `POST /me/avatar`
 - `is_matchable`: strict bool — `"yes"` and `"true"` are rejected (422)
+
+### `POST /me/avatar` — Live ✅
+
+Upload a profile photo. Multipart form with a single `file` field. The image is validated by magic bytes (PNG, JPEG, WebP, or GIF), capped at 5 MB, stored on disk, and served back at `/uploads/avatars/<name>.<ext>`. The user's `avatar_url` is set to that path; the previous locally-stored avatar is deleted. Returns the updated user object (same shape as `PATCH /me`).
+
+Errors: `401 UNAUTHORIZED`, `413 FILE_TOO_LARGE` (over 5 MB), `422 INVALID_FILE_TYPE` (unsupported type or bytes don't match a real image), `429 RATE_LIMITED` (10/min).
+
+### `GET /uploads/{file_path}` — Live ✅
+
+Serves an existing uploaded avatar. This path is **not** under the `/api` prefix and does not require authentication so public profile avatars can load. `file_path` is resolved under the configured upload directory; traversal attempts and missing files return `404`.
+
+Avatar uploads are currently stored at `/uploads/avatars/<uuid>.<ext>`. The response is the image file rather than JSON.
 
 ### `DELETE /me` — Sketch
 Hard-delete; cascades to all user data.
@@ -161,7 +178,7 @@ Redirects (302) to Reddit's authorization page. Sets `reddit_state` cookie (http
 ### `GET /connect/reddit/oauth/callback?code=...&state=...` — Live ✅
 Validates state cookie, exchanges code for access + refresh token, encrypts tokens, upserts `service_connections` row (`sync_status = 'pending'`, `token_expires_at` set 1 hour out), redirects to `/`. Returns 400 on state mismatch, 400 on user denial (`error=access_denied`), 400 on missing code.
 
-### The `/me/connections/*` sub-routes below are planned.
+### The `GET`, `POST`, and callback `/me/connections/*` sub-routes below are planned.
 
 ### `GET /me/connections`
 Same shape as `connections` in `/me`.
@@ -173,8 +190,15 @@ Same shape as `connections` in `/me`.
 ### `GET /me/connections/{service}/callback?code=...`
 OAuth callback for the data connection (distinct from login OAuth callback).
 
-### `DELETE /me/connections/{service}`
-Disconnects + purges pulled data for that service.
+### `DELETE /me/connections/{service}` — Live ✅
+
+Disconnects one of the current user's services. It removes that user's imported
+items for the service, invalidates derived embeddings and vibe synthesis fields,
+and deletes the connection. Shared catalog items remain available to other users.
+
+Returns `204 No Content`. Returns `401 UNAUTHORIZED` without a session,
+`404 NOT_FOUND` when the current user does not have that service connected, and
+`429 RATE_LIMITED` after 30 requests per minute.
 
 ### `POST /sync/{service}` — Live ✅
 Triggers a fresh pull. Returns immediately; actual work runs in background.
@@ -193,7 +217,7 @@ Aggregated view. Services with no items are omitted from the response entirely (
 ```json
 {
   "services": {
-    "steam":   { "top_games":   [{ "id": "...", "name": "Disco Elysium", "hours": 50 }, ...] },
+    "steam":   { "top_games":   [{ "id": "...", "name": "Disco Elysium", "hours": 50, "excluded": false }, ...] },
     "lastfm":  { "top_artists": [...], "top_tags": [] },   // top_tags not yet synced — placeholder for later
     "spotify": { "top_artists": [...], "top_tracks": [...] }
   },
@@ -205,6 +229,35 @@ Aggregated view. Services with no items are omitted from the response entirely (
   ]
 }
 ```
+
+Each item in the authenticated user's response includes `excluded`. Excluded
+items remain in the response so the editor can restore them; they are omitted
+from public taste cards.
+
+### `GET /users/{user_id}/taste-card` — Live ✅
+
+Returns the public taste card for a user who has opted into matching. This route
+does **not** require authentication, so a profile card can be shared; it returns
+`404 NOT_FOUND` when the user does not exist or has `is_matchable=false`.
+
+```json
+{
+  "user": {
+    "archetype": "The Patient Aesthete",
+    "vibe_summary": "Drawn to reflective worlds and atmospheric music.",
+    "key_themes": ["melancholic", "narrative", "ambient"]
+  },
+  "taste": {
+    "services": { "steam": { "top_games": [] } },
+    "manual_obsessions": [],
+    "overrides": []
+  }
+}
+```
+
+The taste-card data uses the same service and manual-obsession shape as
+`GET /me/taste`, but preference overrides are private and are always omitted
+(returned as an empty array). The endpoint is rate-limited to 30/min per IP.
 
 ### `GET /me/taste/items?service=steam&item_type=game&cursor=...`
 Paginated raw items for a service/type.
@@ -391,6 +444,27 @@ Toggle the `excluded` flag on a `user_items` row. Excluded items are skipped in 
 
 Setting `excluded: false` re-includes the item. Both directions are idempotent.
 
+### `GET /me/items?limit=1000` — Live ✅
+
+Lists the authenticated user's included items for taste-control pickers, ordered
+by descending engagement score and then item name. `limit` defaults to `1000` and
+accepts values from `1` through `2000`. Excluded items are omitted.
+
+```json
+[
+  {
+    "id": "<items.id>",
+    "name": "Disco Elysium",
+    "service": "steam",
+    "item_type": "game"
+  }
+]
+```
+
+`id` is the canonical `items.id` for use when creating preference overrides; it
+is different from the `user_items.id` required by `PATCH /me/items/{item_id}`.
+Requires authentication and is rate-limited to 60/min.
+
 ---
 
 ## 10. Matches — Live ✅
@@ -400,6 +474,9 @@ Setting `excluded: false` re-includes the item. Both directions are idempotent.
 - At least 1 `ok`-status service connection **or** ≥ 3 manual obsessions
 
 > Block H (2026-06-06): semantic ANN path active. `matching_mode` field added to all match responses.
+
+### `GET /matches/summary` — Live ✅
+Lightweight dashboard count of the current user's fresh cached matches. Returns `{ "count": 0 }` when matching is disabled or no fresh cache entries exist. It performs a database aggregate only; it does not fetch match details or trigger a recompute.
 
 ### `GET /matches?limit=20&cursor=...` — Live ✅
 Top matches for the current user. Returns empty immediately on cache miss; match cache is refreshed in the background.
@@ -414,7 +491,12 @@ Top matches for the current user. Returns empty immediately on cache miss; match
         "display_name": "sam",
         "avatar_url": "...",
         "bio": "...",
-        "discord_handle": "sam#9999"
+        "discord_handle": "sam#9999",
+        "languages": ["English", "German"],
+        "profile_links": {
+          "github": "https://github.com/sam",
+          "lastfm": "https://www.last.fm/user/sam"
+        }
       },
       "score": 0.87,
       "breakdown": { "combined": 0.87 },
@@ -431,6 +513,8 @@ Top matches for the current user. Returns empty immediately on cache miss; match
 ```
 
 `breakdown` is `{"combined": score}` in semantic mode, per-service Jaccard in heuristic mode.
+
+`profile_links` merges the user's manually added social links with public profile URLs inferred from connected Last.fm, Steam, Spotify, AniList, Trakt, and Reddit accounts. Service credentials and private connection data are never exposed.
 
 ### `GET /matches/{user_id}` — Live ✅
 Single match detail — same shape as one `items` entry above, including `matching_mode`.

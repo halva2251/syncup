@@ -1,12 +1,12 @@
 # SyncUp Frontend Documentation
 
-A living guide for the SyncUp Next.js frontend. Covers the current scaffold state, design system, page plan, API integration patterns, and conventions for anyone continuing the build.
+A living guide for the SyncUp Next.js frontend. Covers the current implementation, design system, page plan, API integration patterns, and conventions for anyone continuing the build.
 
 ---
 
 ## Current Status
 
-The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-complete through Phase 2 (semantic matching, recommendations, vibe synthesis). The frontend now has a clean project skeleton, a documented design system, and one implemented UI primitive (`AppIcon`). All other pages and components are intentionally empty shells waiting to be filled in.
+The frontend is actively built out on top of the Phase 2 backend (semantic matching, recommendations, and vibe synthesis). It follows the shared design system and keeps the profile, taste controls, and discovery experiences in the authenticated app shell.
 
 | Area | Status |
 |------|--------|
@@ -14,13 +14,16 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 | Design system | ✅ `DESIGN.md` at repo root |
 | Typeface | ✅ DM Sans loaded in `frontend/app/layout.tsx` |
 | App-style icons | ✅ `AppIcon` utility in `frontend/components/ui/app-icon.tsx` |
-| Scaffolded pages/components | ✅ Stripped to minimal shells (return `null`) |
+| Shared UI primitives | ✅ Cards, controls, page headers, avatars, AppIcon, feedback states |
 | Auth / login / signup | ✅ Built |
-| Onboarding | ✅ 4-step wizard built (languages, services, obsessions, taste preview) |
-| Taste card | ✅ Component built; `/me/taste` page is still a shell |
-| Matches feed | ⏸ Not built |
-| Recommendations | ⏸ Not built |
-| Settings / dimensions | ⏸ Not built |
+| Onboarding | ✅ 5-step wizard built (languages, services, social links, obsessions, taste preview) |
+| Profile / taste card | ✅ Built at `/feed/[id]`; the signed-in user can preview and edit their own profile there |
+| Home dashboard (`/home`) | ✅ Built |
+| Matches feed | ✅ Built (`/feed` + `/feed/[id]`) |
+| Recommendations | ✅ Built (filters, cross-domain cards, taste-vector empty state) |
+| Settings (hub + profile/privacy/dimensions/taste/services) | ✅ Built |
+| Connections (`/connections`) | ✅ Built (reuses `ServiceConnectGrid`); disconnect action live |
+| Avatar upload | ✅ Built (frontend + `POST /api/me/avatar`) |
 
 ---
 
@@ -46,17 +49,19 @@ The frontend is in **scaffold / Phase 3 start** mode. The backend is feature-com
 frontend/
 ├── app/                  # Next.js App Router pages
 │   ├── (app)/            # Authenticated app shell routes
-│   │   └── home/
-│   │       └── page.tsx  # Currently an empty shell
+│   │   ├── home/         # Dashboard
+│   │   ├── feed/         # Discovery and public profile routes
+│   │   └── me/           # Settings, connections, and recommendations
 │   ├── globals.css       # Tailwind entry + design tokens
 │   ├── layout.tsx        # Root layout: DM Sans + metadata
 │   └── page.tsx          # Redirects / → /home
-├── components/           # React components (all shells except AppIcon)
-│   └── ui/
-│       └── app-icon.tsx  # Implemented app-style icon renderer
-├── hooks/                # Custom React hooks (scaffold)
-├── lib/                  # Utilities, fetch helpers, types (scaffold)
-├── types/                # Shared TypeScript types (scaffold)
+├── components/           # Feature and shared React components
+│   ├── matches/          # Feed, public profile, links & social
+│   ├── taste/            # Reusable public taste card and carousel
+│   └── ui/               # Shared controls, AppIcon, avatars, cards
+├── hooks/                # Custom React hooks
+├── lib/                  # Utilities, server actions, API clients, types
+├── types/                # Shared TypeScript types
 ├── public/               # Static assets
 ├── next.config.ts
 ├── package.json
@@ -118,6 +123,7 @@ import { AppIcon } from "@/components/ui/app-icon";
 | `brand` | `SimpleIcon` | — | Simple Icons object (`{ title, path }`) (mutually exclusive with `icon`). |
 | `size` | `"xs" \| "sm" \| "md" \| "lg" \| "xl" \| "2xl" \| "3xl" \| "4xl"` | `"md"` | Container size. |
 | `gradient` | `"blue" \| "purple" \| "green" \| "orange" \| "red" \| "brand"` | `"blue"` | Background gradient key. |
+| `iconSize` | `number` | Derived from `size` | Override the inner glyph size without changing the container; useful for compact tag icons. |
 | `glossy` | `boolean` | `true` | Render the glossy highlight. |
 | `className` | `string` | — | Additional Tailwind classes. |
 
@@ -136,9 +142,81 @@ import { AppIcon } from "@/components/ui/app-icon";
 
 ---
 
+## Implemented Component: `ServiceConnectGrid`
+
+`frontend/components/connections/service-connect-grid.tsx` renders the full service-connection grid (OAuth, API-key, and CSV flows) plus live sync polling. It was extracted from the onboarding step so both `/onboarding/services` and `/connections` can share the same UI.
+
+### Props
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `initialConnections` | `ServiceConnection[]` | Connections seeded from `GET /api/me` (server-fetched and passed in). |
+| `onActivity?` | `(serviceId: string) => void` | Optional callback fired when a connect/sync/import cycle starts. |
+| `className?` | `string` | Extra classes on the grid container. |
+
+> **Note on disconnect:** `DELETE /api/me/connections/{service}` is live and exposed as a confirmed disconnect action on `/connections` and the signed-in user's profile.
+
+---
+
+## Shared UI Primitives
+
+Small reusable building blocks used across pages. Prefer these over re-rolling the same markup.
+
+### `PageHeader`
+
+`frontend/components/ui/page-header.tsx` — the standard page header (`AppIcon` + title + description, with an optional right-aligned `actions` slot). Used by `/home`, `/settings`, `/feed`, and `/connections`. Server Component.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `icon` | `LucideIcon` | Icon rendered in an `AppIcon` tile next to the title. |
+| `title` | `string` | Page title (`24px` semibold). |
+| `description?` | `string` | Subtitle in `--text-secondary`. |
+| `actions?` | `ReactNode` | Optional right-aligned slot (buttons/links). |
+
+### `StatCard`
+
+`frontend/components/ui/stat-card.tsx` — compact stat tile (`AppIcon` + label + value + hint) for dashboard overview rows per the DESIGN.md "Dashboard / Home" pattern. Server Component.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `icon` | `LucideIcon` | Lucide icon passed to `AppIcon`. |
+| `gradient?` | `AppIconGradient` | `AppIcon` gradient key (default `"blue"`). |
+| `label` | `string` | Uppercase label above the value. |
+| `value` | `ReactNode` | Prominent stat value. |
+| `hint?` | `ReactNode` | Muted hint below the value. |
+
+> `AppIconGradient` is exported from `components/ui/app-icon.tsx` so pages no longer need to redefine the gradient union locally.
+
+### `Avatar`
+
+`frontend/components/ui/avatar.tsx` — circular avatar with a `UserRound` fallback when no `src` is given. Renders a plain `<img>` (no remote-image domain config needed), matching the existing profile-form pattern. Server Component.
+
+| Prop | Type | Description |
+|------|------|-------------|
+| `src?` | `string \| null` | Avatar image URL. Falls back to the icon when absent. |
+| `alt` | `string` | Alt text (used for both `<img>` and fallback). |
+| `size?` | `"sm" \| "md" \| "lg" \| "xl"` | Container size (default `"md"`). |
+| `className?` | `string` | Extra classes. |
+
+### Feed components (`components/matches/*`)
+
+Used by `/feed` and `/feed/[id]`:
+
+| Component | File | Description |
+|-----------|------|-------------|
+| `MatchCard` | `match-card.tsx` | One feed entry: avatar, name, score pill, highlights, mode tag. Links to `/feed/[id]`. |
+| `MatchList` | `match-list.tsx` | **Client.** Cursor-paginated feed ("Load more") with cache-miss auto-polling and loading/empty states. |
+| `MatchDetail` | `match-detail.tsx` | Full match profile: identity header with public languages, compatibility bar, per-service breakdown, shared highlights, Links & social, and taste card. |
+| `MatchScore` | `match-score.tsx` | Reusable compatibility display. `variant="compact"` (pill) for cards, `"detail"` (bar) for detail. |
+| `MatchHighlights` | `match-highlights.tsx` | Shared-taste highlight chips with service brand icons. `compact` (truncated) vs. `detail` (full). |
+
+---
+
 ## Page Plan
 
 The frontend implements the routes defined in GitHub issue #21 ("DESIGN: frontend").
+
+> **Route prefix note:** the routes below are documented as `/me/...` for parity with the backend (`/api/me/...`), but the **actual frontend URLs drop the `/me` prefix** — e.g. `/settings`, `/connections`, `/recommendations`. The onboarding flow lives at `/onboarding/...`.
 
 ### Auth pages
 
@@ -177,17 +255,20 @@ Both pages use Server Actions (`lib/auth.ts`) that call the backend, forward the
 
 | Route | Purpose | Key endpoints |
 |-------|---------|---------------|
-| `/onboarding` | 4-step wizard: languages → connect services → manual obsessions → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
-| `/home` | Dashboard landing after onboarding. | `GET /api/me` |
-| `/me/taste` | **Primary product.** Taste card with archetype, top items, share buttons, OG image. | `GET /api/me/taste`, `POST /api/me/recompute` |
+| `/onboarding` | 5-step wizard: languages → connect services → optional social links → manual obsessions → taste card preview. Display name is collected at `/signup`. | `GET /api/onboarding/status`, `POST /api/me/obsessions`, `PATCH /api/me` |
+| `/home` | Dashboard landing after onboarding. Stat overview (services, taste items, obsessions, matching status), vibe summary, quick links, connected-services status, and recommendations teaser. | `GET /api/me`, `GET /api/me/taste` |
 | `/me/connections` | Service grid, sync status, OAuth + CSV upload flows. | `GET /api/me`, `POST /api/sync/{service}`, connect endpoints |
-| `/me/settings` | Profile editing and the three taste-control levers (exclude, boost, obsessions). | `PATCH /api/me`, `PATCH /api/me/items/{id}`, obsessions/overrides |
-| `/me/dimensions` | Per-service weight sliders. | `GET /api/me/dimensions`, `PATCH /api/me/dimensions` |
-| `/me/recommendations` | "Because you love X → try Y" cross-domain recs. | `GET /api/me/recommendations` |
-| `/matches` | Scrollable match feed (not swipe). | `GET /api/matches`, `POST /api/me/recompute` |
-| `/matches/[id]` | Match detail, reveals Discord handle. | `GET /api/matches/{id}` |
+| `/me/settings` | Hub linking to the settings sub-pages. | `GET /api/me` |
+| `/me/settings/profile` | Profile editor: display name, bio, Discord, avatar photo upload, and languages. Connected services with public profiles are linked automatically. | `PATCH /api/me`, `POST /api/me/avatar` |
+| `/me/settings/privacy` | Discoverable-matching toggle. | `PATCH /api/me` |
+| `/me/settings/taste` | Preference overrides editor (boost/dampen specific items). | `GET/POST/PATCH/DELETE /api/me/overrides` |
+| `/me/settings/dimensions` | Per-service taste weight sliders. | `GET /api/me`, `GET /api/me/dimensions`, `PATCH /api/me/dimensions` |
+| `/me/settings/services` | Sync-status readout for connected services; links to `/connections` for connect/sync flows. | `GET /api/me` |
+| `/me/recommendations` | Cross-domain recommendations with item-type filters. | `GET /api/me/recommendations` |
+| `/feed` | Discovery feed: scrollable list of matched users ranked by compatibility (not swipe). Includes a "Refresh matches" action. | `GET /api/matches`, `POST /api/me/recompute` |
+| `/feed/[id]` | A user's profile. Other profiles show compatibility, shared taste, public taste card, and social/service links. Your own profile adds preview/edit modes for services, obsessions, and taste controls. | `GET /api/matches/{id}`, `GET /api/users/{id}/taste-card`, `GET /api/me/taste` |
 
-> **Build order recommendation:** login/signup → onboarding → `/me/taste` → `/me/connections` → `/matches` → recommendations/settings/dimensions.
+> **Build order recommendation:** login/signup → onboarding → `/me/connections` → `/feed` → recommendations/settings/dimensions.
 
 ---
 
@@ -236,6 +317,7 @@ See [`api-contract.md`](./api-contract.md) for the full spec. Relevant frontend 
 - `GET /api/onboarding/status`
 - `GET /api/me/taste`
 - `GET /api/me/recommendations`
+- `GET /api/matches/summary`
 - `GET /api/matches`
 - `GET /api/matches/{user_id}`
 - `POST /api/me/recompute`
@@ -289,7 +371,7 @@ From `docs/roadmap.md` / `api-contract.md`:
 4. **Obsessions** — freeform things the user is obsessed with (games, albums, books, etc.). Each gets a category and is stored as a `manual_obsession`. ≥ 3 satisfies the `has_connection_or_obsessions` gate.
 5. **Taste card preview** — call `GET /api/me/taste`, render the `TasteCard` component, let the user review, then `PATCH /api/me { is_matchable: true }`.
 
-The frontend stepper shows four steps: **Languages → Services → Obsessions → Taste**. The old `/onboarding/matchable` route now redirects to `/onboarding/taste`; enabling matchability is the primary CTA on the taste preview page.
+The frontend stepper shows five steps: **Languages → Services → Socials → Obsessions → Taste**. The optional Socials step reuses the editable Links & social section, including automatic public links for connected services. The old `/onboarding/matchable` route now redirects to `/onboarding/taste`; enabling matchability is the primary CTA on the taste preview page.
 
 `next_step` progression from the backend:
 
@@ -333,14 +415,14 @@ Letterboxd, RateYourMusic.
 
 ## Taste Card Design Notes
 
-The taste card is the **primary product during cold start** (see [`product-strategy.md`](./product-strategy.md)). The reusable `TasteCard` component is implemented and used by the onboarding taste preview step; the dedicated `/me/taste` page is still a shell.
+The taste card is the **primary product during cold start** (see [`product-strategy.md`](./product-strategy.md)). The reusable `TasteCard` component is used by onboarding and by `/feed/[id]`; there is no separate `/taste` route.
 
 Current behavior:
 
 - Show the user's archetype label and vibe summary (if LLM key is configured).
 - Display top items per connected service in a carousel (`TasteServiceCarousel`):
   - Auto-advances every 10 seconds; pauses on hover.
-  - Service icons act as dot-style controls (current in color, others muted).
+  - Service icons act as dot-style controls. The active icon progressively desaturates from top to bottom across the 10-second interval; the muted base is revealed as the next-card timer.
   - Prev/next arrow controls at the bottom right.
   - Slides move left/right inside a fixed border card.
   - Each bucket shows up to 5 items.
@@ -349,30 +431,33 @@ Current behavior:
 - Show manual obsessions and preference overrides below the carousel.
 - Include an empty state when no taste data exists.
 
-Future additions for the public `/me/taste` page:
-
-- "Share to X" and "Copy link" buttons.
-- Generate a shareable OG image (`@vercel/og` or similar).
-- Surface a "This isn't me" entry point into the settings page.
+The signed-in user's profile includes a copy-link action and an edit mode. Edit mode exposes service management, item exclusions, manual obsessions, and a link to the taste controls settings page.
 
 ---
 
-## Match Feed Design Notes
+## Feed Design Notes
 
-- Scrollable card list, **not** a swipe interface (MVP decision).
-- Each card: avatar, display name, compatibility score, service breakdown, shared highlights.
-- Clicking a card opens `/matches/[id]` and reveals the Discord handle immediately (MVP decision).
-- Include a "Refresh matches" action that calls `POST /api/me/recompute` (rate-limited to 1/hour).
-- `matching_mode` field shows `"heuristic"` or `"semantic"`.
+The discovery feed lives at `/feed` (formerly `/matches`). It is a scrollable card list, **not** a swipe interface (MVP decision).
+
+- Each `MatchCard`: avatar, display name, compatibility score pill, shared-highlight chips, matching-mode tag.
+- Clicking a card opens `/feed/[id]` and reveals public profile details immediately (Discord handle, languages, and Links & social; MVP decision).
+- `MatchList` (client) handles cursor pagination via "Load more", plus auto-polling when the match cache is being rebuilt after a cache miss.
+- A "Refresh matches" action calls `POST /api/me/recompute` (rate-limited to 1/hour server-side).
+- `matching_mode` field shows `"heuristic"` (taste overlap) or `"semantic"` (embedding-based).
+- `/feed/[id]` detail shows the compatibility score bar, per-service breakdown bars, shared highlights, public languages, Links & social, and the public taste card.
+- A viewer's own `/feed/[id]` profile has preview and edit modes. The preview represents the public profile; the edit surface enables service, obsession, and item-control management.
+- The profile's **Links & social** section uses Simple Icons, brand-color gradients, and a brand-color hover stroke. In profile edit mode, the inline “Add links & social” form expands in the section and lets users choose GitHub, X, Instagram, TikTok, YouTube, Twitch, Bluesky, Mastodon, or SoundCloud and enter a username. Last.fm, Steam, Spotify, AniList, Trakt, and Reddit links appear automatically when those services are connected. Every link displays its platform name and username.
 
 ---
 
 ## Recommendations Design Notes
 
-- Cross-domain: surface games informed by music taste, films informed by games, etc.
-- Format: "Because you love *X* → Try *Y*" with a short reason.
-- Filter chips per `item_type` (`game`, `film`, `artist`, `album`, `anime`, etc.).
-- Handle `NO_EMBEDDING_AVAILABLE` by prompting the user to build their embedding (`POST /api/embeddings/build`).
+The authenticated `/recommendations` page uses `GET /api/me/recommendations` to surface cross-domain suggestions: games informed by music, films informed by games, and similar combinations.
+
+- Filter chips cover every supported `item_type`, with a default cross-domain "Everything" view.
+- Recommendation cards show the service marker, item type, and similarity percentage.
+- `NO_EMBEDDING_AVAILABLE` renders a focused empty state with a "Build taste vector" action. It calls the existing recompute workflow and refreshes the page after the background job has started.
+- A normal empty result explains that the shared catalog may not yet contain a fresh recommendation and invites the user to try another category later.
 
 ---
 
@@ -438,4 +523,4 @@ These are documented in the project docs and should be revisited before building
 
 ---
 
-*Last updated: 2026-06-13*
+*Last updated: 2026-07-22 (feed)*

@@ -5,11 +5,18 @@ import { cn } from "@/lib/utils/cn";
 export type SimpleIcon = {
   title: string;
   path: string;
+  hex?: string;
 };
 
-type Gradient = "blue" | "purple" | "green" | "orange" | "red" | "brand";
+export type AppIconGradient =
+  | "blue"
+  | "purple"
+  | "green"
+  | "orange"
+  | "red"
+  | "brand";
 
-const gradients: Record<Gradient, string> = {
+const gradients: Record<AppIconGradient, string> = {
   blue: "from-[var(--color-icon-gradient-blue-from)] to-[var(--color-icon-gradient-blue-to)]",
   purple: "from-[var(--color-icon-gradient-purple-from)] to-[var(--color-icon-gradient-purple-to)]",
   green: "from-[var(--color-icon-gradient-green-from)] to-[var(--color-icon-gradient-green-to)]",
@@ -56,8 +63,10 @@ type AppIconProps =
       icon: LucideIcon;
       brand?: never;
       size?: keyof typeof sizes;
-      gradient?: Gradient;
+      gradient?: AppIconGradient;
       brandColor?: string;
+      /** Override the glyph size while keeping the selected container size. */
+      iconSize?: number;
       glossy?: boolean;
       className?: string;
     }
@@ -65,8 +74,10 @@ type AppIconProps =
       icon?: never;
       brand: SimpleIcon;
       size?: keyof typeof sizes;
-      gradient?: Gradient;
+      gradient?: AppIconGradient;
       brandColor?: string;
+      /** Override the glyph size while keeping the selected container size. */
+      iconSize?: number;
       glossy?: boolean;
       className?: string;
     };
@@ -77,12 +88,14 @@ export function AppIcon({
   size = "md",
   gradient = "blue",
   brandColor,
+  iconSize,
   glossy = true,
   className,
 }: AppIconProps) {
   const id = useId().replace(/:/g, "");
   const IconComponent = icon;
   const gradientUrl = `url(#${id}-iconGradient)`;
+  const renderedIconSize = iconSize ?? iconSizes[size];
 
   return (
     <span
@@ -135,7 +148,7 @@ export function AppIcon({
       {/* Icon */}
       {IconComponent ? (
         <IconComponent
-          size={iconSizes[size]}
+          size={renderedIconSize}
           className="relative z-10 drop-shadow-2xl"
           strokeWidth={2}
           style={{ stroke: gradientUrl }}
@@ -143,8 +156,8 @@ export function AppIcon({
       ) : brand ? (
         <svg
           viewBox="0 0 24 24"
-          width={iconSizes[size]}
-          height={iconSizes[size]}
+          width={renderedIconSize}
+          height={renderedIconSize}
           className="relative z-10 drop-shadow-2xl"
           aria-label={brand.title}
           role="img"

@@ -15,11 +15,19 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as DbSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import selectinload, sessionmaker
 
 from syncup.api.routes.embeddings import build_user_embedding  # noqa: E402
 from syncup.auth.router import RequireAuth
-from syncup.db.models import EMBEDDING_DIM, Item, MatchCache, User, UserEmbedding, UserItem
+from syncup.db.models import (
+    EMBEDDING_DIM,
+    Item,
+    MatchCache,
+    ServiceConnection,
+    User,
+    UserEmbedding,
+    UserItem,
+)
 from syncup.db.pgvector import format_vec
 from syncup.db.session import get_db
 from syncup.embeddings.vibe_synthesizer import synthesize_vibe
@@ -30,6 +38,7 @@ from syncup.matching.heuristic import (
     heuristic_score,
     top_shared_highlights,
 )
+from syncup.profile_links import public_profile_links
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +46,7 @@ router = APIRouter(prefix="/api", tags=["matches"])
 
 _CACHE_MAX_AGE_HOURS = 24
 _SEMANTIC_CANDIDATE_LIMIT = 50
+_VISIBLE_TASTE_ITEMS_PER_BUCKET = 5
 
 # In-flight guard: dedupe redundant background match-cache refreshes for the same
 # user. Without it, repeated empty-page GET /api/matches requests (which schedule a
@@ -74,6 +84,8 @@ class MatchUserOut(BaseModel):
     avatar_url: str | None
     bio: str | None
     discord_handle: str | None
+    languages: list[str] | None
+    profile_links: dict[str, str]
 
 
 class SharedHighlightOut(BaseModel):
@@ -93,6 +105,28 @@ class MatchOut(BaseModel):
 class MatchListOut(BaseModel):
     items: list[MatchOut]
     next_cursor: str | None
+
+
+class MatchSummaryOut(BaseModel):
+    """Small dashboard-friendly summary of the current user's fresh match cache."""
+
+    count: int
+
+
+def _match_user_out(
+    user: User,
+    connections: list[ServiceConnection],
+) -> MatchUserOut:
+    """Project only safe, public-facing profile links into match responses."""
+    return MatchUserOut(
+        id=user.id,
+        display_name=user.display_name,
+        avatar_url=user.avatar_url,
+        bio=user.bio,
+        discord_handle=user.discord_handle,
+        languages=user.languages,
+        profile_links=public_profile_links(user.social_links, connections),
+    )
 
 
 def _parse_highlights(raw: object) -> list[SharedHighlightOut]:
@@ -203,9 +237,51 @@ def _load_cached_matches(
     return rows[:limit], has_more
 
 
+def _count_cached_matches(user_id: uuid.UUID, db: DbSession) -> int:
+    """Count the current user's fresh cached matches without loading match details."""
+    cutoff = datetime.now(UTC) - timedelta(hours=_CACHE_MAX_AGE_HOURS)
+    return int(
+        db.scalar(
+            select(func.count())
+            .select_from(MatchCache)
+            .where(
+                or_(MatchCache.user_a_id == user_id, MatchCache.user_b_id == user_id),
+                MatchCache.computed_at >= cutoff,
+            )
+        )
+        or 0
+    )
+
+
 # ---------------------------------------------------------------------------
 # Match cache refresh — split into read / compute / write phases
 # ---------------------------------------------------------------------------
+
+
+def _visible_taste_item_ids(rows: list) -> dict[uuid.UUID, frozenset[uuid.UUID]]:
+    """Return the five highest-engagement items per service/type for each user.
+
+    This mirrors the first five items displayed in each taste-card section, so
+    feed highlights represent visible top taste rather than any item ever
+    imported from a service.
+    """
+    grouped: dict[tuple[uuid.UUID, str, str], list[tuple[float, uuid.UUID]]] = defaultdict(list)
+    for row in rows:
+        item_type = getattr(row, "item_type", "unknown")
+        if not isinstance(item_type, str):
+            item_type = "unknown"
+        score = getattr(row, "engagement_score", 0.0)
+        if not isinstance(score, (int, float)):
+            score = 0.0
+        grouped[(row.user_id, row.service, item_type)].append((float(score), row.item_id))
+
+    result: dict[uuid.UUID, set[uuid.UUID]] = defaultdict(set)
+    for (user_id, _, _), items in grouped.items():
+        items.sort(key=lambda item: item[0], reverse=True)
+        result[user_id].update(
+            item_id for _, item_id in items[:_VISIBLE_TASTE_ITEMS_PER_BUCKET]
+        )
+    return {user_id: frozenset(item_ids) for user_id, item_ids in result.items()}
 
 
 def _read_match_data(
@@ -232,7 +308,14 @@ def _read_match_data(
 
         rows = list(
             db.execute(
-                select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
+                select(
+                    UserItem.user_id,
+                    UserItem.item_id,
+                    Item.service,
+                    Item.item_type,
+                    Item.name,
+                    UserItem.engagement_score,
+                )
                 .join(Item, UserItem.item_id == Item.id)
                 .where(UserItem.user_id.in_(matchable_ids))
             ).all()
@@ -273,6 +356,7 @@ def _compute_match_scores(
         user_data[row.user_id][row.service][row.item_id] = row.name
 
     popularity: dict[uuid.UUID, int] = {row.item_id: row.pop for row in pop_rows}
+    visible_taste_items = _visible_taste_item_ids(rows)
 
     my_data = user_data.get(user_id, {})
     if not my_data:
@@ -300,7 +384,17 @@ def _compute_match_scores(
         for svc_items in other_data.values():
             item_names.update(svc_items)
 
-        highlights = top_shared_highlights(my_by_service, other_by_service, item_names, popularity)
+        visible_shared_items = (
+            visible_taste_items.get(user_id, frozenset())
+            & visible_taste_items.get(other_id, frozenset())
+        )
+        highlights = top_shared_highlights(
+            my_by_service,
+            other_by_service,
+            item_names,
+            popularity,
+            eligible_item_ids=visible_shared_items,
+        )
 
         a_id = min(user_id, other_id)
         b_id = max(user_id, other_id)
@@ -413,7 +507,14 @@ def _read_semantic_data(
 
         item_rows = list(
             db.execute(
-                select(UserItem.user_id, UserItem.item_id, Item.service, Item.name)
+                select(
+                    UserItem.user_id,
+                    UserItem.item_id,
+                    Item.service,
+                    Item.item_type,
+                    Item.name,
+                    UserItem.engagement_score,
+                )
                 .join(Item, UserItem.item_id == Item.id)
                 .where(UserItem.user_id.in_(all_user_ids))
             ).all()
@@ -448,6 +549,7 @@ def _compute_semantic_scores(
         return []
 
     popularity: dict[uuid.UUID, int] = {r.item_id: r.pop for r in pop_rows}
+    visible_taste_items = _visible_taste_item_ids(item_rows)
 
     user_data: dict[uuid.UUID, dict[str, dict[uuid.UUID, str]]] = defaultdict(
         lambda: defaultdict(dict)
@@ -476,7 +578,17 @@ def _compute_semantic_scores(
         for svc_items in other_data.values():
             item_names.update(svc_items)
 
-        highlights = top_shared_highlights(my_by_service, other_by_service, item_names, popularity)
+        visible_shared_items = (
+            visible_taste_items.get(user_id, frozenset())
+            & visible_taste_items.get(other_id, frozenset())
+        )
+        highlights = top_shared_highlights(
+            my_by_service,
+            other_by_service,
+            item_names,
+            popularity,
+            eligible_item_ids=visible_shared_items,
+        )
 
         a_id = min(user_id, other_id)
         b_id = max(user_id, other_id)
@@ -574,6 +686,25 @@ def _cleanup_stale_match_cache(db_factory: sessionmaker[DbSession]) -> None:
 # ---------------------------------------------------------------------------
 
 
+@router.get("/matches/summary", response_model=MatchSummaryOut)
+@limiter.limit("60/minute")
+def get_match_summary(
+    request: Request,
+    db: Annotated[DbSession, Depends(get_db)],
+    user: RequireAuth,
+) -> MatchSummaryOut:
+    """Return the number of fresh cached matches for the dashboard.
+
+    This deliberately does not trigger a recomputation: rendering the home page
+    should stay a cheap read, and a user can request a refresh from the matches
+    experience when their cache is empty or stale.
+    """
+    if not user.is_matchable:
+        return MatchSummaryOut(count=0)
+
+    return MatchSummaryOut(count=_count_cached_matches(user.id, db))
+
+
 @router.get("/matches", response_model=MatchListOut)
 @limiter.limit("30/minute")
 def get_matches(
@@ -613,7 +744,12 @@ def get_matches(
 
     other_user_ids = [row.user_b_id if row.user_a_id == user.id else row.user_a_id for row in page]
     other_users = {
-        u.id: u for u in db.scalars(select(User).where(User.id.in_(other_user_ids))).all()
+        u.id: u
+        for u in db.scalars(
+            select(User)
+            .options(selectinload(User.service_connections))
+            .where(User.id.in_(other_user_ids), User.is_matchable == True)  # noqa: E712
+        ).all()
     }
 
     items = []
@@ -624,7 +760,7 @@ def get_matches(
             continue
         items.append(
             MatchOut(
-                user=MatchUserOut.model_validate(other),
+                user=_match_user_out(other, list(other.service_connections)),
                 score=row.score,
                 breakdown=row.breakdown,
                 shared_highlights=_parse_highlights(row.highlights),
@@ -656,11 +792,14 @@ def get_match_detail(
         raise SyncUpError("FORBIDDEN", "Not your match", 403)
 
     other = db.get(User, other_user_id)
-    if not other:
+    if not other or not other.is_matchable:
         raise SyncUpError("NOT_FOUND", "User not found", 404)
 
     return MatchOut(
-        user=MatchUserOut.model_validate(other),
+        user=_match_user_out(
+            other,
+            list(other.service_connections),
+        ),
         score=row.score,
         breakdown=row.breakdown,
         shared_highlights=_parse_highlights(row.highlights),

@@ -13,6 +13,7 @@ export interface User {
   avatar_url: string | null;
   bio: string | null;
   discord_handle: string | null;
+  social_links: Record<string, string> | null;
   languages: string[] | null;
   is_matchable: boolean;
   onboarded: boolean;
@@ -50,6 +51,7 @@ export interface OnboardingStatus {
 export interface TasteItem {
   id: string;
   name: string;
+  excluded: boolean;
   score?: number;
   rating?: number;
   hours?: number;
@@ -58,6 +60,13 @@ export interface TasteItem {
   artists?: string[];
   release_year?: number;
   play_count?: number;
+}
+
+export interface TasteItemChoice {
+  id: string;
+  name: string;
+  service: string;
+  item_type: string;
 }
 
 export interface ManualObsession {
@@ -69,8 +78,9 @@ export interface ManualObsession {
 
 export interface PreferenceOverride {
   id: string;
-  item: { name: string };
+  item: { id: string; name: string };
   boost_multiplier: number;
+  note: string | null;
 }
 
 export interface TasteServiceData {
@@ -91,12 +101,19 @@ export interface TasteResponse {
   overrides: PreferenceOverride[];
 }
 
+export interface PublicTasteCardResponse {
+  user: Pick<User, "archetype" | "vibe_summary" | "key_themes">;
+  taste: TasteResponse;
+}
+
 export interface MatchUser {
   id: string;
   display_name: string;
   avatar_url: string | null;
   bio: string | null;
   discord_handle: string | null;
+  languages: string[] | null;
+  profile_links: Record<string, string>;
 }
 
 export interface Match {
@@ -111,6 +128,11 @@ export interface Match {
 export interface MatchListResponse {
   items: Match[];
   next_cursor: string | null;
+}
+
+export interface MatchSummary {
+  /** Number of fresh cached matches for the current user. */
+  count: number;
 }
 
 export interface Recommendation {
